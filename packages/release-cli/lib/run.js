@@ -57,6 +57,21 @@ function readPackageJson(packageDir) {
   return JSON.parse(content);
 }
 
+function readRegistryFromNpmrc(packageDir) {
+  const npmrcPath = path.join(packageDir, '.npmrc');
+  if (!fs.existsSync(npmrcPath)) {
+    return null;
+  }
+
+  const content = fs.readFileSync(npmrcPath, 'utf8');
+  const line = content.split(/\r?\n/).find((entry) => entry.startsWith('registry='));
+  if (!line) {
+    return null;
+  }
+
+  return line.slice('registry='.length).trim() || null;
+}
+
 function ensureGitClean() {
   try {
     runCommand('git', ['rev-parse', '--is-inside-work-tree'], { capture: true });
@@ -72,6 +87,7 @@ function ensureGitClean() {
 
 function releaseBeta(packageDir) {
   ensureGitClean();
+  const registry = readRegistryFromNpmrc(packageDir);
 
   runCommand(
     'npm',
@@ -84,7 +100,11 @@ function releaseBeta(packageDir) {
   runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
 
   try {
-    runCommand('npm', ['publish', '--tag', 'beta'], { cwd: packageDir });
+    const publishArgs = ['publish', '--tag', 'beta'];
+    if (registry) {
+      publishArgs.push('--registry', registry);
+    }
+    runCommand('npm', publishArgs, { cwd: packageDir });
   } catch (error) {
     throw new Error(`Publicação beta falhou. Verifique auth/registry.\n${error.message}`);
   }
@@ -94,6 +114,7 @@ function releaseBeta(packageDir) {
 
 function releaseStable(packageDir) {
   ensureGitClean();
+  const registry = readRegistryFromNpmrc(packageDir);
 
   const pkg = readPackageJson(packageDir);
   const betaMatch = String(pkg.version || '').match(/^(\d+\.\d+\.\d+)-beta\.\d+$/);
@@ -109,7 +130,11 @@ function releaseStable(packageDir) {
   runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
 
   try {
-    runCommand('npm', ['publish'], { cwd: packageDir });
+    const publishArgs = ['publish'];
+    if (registry) {
+      publishArgs.push('--registry', registry);
+    }
+    runCommand('npm', publishArgs, { cwd: packageDir });
   } catch (error) {
     throw new Error(`Publicação stable falhou. Verifique auth/registry.\n${error.message}`);
   }
