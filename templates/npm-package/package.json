@@ -10,6 +10,6 @@
     "registry:start": "release-cli registry http://127.0.0.1:4873"
   },
   "devDependencies": {
-    "release-cli": "workspace:*"
+    "release-cli": "__RELEASE_CLI_DEP__"
   }
 }

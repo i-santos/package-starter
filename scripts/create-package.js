@@ -71,6 +71,10 @@ function main() {
   const packageJsonPath = path.join(targetDir, 'package.json');
   const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
   packageJson.name = args.name;
+  const releaseCliDir = path.join(rootDir, 'packages', 'release-cli');
+  const relativeReleaseCliPath = path.relative(targetDir, releaseCliDir).split(path.sep).join('/');
+  packageJson.devDependencies = packageJson.devDependencies || {};
+  packageJson.devDependencies['release-cli'] = `file:${relativeReleaseCliPath}`;
   fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
   const readmePath = path.join(targetDir, 'README.md');
