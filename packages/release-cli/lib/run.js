@@ -74,36 +74,48 @@ function readRegistryFromNpmrc(packageDir) {
 }
 
 function ensureGitClean() {
+  let gitRoot;
+
   try {
-    runCommand('git', ['rev-parse', '--is-inside-work-tree'], { capture: true });
+    gitRoot = runCommand('git', ['rev-parse', '--show-toplevel'], { capture: true });
   } catch (_error) {
     throw new Error('Este comando exige um repositório git válido.');
   }
 
-  const status = runCommand('git', ['status', '--porcelain'], { capture: true });
+  const status = runCommand('git', ['status', '--porcelain'], { capture: true, cwd: gitRoot });
   if (status) {
     throw new Error('Git não está limpo. Faça commit/stash antes do release.');
   }
+
+  return gitRoot;
 }
 
-function listGitChanges() {
-  const status = runCommand('git', ['status', '--porcelain'], { capture: true });
-  if (!status) {
-    return [];
+function listGitChanges(gitRoot) {
+  const unstaged = runCommand('git', ['diff', '--name-only'], { capture: true, cwd: gitRoot });
+  const staged = runCommand('git', ['diff', '--cached', '--name-only'], { capture: true, cwd: gitRoot });
+  const names = new Set();
+
+  for (const value of [unstaged, staged]) {
+    if (!value) {
+      continue;
+    }
+
+    for (const line of value.split(/\r?\n/)) {
+      if (line) {
+        names.add(line);
+      }
+    }
   }
 
-  return status
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => line.slice(3));
+  return Array.from(names);
 }
 
-function rollbackPaths(paths) {
+function rollbackPaths(gitRoot, paths) {
   if (!paths.length) {
     return;
   }
 
-  runCommand('git', ['restore', '--staged', '--worktree', '--', ...paths]);
+  runCommand('git', ['restore', '--staged', '--worktree', '--', ...paths], { cwd: gitRoot });
 }
 
 function publishPackage(packageDir, options = {}) {
@@ -122,7 +134,7 @@ function publishPackage(packageDir, options = {}) {
 }
 
 function releaseBeta(packageDir) {
-  ensureGitClean();
+  const gitRoot = ensureGitClean();
 
   runCommand(
     'npm',
@@ -130,13 +142,13 @@ function releaseBeta(packageDir) {
     { cwd: packageDir }
   );
   const version = readPackageJson(packageDir).version;
-  const changedPaths = listGitChanges();
+  const changedPaths = listGitChanges(gitRoot);
 
   try {
     publishPackage(packageDir, { tag: 'beta' });
   } catch (error) {
     try {
-      rollbackPaths(changedPaths);
+      rollbackPaths(gitRoot, changedPaths);
     } catch (rollbackError) {
       throw new Error(
         `Publicação beta falhou e rollback também falhou.\n${error.message}\nRollback: ${rollbackError.message}`
@@ -148,13 +160,17 @@ function releaseBeta(packageDir) {
     );
   }
 
-  runCommand('git', ['add', '-A']);
-  runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
+  if (!changedPaths.length) {
+    throw new Error('Nenhuma alteração detectada após bump de versão.');
+  }
+
+  runCommand('git', ['add', '--', ...changedPaths], { cwd: gitRoot });
+  runCommand('git', ['commit', '-m', `chore(release): v${version}`], { cwd: gitRoot });
   console.log(`Release beta concluído: v${version}`);
 }
 
 function releaseStable(packageDir) {
-  ensureGitClean();
+  const gitRoot = ensureGitClean();
 
   const pkg = readPackageJson(packageDir);
   const betaMatch = String(pkg.version || '').match(/^(\d+\.\d+\.\d+)-beta\.\d+$/);
@@ -165,13 +181,13 @@ function releaseStable(packageDir) {
     runCommand('npm', ['version', 'patch', '--no-git-tag-version'], { cwd: packageDir });
   }
   const version = readPackageJson(packageDir).version;
-  const changedPaths = listGitChanges();
+  const changedPaths = listGitChanges(gitRoot);
 
   try {
     publishPackage(packageDir);
   } catch (error) {
     try {
-      rollbackPaths(changedPaths);
+      rollbackPaths(gitRoot, changedPaths);
     } catch (rollbackError) {
       throw new Error(
         `Publicação stable falhou e rollback também falhou.\n${error.message}\nRollback: ${rollbackError.message}`
@@ -183,8 +199,12 @@ function releaseStable(packageDir) {
     );
   }
 
-  runCommand('git', ['add', '-A']);
-  runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
+  if (!changedPaths.length) {
+    throw new Error('Nenhuma alteração detectada após bump de versão.');
+  }
+
+  runCommand('git', ['add', '--', ...changedPaths], { cwd: gitRoot });
+  runCommand('git', ['commit', '-m', `chore(release): v${version}`], { cwd: gitRoot });
   console.log(`Release stable concluído: v${version}`);
 }
 
