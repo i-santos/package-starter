@@ -70,20 +70,15 @@ function ensureGitClean() {
   }
 }
 
-function normalizeVersion(versionOutput) {
-  const trimmed = versionOutput.trim();
-  return trimmed.startsWith('v') ? trimmed.slice(1) : trimmed;
-}
-
 function releaseBeta(packageDir) {
   ensureGitClean();
 
-  const bumped = runCommand(
+  runCommand(
     'npm',
     ['version', 'prerelease', '--preid', 'beta', '--no-git-tag-version'],
-    { cwd: packageDir, capture: true }
+    { cwd: packageDir }
   );
-  const version = normalizeVersion(bumped);
+  const version = readPackageJson(packageDir).version;
 
   runCommand('git', ['add', '-A']);
   runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
@@ -103,20 +98,12 @@ function releaseStable(packageDir) {
   const pkg = readPackageJson(packageDir);
   const betaMatch = String(pkg.version || '').match(/^(\d+\.\d+\.\d+)-beta\.\d+$/);
 
-  let bumped;
   if (betaMatch) {
-    bumped = runCommand('npm', ['version', betaMatch[1], '--no-git-tag-version'], {
-      cwd: packageDir,
-      capture: true
-    });
+    runCommand('npm', ['version', betaMatch[1], '--no-git-tag-version'], { cwd: packageDir });
   } else {
-    bumped = runCommand('npm', ['version', 'patch', '--no-git-tag-version'], {
-      cwd: packageDir,
-      capture: true
-    });
+    runCommand('npm', ['version', 'patch', '--no-git-tag-version'], { cwd: packageDir });
   }
-
-  const version = normalizeVersion(bumped);
+  const version = readPackageJson(packageDir).version;
 
   runCommand('git', ['add', '-A']);
   runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
