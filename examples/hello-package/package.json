@@ -1,6 +1,6 @@
 {
   "name": "hello-package",
-  "version": "0.1.1-beta.3",
+  "version": "0.1.1",
   "private": true,
   "description": "Pacote gerado pelo package-starter",
   "scripts": {
