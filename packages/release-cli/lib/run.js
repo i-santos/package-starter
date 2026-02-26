@@ -9,6 +9,7 @@ function usage() {
     'Uso:',
     '  release-cli beta',
     '  release-cli stable',
+    '  release-cli publish [tag]',
     '  release-cli registry [url]',
     '',
     `Registry padrão: ${DEFAULT_REGISTRY}`
@@ -85,9 +86,43 @@ function ensureGitClean() {
   }
 }
 
+function listGitChanges() {
+  const status = runCommand('git', ['status', '--porcelain'], { capture: true });
+  if (!status) {
+    return [];
+  }
+
+  return status
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.slice(3));
+}
+
+function rollbackPaths(paths) {
+  if (!paths.length) {
+    return;
+  }
+
+  runCommand('git', ['restore', '--staged', '--worktree', '--', ...paths]);
+}
+
+function publishPackage(packageDir, options = {}) {
+  const registry = readRegistryFromNpmrc(packageDir);
+  const publishArgs = ['publish'];
+
+  if (options.tag) {
+    publishArgs.push('--tag', options.tag);
+  }
+
+  if (registry) {
+    publishArgs.push('--registry', registry);
+  }
+
+  runCommand('npm', publishArgs, { cwd: packageDir });
+}
+
 function releaseBeta(packageDir) {
   ensureGitClean();
-  const registry = readRegistryFromNpmrc(packageDir);
 
   runCommand(
     'npm',
@@ -95,26 +130,31 @@ function releaseBeta(packageDir) {
     { cwd: packageDir }
   );
   const version = readPackageJson(packageDir).version;
+  const changedPaths = listGitChanges();
+
+  try {
+    publishPackage(packageDir, { tag: 'beta' });
+  } catch (error) {
+    try {
+      rollbackPaths(changedPaths);
+    } catch (rollbackError) {
+      throw new Error(
+        `Publicação beta falhou e rollback também falhou.\n${error.message}\nRollback: ${rollbackError.message}`
+      );
+    }
+
+    throw new Error(
+      `Publicação beta falhou. Rollback aplicado (sem commit de release).\n${error.message}`
+    );
+  }
 
   runCommand('git', ['add', '-A']);
   runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
-
-  try {
-    const publishArgs = ['publish', '--tag', 'beta'];
-    if (registry) {
-      publishArgs.push('--registry', registry);
-    }
-    runCommand('npm', publishArgs, { cwd: packageDir });
-  } catch (error) {
-    throw new Error(`Publicação beta falhou. Verifique auth/registry.\n${error.message}`);
-  }
-
   console.log(`Release beta concluído: v${version}`);
 }
 
 function releaseStable(packageDir) {
   ensureGitClean();
-  const registry = readRegistryFromNpmrc(packageDir);
 
   const pkg = readPackageJson(packageDir);
   const betaMatch = String(pkg.version || '').match(/^(\d+\.\d+\.\d+)-beta\.\d+$/);
@@ -125,21 +165,42 @@ function releaseStable(packageDir) {
     runCommand('npm', ['version', 'patch', '--no-git-tag-version'], { cwd: packageDir });
   }
   const version = readPackageJson(packageDir).version;
+  const changedPaths = listGitChanges();
+
+  try {
+    publishPackage(packageDir);
+  } catch (error) {
+    try {
+      rollbackPaths(changedPaths);
+    } catch (rollbackError) {
+      throw new Error(
+        `Publicação stable falhou e rollback também falhou.\n${error.message}\nRollback: ${rollbackError.message}`
+      );
+    }
+
+    throw new Error(
+      `Publicação stable falhou. Rollback aplicado (sem commit de release).\n${error.message}`
+    );
+  }
 
   runCommand('git', ['add', '-A']);
   runCommand('git', ['commit', '-m', `chore(release): v${version}`]);
+  console.log(`Release stable concluído: v${version}`);
+}
 
+function releasePublish(packageDir, tag) {
   try {
-    const publishArgs = ['publish'];
-    if (registry) {
-      publishArgs.push('--registry', registry);
-    }
-    runCommand('npm', publishArgs, { cwd: packageDir });
+    publishPackage(packageDir, { tag });
   } catch (error) {
-    throw new Error(`Publicação stable falhou. Verifique auth/registry.\n${error.message}`);
+    throw new Error(`Publicação falhou. Verifique auth/registry.\n${error.message}`);
   }
 
-  console.log(`Release stable concluído: v${version}`);
+  if (tag) {
+    console.log(`Publish concluído com tag "${tag}".`);
+    return;
+  }
+
+  console.log('Publish concluído.');
 }
 
 function setRegistry(packageDir, registryUrl) {
@@ -194,6 +255,11 @@ async function run(argv) {
 
   if (command === 'registry') {
     setRegistry(packageDir, maybeValue || DEFAULT_REGISTRY);
+    return;
+  }
+
+  if (command === 'publish') {
+    releasePublish(packageDir, maybeValue);
     return;
   }
 

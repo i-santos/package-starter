@@ -6,8 +6,9 @@ Pacote criado pelo starter com fluxo de release padronizado.
 
 - `npm run check`
 - `npm run registry:start` (usa `http://127.0.0.1:4873`)
-- `npm run release:beta` (gera `X.Y.Z-beta.N` e publica com tag `beta`)
-- `npm run release:stable` (promove `beta` para `X.Y.Z` ou faz bump patch)
+- `npm run release:beta` (atômico: bump beta + publish + commit)
+- `npm run release:stable` (atômico: promove/patch + publish + commit)
+- `npm run release:publish` (só publish, sem bump/commit)
 
 ## Fluxo rápido
 
