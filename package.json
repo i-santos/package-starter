@@ -1,0 +1,13 @@
+{
+  "name": "package-starter",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "create:package": "node scripts/create-package.js",
+    "check": "node scripts/check-workspace.js"
+  }
+}

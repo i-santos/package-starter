@@ -1,0 +1,15 @@
+{
+  "name": "hello-package",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pacote gerado pelo package-starter",
+  "scripts": {
+    "check": "node scripts/check.js",
+    "release:beta": "release-cli beta",
+    "release:stable": "release-cli stable",
+    "registry:start": "release-cli registry http://127.0.0.1:4873"
+  },
+  "devDependencies": {
+    "release-cli": "workspace:*"
+  }
+}
