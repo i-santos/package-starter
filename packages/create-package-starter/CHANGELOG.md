@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.2
+
+### Patch Changes
+
+- 8eafbdf: Ensure CI workflow also runs on the beta branch (`release/beta`) so required status checks are enforced during prerelease flow.
+
 ## 1.5.0-beta.1
 
 ### Minor Changes
