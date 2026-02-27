@@ -3,7 +3,7 @@
   "tag": "beta",
   "initialVersions": {
     "hello-package": "0.1.2",
-    "@i-santos/create-package-starter": "1.4.0"
+    "@i-santos/create-package-starter": "1.4.1-beta.0"
   },
   "changesets": [
     "green-lizards-nail"
