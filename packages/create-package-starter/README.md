@@ -79,7 +79,8 @@ All commands print a deterministic summary with:
 - delete branch on merge
 - auto-merge enabled
 - squash-only merge policy
-- create/update branch ruleset with required PR, 1 approval, stale review dismissal, resolved conversations, and deletion/force-push protection
+- set Actions workflow default permissions to `write` (with PR review approvals enabled for workflows)
+- create/update branch ruleset with required PR, 0 approvals by default, stale review dismissal, resolved conversations, and deletion/force-push protection
 
 If `gh` is missing or unauthenticated, command exits non-zero with actionable guidance.
 
