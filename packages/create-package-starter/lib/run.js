@@ -1,36 +1,72 @@
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
+
+const CHANGESETS_DEP = '@changesets/cli';
+const CHANGESETS_DEP_VERSION = '^2.29.7';
+const DEFAULT_BASE_BRANCH = 'main';
+const DEFAULT_RULESET_NAME = 'Default main branch protection';
+
+const MANAGED_FILE_SPECS = [
+  ['.changeset/config.json', '.changeset/config.json'],
+  ['.changeset/README.md', '.changeset/README.md'],
+  ['.github/workflows/ci.yml', '.github/workflows/ci.yml'],
+  ['.github/workflows/release.yml', '.github/workflows/release.yml'],
+  ['.github/PULL_REQUEST_TEMPLATE.md', '.github/PULL_REQUEST_TEMPLATE.md'],
+  ['.github/CODEOWNERS', '.github/CODEOWNERS'],
+  ['CONTRIBUTING.md', 'CONTRIBUTING.md'],
+  ['README.md', 'README.md'],
+  ['.gitignore', '.gitignore']
+];
 
 function usage() {
   return [
-    'Uso:',
-    '  create-package-starter --name <nome> [--out <diretorio>]',
-    '  create-package-starter init [--dir <diretorio>] [--force]',
+    'Usage:',
+    '  create-package-starter --name <name> [--out <directory>] [--default-branch <branch>]',
+    '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>]',
+    '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '',
-    'Exemplo:',
+    'Examples:',
     '  create-package-starter --name hello-package',
     '  create-package-starter --name @i-santos/swarm --out ./packages',
-    '  create-package-starter init --dir ./meu-pacote',
-    '  create-package-starter init --force'
+    '  create-package-starter init --dir ./my-package',
+    '  create-package-starter init --cleanup-legacy-release',
+    '  create-package-starter setup-github --repo i-santos/firestack --dry-run'
   ].join('\n');
+}
+
+function parseValueFlag(argv, index, flag) {
+  const value = argv[index + 1];
+  if (!value || value.startsWith('--')) {
+    throw new Error(`Missing value for ${flag}\\n\\n${usage()}`);
+  }
+
+  return value;
 }
 
 function parseCreateArgs(argv) {
   const args = {
-    out: process.cwd()
+    out: process.cwd(),
+    defaultBranch: DEFAULT_BASE_BRANCH
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
 
     if (token === '--name') {
-      args.name = argv[i + 1];
+      args.name = parseValueFlag(argv, i, '--name');
       i += 1;
       continue;
     }
 
     if (token === '--out') {
-      args.out = argv[i + 1];
+      args.out = parseValueFlag(argv, i, '--out');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--default-branch') {
+      args.defaultBranch = parseValueFlag(argv, i, '--default-branch');
       i += 1;
       continue;
     }
@@ -40,7 +76,7 @@ function parseCreateArgs(argv) {
       continue;
     }
 
-    throw new Error(`Argumento inválido: ${token}\n\n${usage()}`);
+    throw new Error(`Invalid argument: ${token}\\n\\n${usage()}`);
   }
 
   return args;
@@ -49,14 +85,29 @@ function parseCreateArgs(argv) {
 function parseInitArgs(argv) {
   const args = {
     dir: process.cwd(),
-    force: false
+    force: false,
+    cleanupLegacyRelease: false,
+    defaultBranch: DEFAULT_BASE_BRANCH,
+    scope: ''
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
 
     if (token === '--dir') {
-      args.dir = argv[i + 1];
+      args.dir = parseValueFlag(argv, i, '--dir');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--scope') {
+      args.scope = parseValueFlag(argv, i, '--scope');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--default-branch') {
+      args.defaultBranch = parseValueFlag(argv, i, '--default-branch');
       i += 1;
       continue;
     }
@@ -66,12 +117,60 @@ function parseInitArgs(argv) {
       continue;
     }
 
+    if (token === '--cleanup-legacy-release') {
+      args.cleanupLegacyRelease = true;
+      continue;
+    }
+
     if (token === '--help' || token === '-h') {
       args.help = true;
       continue;
     }
 
-    throw new Error(`Argumento inválido: ${token}\n\n${usage()}`);
+    throw new Error(`Invalid argument: ${token}\\n\\n${usage()}`);
+  }
+
+  return args;
+}
+
+function parseSetupGithubArgs(argv) {
+  const args = {
+    defaultBranch: DEFAULT_BASE_BRANCH,
+    dryRun: false
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+
+    if (token === '--repo') {
+      args.repo = parseValueFlag(argv, i, '--repo');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--default-branch') {
+      args.defaultBranch = parseValueFlag(argv, i, '--default-branch');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--ruleset') {
+      args.ruleset = parseValueFlag(argv, i, '--ruleset');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--dry-run') {
+      args.dryRun = true;
+      continue;
+    }
+
+    if (token === '--help' || token === '-h') {
+      args.help = true;
+      continue;
+    }
+
+    throw new Error(`Invalid argument: ${token}\\n\\n${usage()}`);
   }
 
   return args;
@@ -82,6 +181,13 @@ function parseArgs(argv) {
     return {
       mode: 'init',
       args: parseInitArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'setup-github') {
+    return {
+      mode: 'setup-github',
+      args: parseSetupGithubArgs(argv.slice(1))
     };
   }
 
@@ -106,28 +212,51 @@ function packageDirFromName(packageName) {
   return parts[parts.length - 1];
 }
 
-function copyDirRecursive(sourceDir, targetDir) {
+function deriveScope(argsScope, packageName) {
+  if (argsScope) {
+    return argsScope;
+  }
+
+  if (typeof packageName === 'string' && packageName.startsWith('@')) {
+    const first = packageName.split('/')[0];
+    return first.slice(1);
+  }
+
+  return 'team';
+}
+
+function renderTemplateString(source, variables) {
+  let output = source;
+
+  for (const [key, value] of Object.entries(variables)) {
+    output = output.replace(new RegExp(`__${key}__`, 'g'), value);
+  }
+
+  return output;
+}
+
+function copyDirRecursive(sourceDir, targetDir, variables, relativeBase = '') {
   fs.mkdirSync(targetDir, { recursive: true });
   const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+  const createdFiles = [];
 
   for (const entry of entries) {
     const srcPath = path.join(sourceDir, entry.name);
     const destPath = path.join(targetDir, entry.name);
+    const relativePath = path.posix.join(relativeBase, entry.name);
 
     if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
+      createdFiles.push(...copyDirRecursive(srcPath, destPath, variables, relativePath));
       continue;
     }
 
-    fs.copyFileSync(srcPath, destPath);
+    const source = fs.readFileSync(srcPath, 'utf8');
+    const rendered = renderTemplateString(source, variables);
+    fs.writeFileSync(destPath, rendered);
+    createdFiles.push(relativePath);
   }
-}
 
-function renderTemplateFile(filePath, variables) {
-  const source = fs.readFileSync(filePath, 'utf8');
-  const output = source.replace(/__PACKAGE_NAME__/g, variables.packageName);
-
-  fs.writeFileSync(filePath, output);
+  return createdFiles;
 }
 
 function readJsonFile(filePath) {
@@ -136,13 +265,13 @@ function readJsonFile(filePath) {
   try {
     raw = fs.readFileSync(filePath, 'utf8');
   } catch (error) {
-    throw new Error(`Erro ao ler ${filePath}: ${error.message}`);
+    throw new Error(`Failed to read ${filePath}: ${error.message}`);
   }
 
   try {
     return JSON.parse(raw);
   } catch (error) {
-    throw new Error(`Erro ao parsear JSON em ${filePath}: ${error.message}`);
+    throw new Error(`Invalid JSON in ${filePath}: ${error.message}`);
   }
 }
 
@@ -150,19 +279,47 @@ function writeJsonFile(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function ensureFileFromTemplate(targetPath, templatePath, options) {
-  if (!fs.existsSync(templatePath)) {
-    throw new Error(`Erro: template não encontrado em ${templatePath}`);
-  }
+function createSummary() {
+  return {
+    createdFiles: [],
+    overwrittenFiles: [],
+    skippedFiles: [],
+    updatedScriptKeys: [],
+    skippedScriptKeys: [],
+    removedScriptKeys: [],
+    updatedDependencyKeys: [],
+    skippedDependencyKeys: [],
+    warnings: []
+  };
+}
 
+function printSummary(title, summary) {
+  const list = (values) => (values.length ? values.join(', ') : 'none');
+
+  console.log(title);
+  console.log(`files created: ${list(summary.createdFiles)}`);
+  console.log(`files overwritten: ${list(summary.overwrittenFiles)}`);
+  console.log(`files skipped: ${list(summary.skippedFiles)}`);
+  console.log(`scripts updated: ${list(summary.updatedScriptKeys)}`);
+  console.log(`scripts skipped: ${list(summary.skippedScriptKeys)}`);
+  console.log(`scripts removed: ${list(summary.removedScriptKeys)}`);
+  console.log(`dependencies updated: ${list(summary.updatedDependencyKeys)}`);
+  console.log(`dependencies skipped: ${list(summary.skippedDependencyKeys)}`);
+  console.log(`warnings: ${list(summary.warnings)}`);
+}
+
+function ensureFileFromTemplate(targetPath, templatePath, options) {
   const exists = fs.existsSync(targetPath);
 
   if (exists && !options.force) {
     return 'skipped';
   }
 
+  const source = fs.readFileSync(templatePath, 'utf8');
+  const rendered = renderTemplateString(source, options.variables);
+
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.copyFileSync(templatePath, targetPath);
+  fs.writeFileSync(targetPath, rendered);
 
   if (exists) {
     return 'overwritten';
@@ -171,34 +328,89 @@ function ensureFileFromTemplate(targetPath, templatePath, options) {
   return 'created';
 }
 
-function configureExistingPackage(packageDir, templateDir, force) {
+function detectEquivalentManagedFile(packageDir, targetRelativePath) {
+  if (targetRelativePath !== '.github/PULL_REQUEST_TEMPLATE.md') {
+    return targetRelativePath;
+  }
+
+  const canonicalPath = path.join(packageDir, targetRelativePath);
+  if (fs.existsSync(canonicalPath)) {
+    return targetRelativePath;
+  }
+
+  const legacyLowercase = '.github/pull_request_template.md';
+  if (fs.existsSync(path.join(packageDir, legacyLowercase))) {
+    return legacyLowercase;
+  }
+
+  return targetRelativePath;
+}
+
+function updateManagedFiles(packageDir, templateDir, options, summary) {
+  for (const [targetRelativePath, templateRelativePath] of MANAGED_FILE_SPECS) {
+    const effectiveTargetRelative = detectEquivalentManagedFile(packageDir, targetRelativePath);
+    const targetPath = path.join(packageDir, effectiveTargetRelative);
+    const templatePath = path.join(templateDir, templateRelativePath);
+
+    if (!fs.existsSync(templatePath)) {
+      throw new Error(`Template not found: ${templatePath}`);
+    }
+
+    const result = ensureFileFromTemplate(targetPath, templatePath, {
+      force: options.force,
+      variables: options.variables
+    });
+
+    if (result === 'created') {
+      summary.createdFiles.push(targetRelativePath);
+    } else if (result === 'overwritten') {
+      summary.overwrittenFiles.push(targetRelativePath);
+    } else {
+      summary.skippedFiles.push(targetRelativePath);
+    }
+  }
+}
+
+function removeLegacyReleaseScripts(packageJson, summary) {
+  const keys = Object.keys(packageJson.scripts || {});
+
+  for (const key of keys) {
+    const isLegacy = key === 'release:dist-tags'
+      || key.startsWith('release:beta')
+      || key.startsWith('release:stable')
+      || key.startsWith('release:promote')
+      || key.startsWith('release:rollback');
+
+    if (!isLegacy) {
+      continue;
+    }
+
+    delete packageJson.scripts[key];
+    summary.removedScriptKeys.push(key);
+  }
+}
+
+function configureExistingPackage(packageDir, templateDir, options) {
   if (!fs.existsSync(packageDir)) {
-    throw new Error(`Erro: diretório não encontrado: ${packageDir}`);
+    throw new Error(`Directory not found: ${packageDir}`);
   }
 
   const packageJsonPath = path.join(packageDir, 'package.json');
   if (!fs.existsSync(packageJsonPath)) {
-    throw new Error(`Erro: package.json não encontrado em ${packageDir}.`);
+    throw new Error(`package.json not found in ${packageDir}`);
   }
 
   const packageJson = readJsonFile(packageJsonPath);
   packageJson.scripts = packageJson.scripts || {};
   packageJson.devDependencies = packageJson.devDependencies || {};
 
+  const summary = createSummary();
+
   const desiredScripts = {
+    check: 'npm run test',
     changeset: 'changeset',
     'version-packages': 'changeset version',
     release: 'npm run check && changeset publish'
-  };
-
-  const summary = {
-    createdFiles: [],
-    overwrittenFiles: [],
-    skippedFiles: [],
-    updatedScriptKeys: [],
-    skippedScriptKeys: [],
-    updatedDependencyKeys: [],
-    skippedDependencyKeys: []
   };
 
   let packageJsonChanged = false;
@@ -206,7 +418,22 @@ function configureExistingPackage(packageDir, templateDir, force) {
   for (const [key, value] of Object.entries(desiredScripts)) {
     const exists = Object.prototype.hasOwnProperty.call(packageJson.scripts, key);
 
-    if (!exists || force) {
+    if (key === 'check') {
+      if (!exists) {
+        packageJson.scripts[key] = value;
+        packageJsonChanged = true;
+        summary.updatedScriptKeys.push(key);
+      } else if (options.force && packageJson.scripts[key] !== value) {
+        packageJson.scripts[key] = value;
+        packageJsonChanged = true;
+        summary.updatedScriptKeys.push(key);
+      } else {
+        summary.skippedScriptKeys.push(key);
+      }
+      continue;
+    }
+
+    if (!exists || options.force) {
       if (!exists || packageJson.scripts[key] !== value) {
         packageJson.scripts[key] = value;
         packageJsonChanged = true;
@@ -218,88 +445,77 @@ function configureExistingPackage(packageDir, templateDir, force) {
     summary.skippedScriptKeys.push(key);
   }
 
-  const dependencyKey = '@changesets/cli';
-  const dependencyValue = '^2.29.7';
-  const depExists = Object.prototype.hasOwnProperty.call(packageJson.devDependencies, dependencyKey);
+  const depExists = Object.prototype.hasOwnProperty.call(packageJson.devDependencies, CHANGESETS_DEP);
 
-  if (!depExists || force) {
-    if (!depExists || packageJson.devDependencies[dependencyKey] !== dependencyValue) {
-      packageJson.devDependencies[dependencyKey] = dependencyValue;
+  if (!depExists || options.force) {
+    if (!depExists || packageJson.devDependencies[CHANGESETS_DEP] !== CHANGESETS_DEP_VERSION) {
+      packageJson.devDependencies[CHANGESETS_DEP] = CHANGESETS_DEP_VERSION;
       packageJsonChanged = true;
     }
-    summary.updatedDependencyKeys.push(dependencyKey);
+    summary.updatedDependencyKeys.push(CHANGESETS_DEP);
   } else {
-    summary.skippedDependencyKeys.push(dependencyKey);
+    summary.skippedDependencyKeys.push(CHANGESETS_DEP);
   }
+
+  if (options.cleanupLegacyRelease) {
+    const before = summary.removedScriptKeys.length;
+    removeLegacyReleaseScripts(packageJson, summary);
+    if (summary.removedScriptKeys.length > before) {
+      packageJsonChanged = true;
+    }
+  }
+
+  const packageName = packageJson.name || packageDirFromName(path.basename(packageDir));
+
+  updateManagedFiles(packageDir, templateDir, {
+    force: options.force,
+    variables: {
+      PACKAGE_NAME: packageName,
+      DEFAULT_BRANCH: options.defaultBranch,
+      SCOPE: deriveScope(options.scope, packageName)
+    }
+  }, summary);
 
   if (packageJsonChanged) {
     writeJsonFile(packageJsonPath, packageJson);
   }
 
-  const fileSpecs = [
-    ['.changeset/config.json', '.changeset/config.json'],
-    ['.changeset/README.md', '.changeset/README.md'],
-    ['.github/workflows/release.yml', '.github/workflows/release.yml']
-  ];
-
-  for (const [targetRelativePath, templateRelativePath] of fileSpecs) {
-    const targetPath = path.join(packageDir, targetRelativePath);
-    const templatePath = path.join(templateDir, templateRelativePath);
-    const result = ensureFileFromTemplate(targetPath, templatePath, { force });
-
-    if (result === 'created') {
-      summary.createdFiles.push(targetRelativePath);
-    } else if (result === 'overwritten') {
-      summary.overwrittenFiles.push(targetRelativePath);
-    } else {
-      summary.skippedFiles.push(targetRelativePath);
-    }
-  }
-
-  if (!packageJson.scripts.check) {
-    console.warn('Aviso: script "check" não encontrado. O script "release" executa "npm run check".');
-  }
-
-  console.log(`Projeto inicializado em ${packageDir}`);
-  console.log(`Arquivos criados: ${summary.createdFiles.length ? summary.createdFiles.join(', ') : 'nenhum'}`);
-  console.log(`Arquivos sobrescritos: ${summary.overwrittenFiles.length ? summary.overwrittenFiles.join(', ') : 'nenhum'}`);
-  console.log(`Arquivos ignorados: ${summary.skippedFiles.length ? summary.skippedFiles.join(', ') : 'nenhum'}`);
-  console.log(`Scripts atualizados: ${summary.updatedScriptKeys.length ? summary.updatedScriptKeys.join(', ') : 'nenhum'}`);
-  console.log(`Scripts preservados: ${summary.skippedScriptKeys.length ? summary.skippedScriptKeys.join(', ') : 'nenhum'}`);
-  console.log(`Dependências atualizadas: ${summary.updatedDependencyKeys.length ? summary.updatedDependencyKeys.join(', ') : 'nenhum'}`);
-  console.log(`Dependências preservadas: ${summary.skippedDependencyKeys.length ? summary.skippedDependencyKeys.join(', ') : 'nenhum'}`);
+  return summary;
 }
 
 function createNewPackage(args) {
   if (!validateName(args.name)) {
-    throw new Error('Erro: informe um nome válido com --name (ex: hello-package ou @i-santos/swarm).');
+    throw new Error('Provide a valid package name with --name (for example: hello-package or @i-santos/swarm).');
   }
 
   const packageRoot = path.resolve(__dirname, '..');
   const templateDir = path.join(packageRoot, 'template');
 
   if (!fs.existsSync(templateDir)) {
-    throw new Error(`Erro: template não encontrado em ${templateDir}`);
+    throw new Error(`Template not found in ${templateDir}`);
   }
 
   const outputDir = path.resolve(args.out);
   const targetDir = path.join(outputDir, packageDirFromName(args.name));
 
   if (fs.existsSync(targetDir)) {
-    throw new Error(`Erro: diretório já existe: ${targetDir}`);
+    throw new Error(`Directory already exists: ${targetDir}`);
   }
 
-  copyDirRecursive(templateDir, targetDir);
+  const summary = createSummary();
 
-  renderTemplateFile(path.join(targetDir, 'package.json'), {
-    packageName: args.name
+  const createdFiles = copyDirRecursive(templateDir, targetDir, {
+    PACKAGE_NAME: args.name,
+    DEFAULT_BRANCH: args.defaultBranch,
+    SCOPE: deriveScope('', args.name)
   });
 
-  renderTemplateFile(path.join(targetDir, 'README.md'), {
-    packageName: args.name
-  });
+  summary.createdFiles.push(...createdFiles);
 
-  console.log(`Pacote criado em ${targetDir}`);
+  summary.updatedScriptKeys.push('check', 'changeset', 'version-packages', 'release');
+  summary.updatedDependencyKeys.push(CHANGESETS_DEP);
+
+  printSummary(`Package created in ${targetDir}`, summary);
 }
 
 function initExistingPackage(args) {
@@ -307,10 +523,187 @@ function initExistingPackage(args) {
   const templateDir = path.join(packageRoot, 'template');
   const targetDir = path.resolve(args.dir);
 
-  configureExistingPackage(targetDir, templateDir, args.force);
+  const summary = configureExistingPackage(targetDir, templateDir, args);
+  printSummary(`Project initialized in ${targetDir}`, summary);
 }
 
-async function run(argv) {
+function execCommand(command, args, options = {}) {
+  return spawnSync(command, args, {
+    encoding: 'utf8',
+    ...options
+  });
+}
+
+function parseRepoFromRemote(remoteUrl) {
+  const trimmed = remoteUrl.trim();
+  const httpsMatch = trimmed.match(/github\.com[/:]([^/]+\/[^/.]+)(?:\.git)?$/);
+
+  if (httpsMatch) {
+    return httpsMatch[1];
+  }
+
+  return '';
+}
+
+function resolveRepo(args, deps) {
+  if (args.repo) {
+    return args.repo;
+  }
+
+  const remote = deps.exec('git', ['config', '--get', 'remote.origin.url']);
+  if (remote.status !== 0 || !remote.stdout.trim()) {
+    throw new Error('Could not infer repository. Use --repo <owner/repo>.');
+  }
+
+  const repo = parseRepoFromRemote(remote.stdout);
+  if (!repo) {
+    throw new Error('Could not parse GitHub repository from remote.origin.url. Use --repo <owner/repo>.');
+  }
+
+  return repo;
+}
+
+function createBaseRulesetPayload(defaultBranch) {
+  return {
+    name: DEFAULT_RULESET_NAME,
+    target: 'branch',
+    enforcement: 'active',
+    conditions: {
+      ref_name: {
+        include: [`refs/heads/${defaultBranch}`],
+        exclude: []
+      }
+    },
+    bypass_actors: [],
+    rules: [
+      { type: 'deletion' },
+      { type: 'non_fast_forward' },
+      {
+        type: 'pull_request',
+        parameters: {
+          required_approving_review_count: 1,
+          dismiss_stale_reviews_on_push: true,
+          require_code_owner_review: false,
+          require_last_push_approval: false,
+          required_review_thread_resolution: true
+        }
+      }
+    ]
+  };
+}
+
+function createRulesetPayload(args) {
+  if (!args.ruleset) {
+    return createBaseRulesetPayload(args.defaultBranch);
+  }
+
+  const rulesetPath = path.resolve(args.ruleset);
+  if (!fs.existsSync(rulesetPath)) {
+    throw new Error(`Ruleset file not found: ${rulesetPath}`);
+  }
+
+  return readJsonFile(rulesetPath);
+}
+
+function ghApi(deps, method, endpoint, payload) {
+  const args = ['api', '--method', method, endpoint];
+
+  if (payload !== undefined) {
+    args.push('--input', '-');
+  }
+
+  return deps.exec('gh', args, {
+    input: payload !== undefined ? `${JSON.stringify(payload)}\n` : undefined
+  });
+}
+
+function ensureGhAvailable(deps) {
+  const version = deps.exec('gh', ['--version']);
+  if (version.status !== 0) {
+    throw new Error('GitHub CLI (gh) is required. Install it from https://cli.github.com/ and rerun.');
+  }
+
+  const auth = deps.exec('gh', ['auth', 'status']);
+  if (auth.status !== 0) {
+    throw new Error('GitHub CLI is not authenticated. Run "gh auth login" and rerun.');
+  }
+}
+
+function parseJsonOutput(output, fallbackError) {
+  try {
+    return JSON.parse(output);
+  } catch (error) {
+    throw new Error(fallbackError);
+  }
+}
+
+function upsertRuleset(deps, repo, rulesetPayload) {
+  const listResult = ghApi(deps, 'GET', `/repos/${repo}/rulesets`);
+  if (listResult.status !== 0) {
+    throw new Error(`Failed to list rulesets: ${listResult.stderr || listResult.stdout}`.trim());
+  }
+
+  const rulesets = parseJsonOutput(listResult.stdout || '[]', 'Failed to parse rulesets response from GitHub API.');
+  const existing = rulesets.find((ruleset) => ruleset.name === rulesetPayload.name);
+
+  if (!existing) {
+    const createResult = ghApi(deps, 'POST', `/repos/${repo}/rulesets`, rulesetPayload);
+    if (createResult.status !== 0) {
+      throw new Error(`Failed to create ruleset: ${createResult.stderr || createResult.stdout}`.trim());
+    }
+
+    return 'created';
+  }
+
+  const updateResult = ghApi(deps, 'PUT', `/repos/${repo}/rulesets/${existing.id}`, rulesetPayload);
+  if (updateResult.status !== 0) {
+    throw new Error(`Failed to update ruleset: ${updateResult.stderr || updateResult.stdout}`.trim());
+  }
+
+  return 'updated';
+}
+
+function setupGithub(args, dependencies = {}) {
+  const deps = {
+    exec: dependencies.exec || execCommand
+  };
+
+  ensureGhAvailable(deps);
+
+  const repo = resolveRepo(args, deps);
+  const rulesetPayload = createRulesetPayload(args);
+  const summary = createSummary();
+
+  summary.updatedScriptKeys.push('repository.default_branch', 'repository.delete_branch_on_merge', 'repository.allow_auto_merge', 'repository.merge_policy');
+
+  if (args.dryRun) {
+    summary.warnings.push(`dry-run: would update repository settings for ${repo}`);
+    summary.warnings.push(`dry-run: would upsert ruleset "${rulesetPayload.name}" for refs/heads/${args.defaultBranch}`);
+    printSummary(`GitHub settings dry-run for ${repo}`, summary);
+    return;
+  }
+
+  const repoPayload = {
+    default_branch: args.defaultBranch,
+    delete_branch_on_merge: true,
+    allow_auto_merge: true,
+    allow_squash_merge: true,
+    allow_merge_commit: false,
+    allow_rebase_merge: false
+  };
+
+  const patchRepo = ghApi(deps, 'PATCH', `/repos/${repo}`, repoPayload);
+  if (patchRepo.status !== 0) {
+    throw new Error(`Failed to update repository settings: ${patchRepo.stderr || patchRepo.stdout}`.trim());
+  }
+
+  const upsertResult = upsertRuleset(deps, repo, rulesetPayload);
+  summary.overwrittenFiles.push(`github-ruleset:${upsertResult}`);
+
+  printSummary(`GitHub settings applied to ${repo}`, summary);
+}
+
+async function run(argv, dependencies = {}) {
   const parsed = parseArgs(argv);
 
   if (parsed.args.help) {
@@ -323,7 +716,17 @@ async function run(argv) {
     return;
   }
 
+  if (parsed.mode === 'setup-github') {
+    setupGithub(parsed.args, dependencies);
+    return;
+  }
+
   createNewPackage(parsed.args);
 }
 
-module.exports = { run };
+module.exports = {
+  run,
+  parseRepoFromRemote,
+  createBaseRulesetPayload,
+  setupGithub
+};

@@ -1,4 +1,4 @@
 # Changesets
 
-- Create a changeset in each PR that changes release behavior: `npm run changeset`.
-- The release workflow creates/updates the version PR automatically.
+- Add a changeset in each PR with release-impacting changes: `npm run changeset`.
+- The release workflow opens/updates the versioning PR automatically.

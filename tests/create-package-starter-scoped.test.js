@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-test('create-package-starter accepts scoped package names', () => {
+test('create-package-starter accepts scoped package names and includes required standards files', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-scoped-'));
   const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
 
@@ -21,6 +21,7 @@ test('create-package-starter accepts scoped package names', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(createdDir, 'package.json'), 'utf8'));
   assert.equal(packageJson.name, '@i-santos/swarm');
   assert.equal(packageJson.devDependencies['@changesets/cli'], '^2.29.7');
+  assert.equal(packageJson.scripts.check, 'node scripts/check.js');
   assert.equal(packageJson.scripts.changeset, 'changeset');
   assert.equal(packageJson.scripts['version-packages'], 'changeset version');
   assert.equal(packageJson.scripts.release, 'npm run check && changeset publish');
@@ -29,6 +30,30 @@ test('create-package-starter accepts scoped package names', () => {
   assert.equal(packageJson.scripts['release:publish'], undefined);
   assert.equal(packageJson.scripts['registry:start'], undefined);
 
-  assert.equal(fs.existsSync(path.join(createdDir, '.changeset', 'config.json')), true);
+  const config = JSON.parse(fs.readFileSync(path.join(createdDir, '.changeset', 'config.json'), 'utf8'));
+  assert.equal(config.baseBranch, 'main');
+
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'release.yml')), true);
+  assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'ci.yml')), true);
+  assert.equal(fs.existsSync(path.join(createdDir, '.github', 'PULL_REQUEST_TEMPLATE.md')), true);
+  assert.equal(fs.existsSync(path.join(createdDir, '.github', 'CODEOWNERS')), true);
+  assert.equal(fs.existsSync(path.join(createdDir, 'CONTRIBUTING.md')), true);
+});
+
+test('create-package-starter supports custom default branch flag', () => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-custom-branch-'));
+  const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
+
+  const result = spawnSync('node', [binPath, '--name', 'branchy-package', '--out', outDir, '--default-branch', 'develop'], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const createdDir = path.join(outDir, 'branchy-package');
+  const config = JSON.parse(fs.readFileSync(path.join(createdDir, '.changeset', 'config.json'), 'utf8'));
+  assert.equal(config.baseBranch, 'develop');
+
+  const release = fs.readFileSync(path.join(createdDir, '.github', 'workflows', 'release.yml'), 'utf8');
+  assert.match(release, /- develop/);
 });

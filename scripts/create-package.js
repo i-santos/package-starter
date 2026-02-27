@@ -7,7 +7,7 @@ const rootDir = path.resolve(__dirname, '..');
 const templateDir = path.join(rootDir, 'templates', 'npm-package');
 
 function parseArgs(argv) {
-  const args = { dir: 'examples' };
+  const args = { dir: 'examples', defaultBranch: 'main' };
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token === '--name') {
@@ -17,6 +17,11 @@ function parseArgs(argv) {
     }
     if (token === '--dir') {
       args.dir = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    if (token === '--default-branch') {
+      args.defaultBranch = argv[i + 1] || 'main';
       i += 1;
       continue;
     }
@@ -39,7 +44,25 @@ function packageDirFromName(packageName) {
   return parts[parts.length - 1];
 }
 
-function copyDirRecursive(sourceDir, targetDir) {
+function deriveScope(packageName) {
+  if (!packageName.startsWith('@')) {
+    return 'team';
+  }
+
+  return packageName.slice(1).split('/')[0];
+}
+
+function renderTemplateString(source, variables) {
+  let output = source;
+
+  for (const [key, value] of Object.entries(variables)) {
+    output = output.replace(new RegExp(`__${key}__`, 'g'), value);
+  }
+
+  return output;
+}
+
+function copyDirRecursive(sourceDir, targetDir, variables) {
   fs.mkdirSync(targetDir, { recursive: true });
   const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
 
@@ -48,11 +71,13 @@ function copyDirRecursive(sourceDir, targetDir) {
     const destPath = path.join(targetDir, entry.name);
 
     if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath);
+      copyDirRecursive(srcPath, destPath, variables);
       continue;
     }
 
-    fs.copyFileSync(srcPath, destPath);
+    const source = fs.readFileSync(srcPath, 'utf8');
+    const rendered = renderTemplateString(source, variables);
+    fs.writeFileSync(destPath, rendered);
   }
 }
 
@@ -77,16 +102,11 @@ function main() {
     process.exit(1);
   }
 
-  copyDirRecursive(templateDir, targetDir);
-
-  const packageJsonPath = path.join(targetDir, 'package.json');
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-  packageJson.name = args.name;
-  fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
-
-  const readmePath = path.join(targetDir, 'README.md');
-  const readme = fs.readFileSync(readmePath, 'utf8').replace(/__PACKAGE_NAME__/g, args.name);
-  fs.writeFileSync(readmePath, readme);
+  copyDirRecursive(templateDir, targetDir, {
+    PACKAGE_NAME: args.name,
+    DEFAULT_BRANCH: args.defaultBranch,
+    SCOPE: deriveScope(args.name)
+  });
 
   console.log(`Pacote criado em ${targetDir}`);
 }
