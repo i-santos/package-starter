@@ -107,12 +107,6 @@ function parseInitArgs(argv) {
       continue;
     }
 
-    if (token === '--repo') {
-      args.repo = parseValueFlag(argv, i, '--repo');
-      i += 1;
-      continue;
-    }
-
     if (token === '--scope') {
       args.scope = parseValueFlag(argv, i, '--scope');
       i += 1;
@@ -546,13 +540,22 @@ function ensureFileFromTemplate(targetPath, templatePath, options) {
 function ensureReleaseWorkflowBranches(content, defaultBranch, betaBranch) {
   const lines = content.split('\n');
   const onIndex = lines.findIndex((line) => line.trim() === 'on:');
-  const permissionsIndex = lines.findIndex((line) => line.trim() === 'permissions:');
 
-  if (onIndex < 0 || permissionsIndex < 0 || permissionsIndex <= onIndex) {
+  if (onIndex < 0) {
     return null;
   }
 
-  const onBlock = lines.slice(onIndex, permissionsIndex);
+  let onSectionEnd = lines.length;
+  for (let i = onIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i];
+    const isTopLevelKey = line && !line.startsWith(' ') && line.trim().endsWith(':');
+    if (isTopLevelKey) {
+      onSectionEnd = i;
+      break;
+    }
+  }
+
+  const onBlock = lines.slice(onIndex, onSectionEnd);
   const pushRelativeIndex = onBlock.findIndex((line) => line.trim() === 'push:');
   if (pushRelativeIndex < 0) {
     return null;
@@ -604,7 +607,7 @@ function ensureReleaseWorkflowBranches(content, defaultBranch, betaBranch) {
   const updatedLines = [
     ...lines.slice(0, onIndex),
     ...updatedOnBlock,
-    ...lines.slice(permissionsIndex)
+    ...lines.slice(onSectionEnd)
   ];
 
   return {
@@ -951,6 +954,17 @@ function createBetaRulesetPayload(betaBranch) {
           require_last_push_approval: false,
           required_review_thread_resolution: true
         }
+      },
+      {
+        type: 'required_status_checks',
+        parameters: {
+          strict_required_status_checks_policy: true,
+          required_status_checks: [
+            {
+              context: 'check'
+            }
+          ]
+        }
       }
     ]
   };
@@ -1276,8 +1290,14 @@ async function setupBeta(args, dependencies = {}) {
   const workflowRelativePath = '.github/workflows/release.yml';
   const workflowTemplatePath = path.join(templateDir, workflowRelativePath);
   const workflowTargetPath = path.join(targetDir, workflowRelativePath);
+  const ciWorkflowRelativePath = '.github/workflows/ci.yml';
+  const ciWorkflowTemplatePath = path.join(templateDir, ciWorkflowRelativePath);
+  const ciWorkflowTargetPath = path.join(targetDir, ciWorkflowRelativePath);
   if (!fs.existsSync(workflowTemplatePath)) {
     throw new Error(`Template not found: ${workflowTemplatePath}`);
+  }
+  if (!fs.existsSync(ciWorkflowTemplatePath)) {
+    throw new Error(`Template not found: ${ciWorkflowTemplatePath}`);
   }
 
   if (args.dryRun) {
@@ -1304,6 +1324,28 @@ async function setupBeta(args, dependencies = {}) {
         summary.warnings.push(`dry-run: ${workflowPreview.warning}`);
       }
     }
+    const ciWorkflowPreview = upsertReleaseWorkflow(ciWorkflowTargetPath, ciWorkflowTemplatePath, {
+      force: args.force,
+      dryRun: true,
+      variables: {
+        PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
+        DEFAULT_BRANCH: args.defaultBranch,
+        BETA_BRANCH: args.betaBranch,
+        SCOPE: deriveScope('', packageJson.name || '')
+      }
+    });
+    if (ciWorkflowPreview.result === 'created') {
+      summary.warnings.push(`dry-run: would create ${ciWorkflowRelativePath}`);
+    } else if (ciWorkflowPreview.result === 'overwritten') {
+      summary.warnings.push(`dry-run: would overwrite ${ciWorkflowRelativePath}`);
+    } else if (ciWorkflowPreview.result === 'updated') {
+      summary.warnings.push(`dry-run: would update ${ciWorkflowRelativePath} trigger branches`);
+    } else {
+      summary.warnings.push(`dry-run: would keep existing ${ciWorkflowRelativePath}`);
+      if (ciWorkflowPreview.warning) {
+        summary.warnings.push(`dry-run: ${ciWorkflowPreview.warning}`);
+      }
+    }
     if (packageJsonChanged) {
       summary.warnings.push('dry-run: would update package.json beta scripts');
     }
@@ -1324,9 +1366,10 @@ async function setupBeta(args, dependencies = {}) {
           `This will modify GitHub repository settings for ${repo}:`,
           `- set Actions workflow permissions to write`,
           `- ensure branch "${args.betaBranch}" exists${doesBranchExist ? ' (already exists)' : ' (will be created)'}`,
-          `- apply branch protection ruleset "${betaRulesetPayload.name}"`,
-          `- update local ${workflowRelativePath} and package.json beta scripts`
-        ].join('\n')
+        `- apply branch protection ruleset "${betaRulesetPayload.name}"`,
+        '- require CI status check "check" on beta branch',
+        `- update local ${workflowRelativePath} and package.json beta scripts`
+      ].join('\n')
       );
 
       if (existingRuleset) {
@@ -1365,6 +1408,37 @@ async function setupBeta(args, dependencies = {}) {
         logStep('warn', workflowUpsert.warning);
       } else {
         logStep('warn', `${workflowRelativePath} already configured; kept as-is.`);
+      }
+    }
+
+    logStep('run', `Ensuring ${ciWorkflowRelativePath} includes stable+beta triggers...`);
+    const ciWorkflowUpsert = upsertReleaseWorkflow(ciWorkflowTargetPath, ciWorkflowTemplatePath, {
+      force: args.force,
+      dryRun: false,
+      variables: {
+        PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
+        DEFAULT_BRANCH: args.defaultBranch,
+        BETA_BRANCH: args.betaBranch,
+        SCOPE: deriveScope('', packageJson.name || '')
+      }
+    });
+    const ciWorkflowResult = ciWorkflowUpsert.result;
+    if (ciWorkflowResult === 'created') {
+      summary.createdFiles.push(ciWorkflowRelativePath);
+      logStep('ok', `${ciWorkflowRelativePath} created.`);
+    } else if (ciWorkflowResult === 'overwritten') {
+      summary.overwrittenFiles.push(ciWorkflowRelativePath);
+      logStep('ok', `${ciWorkflowRelativePath} overwritten.`);
+    } else if (ciWorkflowResult === 'updated') {
+      summary.overwrittenFiles.push(ciWorkflowRelativePath);
+      logStep('ok', `${ciWorkflowRelativePath} updated with missing branch triggers.`);
+    } else {
+      summary.skippedFiles.push(ciWorkflowRelativePath);
+      if (ciWorkflowUpsert.warning) {
+        summary.warnings.push(ciWorkflowUpsert.warning);
+        logStep('warn', ciWorkflowUpsert.warning);
+      } else {
+        logStep('warn', `${ciWorkflowRelativePath} already configured; kept as-is.`);
       }
     }
 

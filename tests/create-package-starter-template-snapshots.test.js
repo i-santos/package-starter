@@ -27,6 +27,7 @@ test('template ci.yml snapshot', () => {
   assert.match(content, /^name: CI/m);
   assert.match(content, /pull_request:/m);
   assert.match(content, /branches:\n\s+- __DEFAULT_BRANCH__/m);
+  assert.match(content, /branches:\n[\s\S]*- __BETA_BRANCH__/m);
   assert.match(content, /run: npm ci/m);
   assert.match(content, /run: npm run check/m);
 });

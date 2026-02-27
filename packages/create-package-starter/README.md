@@ -119,8 +119,9 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 
 - adds beta scripts to `package.json`
 - creates/preserves `.github/workflows/release.yml` with beta+stable branch triggers
+- creates/preserves `.github/workflows/ci.yml` with beta+stable branch triggers
 - ensures `release/beta` branch exists remotely (created from default branch if missing)
-- applies beta branch protection ruleset on GitHub
+- applies beta branch protection ruleset on GitHub (including required status check `check`)
 - asks for confirmation before mutating repository settings and again before overwriting existing beta ruleset
 - supports safe-merge by default and `--force` overwrite
 - supports configurable beta branch (`release/beta` by default)
