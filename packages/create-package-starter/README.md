@@ -9,6 +9,7 @@ npx @i-santos/create-package-starter --name hello-package
 npx @i-santos/create-package-starter --name @i-santos/swarm --default-branch main
 npx @i-santos/create-package-starter init --dir ./existing-package
 npx @i-santos/create-package-starter setup-github --repo i-santos/firestack --dry-run
+npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
 ```
 
 ## Commands
@@ -34,6 +35,13 @@ Configure GitHub repository settings:
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
 - `--default-branch <branch>` (default: `main`)
 - `--ruleset <path>` (optional JSON override)
+- `--dry-run` (prints intended operations only)
+
+Bootstrap npm publishing:
+
+- `setup-npm`
+- `--dir <directory>` (default: current directory)
+- `--publish-first` (run `npm publish --access public` only when package is not found on npm)
 - `--dry-run` (prints intended operations only)
 
 ## Managed Standards
@@ -83,6 +91,18 @@ All commands print a deterministic summary with:
 - create/update branch ruleset with required PR, 0 approvals by default, stale review dismissal, resolved conversations, and deletion/force-push protection
 
 If `gh` is missing or unauthenticated, command exits non-zero with actionable guidance.
+
+## setup-npm Behavior
+
+`setup-npm` validates npm publish readiness:
+
+- checks npm CLI availability
+- checks npm authentication (`npm whoami`)
+- checks whether package already exists on npm
+- optionally performs first publish (`--publish-first`)
+- prints next steps for Trusted Publisher configuration
+
+Important: Trusted Publisher still needs manual setup in npm package settings.
 
 ## Trusted Publishing Note
 

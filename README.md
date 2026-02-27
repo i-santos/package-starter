@@ -35,6 +35,7 @@ Published CLI:
 npx @i-santos/create-package-starter --name @i-santos/swarm
 npx @i-santos/create-package-starter init --dir ./existing-package
 npx @i-santos/create-package-starter setup-github --repo i-santos/swarm --dry-run
+npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
 ```
 
 ## Default Release Model
@@ -84,6 +85,22 @@ npx @i-santos/create-package-starter setup-github --repo i-santos/firestack
 ```
 
 Applies baseline repository settings and creates/updates a main branch ruleset. Use `--dry-run` to preview changes.
+
+## npm First Publish Bootstrap
+
+Optional command:
+
+```bash
+npx @i-santos/create-package-starter setup-npm --dir .
+```
+
+`setup-npm` checks npm auth and package existence, and can run first publish when needed:
+
+```bash
+npx @i-santos/create-package-starter setup-npm --dir . --publish-first
+```
+
+Trusted Publisher setup on npm remains a manual step after first publish.
 
 ## Branch & PR Policy
 
