@@ -24,7 +24,7 @@ Package created by `package-starter`.
 
 1. Create `release/beta` from `main`.
 2. Run `npm run beta:enter` once on `release/beta`.
-3. Push updates to `release/beta` and let `.github/workflows/release-beta.yml` publish beta versions.
+3. Push updates to `release/beta` and let `.github/workflows/release.yml` publish beta versions.
 4. When ready for stable, run `npm run beta:promote`, open PR from `release/beta` to `main`, and merge.
 
 ## Trusted Publishing

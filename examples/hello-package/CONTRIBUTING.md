@@ -16,7 +16,7 @@
 
 1. Use branch `release/beta` for prereleases.
 2. Run `npm run beta:enter` once on `release/beta`.
-3. Publish beta versions via `.github/workflows/release-beta.yml`.
+3. Publish beta versions via `.github/workflows/release.yml` on `release/beta`.
 4. Run `npm run beta:promote` to exit prerelease mode and create stable promotion changeset.
 5. Open PR from `release/beta` to `main`.
 

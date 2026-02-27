@@ -45,7 +45,8 @@ Bootstrap beta release flow:
 - `--dir <directory>` (default: current directory)
 - `--beta-branch <branch>` (default: `release/beta`)
 - `--default-branch <branch>` (default: `main`)
-- `--force` (overwrite managed beta workflow/scripts)
+- `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
+- `--force` (overwrite managed scripts/workflow)
 - `--dry-run` (prints intended operations only)
 
 Prepare stable promotion from beta track:
@@ -78,7 +79,6 @@ The generated and managed baseline includes:
 - `CONTRIBUTING.md`
 - `README.md`
 - `.gitignore`
-- `.github/workflows/release-beta.yml`
 
 ## Init Behavior
 
@@ -117,7 +117,9 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 `setup-beta` configures prerelease automation:
 
 - adds beta scripts to `package.json`
-- creates/preserves `.github/workflows/release-beta.yml`
+- creates/preserves `.github/workflows/release.yml` with beta+stable branch triggers
+- ensures `release/beta` branch exists remotely (created from default branch if missing)
+- applies beta branch protection ruleset on GitHub
 - supports safe-merge by default and `--force` overwrite
 - supports configurable beta branch (`release/beta` by default)
 
