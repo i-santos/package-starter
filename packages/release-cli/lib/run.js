@@ -369,7 +369,7 @@ function setupReleaseCi(packageDir) {
     '        uses: changesets/action@v1',
     '        with:',
     '          version: npm run version-packages',
-    "          publish: bash -lc 'unset NODE_AUTH_TOKEN NPM_TOKEN; npm run release'",
+    '          publish: env -u NODE_AUTH_TOKEN -u NPM_TOKEN npm run release',
     '          title: "chore: release packages"',
     '          commit: "chore: release packages"',
     '        env:',
