@@ -7,7 +7,12 @@
     "check": "node scripts/check.js",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "npm run check && changeset publish"
+    "release": "npm run check && changeset publish",
+    "beta:enter": "changeset pre enter beta",
+    "beta:exit": "changeset pre exit",
+    "beta:version": "changeset version",
+    "beta:publish": "changeset publish",
+    "beta:promote": "create-package-starter promote-stable --dir ."
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7"
