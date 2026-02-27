@@ -243,6 +243,12 @@ function parseSetupBetaArgs(argv) {
       continue;
     }
 
+    if (token === '--repo') {
+      args.repo = parseValueFlag(argv, i, '--repo');
+      i += 1;
+      continue;
+    }
+
     if (token === '--beta-branch') {
       args.betaBranch = parseValueFlag(argv, i, '--beta-branch');
       i += 1;
