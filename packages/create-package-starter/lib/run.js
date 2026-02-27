@@ -804,9 +804,23 @@ function setupNpm(args, dependencies = {}) {
     } else if (args.dryRun) {
       summary.warnings.push(`dry-run: would run "npm publish --access public" in ${targetDir}`);
     } else {
-      const publish = deps.exec('npm', ['publish', '--access', 'public'], { cwd: targetDir });
+      const publish = deps.exec('npm', ['publish', '--access', 'public'], { cwd: targetDir, stdio: 'inherit' });
       if (publish.status !== 0) {
-        throw new Error(`First publish failed: ${(publish.stderr || publish.stdout || '').trim()}`);
+        const publishOutput = `${publish.stderr || ''}\n${publish.stdout || ''}`.toLowerCase();
+        const isOtpError = publishOutput.includes('eotp') || publishOutput.includes('one-time password');
+
+        if (isOtpError) {
+          throw new Error(
+            [
+              'First publish failed due to npm 2FA/OTP requirements.',
+              'This command already delegates to the standard npm publish flow.',
+              'If npm still requires manual OTP entry, complete publish manually:',
+              `  (cd ${targetDir} && npm publish --access public)`
+            ].join('\n')
+          );
+        }
+
+        throw new Error('First publish failed. Check npm output above and try again.');
       }
       summary.updatedScriptKeys.push('npm.first_publish_done');
     }

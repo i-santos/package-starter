@@ -103,6 +103,7 @@ test('setup-npm publishes first version when requested and package does not exis
   assert.equal(publishCall.args[1], '--access');
   assert.equal(publishCall.args[2], 'public');
   assert.equal(publishCall.options.cwd, packageDir);
+  assert.equal(publishCall.options.stdio, 'inherit');
 });
 
 test('setup-npm skips first publish when package already exists', async () => {
@@ -129,6 +130,21 @@ test('setup-npm fails with actionable message when publish fails', async () => {
 
   await assert.rejects(
     () => run(['setup-npm', '--dir', packageDir, '--publish-first'], { exec: stub.exec }),
-    /First publish failed: 403 Forbidden/
+    /First publish failed\. Check npm output above and try again/
+  );
+});
+
+test('setup-npm shows otp guidance when npm returns EOTP', async () => {
+  const packageDir = createPackageDir('@i-santos/eotp-package');
+  const stub = createExecStub([
+    (command, args) => (command === 'npm' && args[0] === '--version' ? { status: 0, stdout: '10.0.0' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'whoami' ? { status: 0, stdout: 'i-santos' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' ? { status: 1, stderr: 'E404 Not Found' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'publish' ? { status: 1, stderr: 'npm ERR! code EOTP' } : null)
+  ]);
+
+  await assert.rejects(
+    () => run(['setup-npm', '--dir', packageDir, '--publish-first'], { exec: stub.exec }),
+    /standard npm publish flow/
   );
 });
