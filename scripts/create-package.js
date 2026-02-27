@@ -105,6 +105,7 @@ function main() {
   copyDirRecursive(templateDir, targetDir, {
     PACKAGE_NAME: args.name,
     DEFAULT_BRANCH: args.defaultBranch,
+    BETA_BRANCH: 'release/beta',
     SCOPE: deriveScope(args.name)
   });
 

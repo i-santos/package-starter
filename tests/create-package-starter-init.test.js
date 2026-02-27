@@ -36,6 +36,11 @@ test('init bootstraps missing standards files, scripts and dependency in existin
   assert.equal(pkg.scripts.changeset, 'changeset');
   assert.equal(pkg.scripts['version-packages'], 'changeset version');
   assert.equal(pkg.scripts.release, 'npm run check && changeset publish');
+  assert.equal(pkg.scripts['beta:enter'], 'changeset pre enter beta');
+  assert.equal(pkg.scripts['beta:exit'], 'changeset pre exit');
+  assert.equal(pkg.scripts['beta:version'], 'changeset version');
+  assert.equal(pkg.scripts['beta:publish'], 'changeset publish');
+  assert.equal(pkg.scripts['beta:promote'], 'create-package-starter promote-stable --dir .');
   assert.equal(pkg.devDependencies['@changesets/cli'], '^2.29.7');
 
   assert.equal(fs.existsSync(path.join(workDir, '.changeset', 'config.json')), true);
@@ -77,6 +82,8 @@ test('init preserves existing config by default (safe merge)', () => {
   assert.equal(pkg.scripts.changeset, 'custom changeset');
   assert.equal(pkg.scripts.release, 'custom release');
   assert.equal(pkg.scripts['version-packages'], 'changeset version');
+  assert.equal(pkg.scripts['beta:enter'], 'changeset pre enter beta');
+  assert.equal(pkg.scripts['beta:promote'], 'create-package-starter promote-stable --dir .');
   assert.equal(pkg.devDependencies['@changesets/cli'], '^0.0.1');
 
   assert.equal(fs.readFileSync(path.join(workDir, '.changeset', 'config.json'), 'utf8'), '{"custom":true}\n');
@@ -114,6 +121,11 @@ test('init --force overwrites managed files and scripts and dependency version',
   assert.equal(pkg.scripts.changeset, 'changeset');
   assert.equal(pkg.scripts['version-packages'], 'changeset version');
   assert.equal(pkg.scripts.release, 'npm run check && changeset publish');
+  assert.equal(pkg.scripts['beta:enter'], 'changeset pre enter beta');
+  assert.equal(pkg.scripts['beta:exit'], 'changeset pre exit');
+  assert.equal(pkg.scripts['beta:version'], 'changeset version');
+  assert.equal(pkg.scripts['beta:publish'], 'changeset publish');
+  assert.equal(pkg.scripts['beta:promote'], 'create-package-starter promote-stable --dir .');
   assert.equal(pkg.devDependencies['@changesets/cli'], '^2.29.7');
 
   const workflow = fs.readFileSync(path.join(workDir, '.github', 'workflows', 'release.yml'), 'utf8');

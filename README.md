@@ -35,6 +35,8 @@ Published CLI:
 npx @i-santos/create-package-starter --name @i-santos/swarm
 npx @i-santos/create-package-starter init --dir ./existing-package
 npx @i-santos/create-package-starter setup-github --repo i-santos/swarm --dry-run
+npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
+npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
 npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
 ```
 
@@ -85,6 +87,28 @@ npx @i-santos/create-package-starter setup-github --repo i-santos/firestack
 ```
 
 Applies baseline repository settings and creates/updates a main branch ruleset. Use `--dry-run` to preview changes.
+
+## Beta Release Automation
+
+Use a dedicated prerelease branch (for example `release/beta`) instead of `main`.
+
+Bootstrap beta flow:
+
+```bash
+npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
+```
+
+By default the command asks for confirmation before mutating GitHub settings/rulesets.
+Use `--yes` only for non-interactive/automation runs.
+
+Promote beta to stable:
+
+```bash
+npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
+```
+
+This exits prerelease mode and creates an explicit promotion changeset before opening PR from beta branch to `main`.
+Keep npm Trusted Publisher configured for `release.yml` (single workflow), and run that workflow on both `main` and `release/beta`.
 
 ## npm First Publish Bootstrap
 

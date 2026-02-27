@@ -1,5 +1,15 @@
 # @i-santos/create-package-starter
 
+## 1.4.1-beta.0
+
+### Patch Changes
+
+- c36a54d: Adjust `setup-npm` first publish flow to use standard interactive npm publish behavior.
+
+  - Remove custom OTP flag handling.
+  - Delegate first publish directly to `npm publish --access public` with inherited stdio.
+  - Improve EOTP error guidance while keeping npm native interactive flow.
+
 ## 1.4.0
 
 ### Minor Changes

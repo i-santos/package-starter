@@ -9,6 +9,8 @@ npx @i-santos/create-package-starter --name hello-package
 npx @i-santos/create-package-starter --name @i-santos/swarm --default-branch main
 npx @i-santos/create-package-starter init --dir ./existing-package
 npx @i-santos/create-package-starter setup-github --repo i-santos/firestack --dry-run
+npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
+npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
 npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
 ```
 
@@ -35,6 +37,25 @@ Configure GitHub repository settings:
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
 - `--default-branch <branch>` (default: `main`)
 - `--ruleset <path>` (optional JSON override)
+- `--dry-run` (prints intended operations only)
+
+Bootstrap beta release flow:
+
+- `setup-beta`
+- `--dir <directory>` (default: current directory)
+- `--beta-branch <branch>` (default: `release/beta`)
+- `--default-branch <branch>` (default: `main`)
+- `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
+- `--force` (overwrite managed scripts/workflow)
+- `--dry-run` (prints intended operations only)
+- `--yes` (skip interactive confirmations)
+
+Prepare stable promotion from beta track:
+
+- `promote-stable`
+- `--dir <directory>` (default: current directory)
+- `--type <patch|minor|major>` (default: `patch`)
+- `--summary <text>` (default: `Promote beta track to stable release.`)
 - `--dry-run` (prints intended operations only)
 
 Bootstrap npm publishing:
@@ -91,6 +112,27 @@ All commands print a deterministic summary with:
 - create/update branch ruleset with required PR, 0 approvals by default, stale review dismissal, resolved conversations, and deletion/force-push protection
 
 If `gh` is missing or unauthenticated, command exits non-zero with actionable guidance.
+
+## setup-beta Behavior
+
+`setup-beta` configures prerelease automation:
+
+- adds beta scripts to `package.json`
+- creates/preserves `.github/workflows/release.yml` with beta+stable branch triggers
+- ensures `release/beta` branch exists remotely (created from default branch if missing)
+- applies beta branch protection ruleset on GitHub
+- asks for confirmation before mutating repository settings and again before overwriting existing beta ruleset
+- supports safe-merge by default and `--force` overwrite
+- supports configurable beta branch (`release/beta` by default)
+
+## promote-stable Behavior
+
+`promote-stable` prepares stable promotion from prerelease mode:
+
+- validates `.changeset/pre.json` exists
+- runs `changeset pre exit`
+- creates a promotion changeset (`patch|minor|major`)
+- prints next step guidance for opening beta->main PR
 
 ## setup-npm Behavior
 
