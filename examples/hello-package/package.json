@@ -1,6 +1,7 @@
 {
   "name": "hello-package",
   "version": "0.1.2",
+  "private": true,
   "description": "Pacote gerado pelo package-starter",
   "scripts": {
     "check": "node scripts/check.js",
