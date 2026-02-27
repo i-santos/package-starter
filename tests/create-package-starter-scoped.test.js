@@ -21,4 +21,11 @@ test('create-package-starter accepts scoped package names', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(createdDir, 'package.json'), 'utf8'));
   assert.equal(packageJson.name, '@i-santos/swarm');
   assert.equal(packageJson.devDependencies['@i-santos/release-cli'], '^0.1.0');
+  assert.equal(packageJson.devDependencies['@changesets/cli'], '^2.29.7');
+  assert.equal(packageJson.scripts.changeset, 'changeset');
+  assert.equal(packageJson.scripts['version-packages'], 'changeset version');
+  assert.equal(packageJson.scripts.release, 'npm run check && npm run release:publish');
+
+  assert.equal(fs.existsSync(path.join(createdDir, '.changeset', 'config.json')), true);
+  assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'release.yml')), true);
 });

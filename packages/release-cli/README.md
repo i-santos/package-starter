@@ -14,6 +14,7 @@ npm i -D @i-santos/release-cli
 - `release-cli stable`
 - `release-cli publish [tag]`
 - `release-cli registry [url]`
+- `release-cli setup`
 
 ## Behavior
 
@@ -45,6 +46,21 @@ npm i -D @i-santos/release-cli
 - Updates package `.npmrc` with `registry=<url>`.
 - Default URL: `http://127.0.0.1:4873`.
 
+### `release-cli setup`
+
+- Creates `.github/workflows/release.yml` (Changesets + GitHub Actions).
+- Creates `.changeset/config.json` and `.changeset/README.md`.
+- Adds missing scripts to `package.json`:
+  - `changeset`
+  - `version-packages`
+  - `release`
+  - `release:beta`
+  - `release:stable`
+  - `release:publish`
+  - `registry:start`
+- Adds `@changesets/cli` to `devDependencies` when missing.
+- Idempotent: existing files/scripts are preserved.
+
 ## Typical scripts
 
 ```json
@@ -53,7 +69,10 @@ npm i -D @i-santos/release-cli
     "release:beta": "release-cli beta",
     "release:stable": "release-cli stable",
     "release:publish": "release-cli publish",
-    "registry:start": "release-cli registry http://127.0.0.1:4873"
+    "registry:start": "release-cli registry http://127.0.0.1:4873",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run check && npm run release:publish"
   }
 }
 ```

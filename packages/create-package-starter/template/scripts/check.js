@@ -6,7 +6,15 @@ const path = require('path');
 const packageJsonPath = path.join(process.cwd(), 'package.json');
 const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
-const requiredScripts = ['release:beta', 'release:stable', 'release:publish', 'registry:start'];
+const requiredScripts = [
+  'release:beta',
+  'release:stable',
+  'release:publish',
+  'registry:start',
+  'changeset',
+  'version-packages',
+  'release'
+];
 for (const scriptName of requiredScripts) {
   if (!pkg.scripts || !pkg.scripts[scriptName]) {
     console.error(`Script obrigatório ausente: ${scriptName}`);

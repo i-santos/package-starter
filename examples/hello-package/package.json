@@ -7,9 +7,13 @@
     "release:beta": "release-cli beta",
     "release:stable": "release-cli stable",
     "release:publish": "release-cli publish",
-    "registry:start": "release-cli registry http://127.0.0.1:4873"
+    "registry:start": "release-cli registry http://127.0.0.1:4873",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run check && npm run release:publish"
   },
   "devDependencies": {
-    "@i-santos/release-cli": "file:../../packages/release-cli"
+    "@i-santos/release-cli": "file:../../packages/release-cli",
+    "@changesets/cli": "^2.29.7"
   }
 }

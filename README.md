@@ -71,7 +71,13 @@ Use `release-cli` scripts inside a package:
 npm i -D @i-santos/release-cli
 ```
 
-2. Add scripts:
+2. Bootstrap CI/CD release layer (Changesets + GitHub Actions):
+
+```bash
+npx release-cli setup
+```
+
+3. (Optional) Add scripts manually:
 
 ```json
 {
@@ -84,7 +90,7 @@ npm i -D @i-santos/release-cli
 }
 ```
 
-3. Remove old release scripts and standardize on this flow.
+4. Remove old release scripts and standardize on this flow.
 
 ## Creating New Packages
 
