@@ -57,6 +57,14 @@ For protected `main` branches that require CI checks on the release PR, set repo
 
 ## Migration Guide (existing npm package)
 
+Use bootstrap command:
+
+```bash
+npx @i-santos/create-package-starter init --dir .
+```
+
+Or configure manually:
+
 1. Add Changesets dependency and scripts:
 
 ```json
