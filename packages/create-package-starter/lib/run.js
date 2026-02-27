@@ -961,7 +961,10 @@ function createBetaRulesetPayload(betaBranch) {
           strict_required_status_checks_policy: true,
           required_status_checks: [
             {
-              context: 'check'
+              context: 'CI / check (18) (pull_request)'
+            },
+            {
+              context: 'CI / check (20) (pull_request)'
             }
           ]
         }
@@ -1366,10 +1369,10 @@ async function setupBeta(args, dependencies = {}) {
           `This will modify GitHub repository settings for ${repo}:`,
           `- set Actions workflow permissions to write`,
           `- ensure branch "${args.betaBranch}" exists${doesBranchExist ? ' (already exists)' : ' (will be created)'}`,
-        `- apply branch protection ruleset "${betaRulesetPayload.name}"`,
-        '- require CI status check "check" on beta branch',
-        `- update local ${workflowRelativePath} and package.json beta scripts`
-      ].join('\n')
+          `- apply branch protection ruleset "${betaRulesetPayload.name}"`,
+        '- require CI status checks "CI / check (18) (pull_request)" and "CI / check (20) (pull_request)" on beta branch',
+          `- update local ${workflowRelativePath} and package.json beta scripts`
+        ].join('\n')
       );
 
       if (existingRuleset) {
