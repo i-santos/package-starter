@@ -1,0 +1,41 @@
+{
+  "name": "@i-santos/create-package-starter",
+  "version": "0.1.0",
+  "description": "Scaffold new npm packages with standardized release scripts",
+  "license": "MIT",
+  "author": "Igor Santos",
+  "homepage": "https://github.com/i-santos/package-starter#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/i-santos/package-starter.git",
+    "directory": "packages/create-package-starter"
+  },
+  "bugs": {
+    "url": "https://github.com/i-santos/package-starter/issues"
+  },
+  "keywords": [
+    "scaffold",
+    "npm",
+    "starter",
+    "cli",
+    "template"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "create-package-starter": "bin/create-package-starter.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "template",
+    "README.md"
+  ],
+  "scripts": {
+    "check": "node scripts/check.js"
+  }
+}

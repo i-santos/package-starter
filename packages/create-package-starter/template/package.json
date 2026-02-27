@@ -1,0 +1,15 @@
+{
+  "name": "__PACKAGE_NAME__",
+  "version": "0.1.0",
+  "description": "Pacote gerado pelo create-package-starter",
+  "scripts": {
+    "check": "node scripts/check.js",
+    "release:beta": "release-cli beta",
+    "release:stable": "release-cli stable",
+    "release:publish": "release-cli publish",
+    "registry:start": "release-cli registry http://127.0.0.1:4873"
+  },
+  "devDependencies": {
+    "__RELEASE_CLI_PKG__": "__RELEASE_CLI_VERSION__"
+  }
+}

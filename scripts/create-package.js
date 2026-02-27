@@ -5,6 +5,7 @@ const path = require('path');
 
 const rootDir = path.resolve(__dirname, '..');
 const templateDir = path.join(rootDir, 'templates', 'npm-package');
+const RELEASE_CLI_PACKAGE = '@i-santos/release-cli';
 
 function parseArgs(argv) {
   const args = { dir: 'examples' };
@@ -25,7 +26,18 @@ function parseArgs(argv) {
 }
 
 function validateName(name) {
-  return typeof name === 'string' && /^[a-z0-9][a-z0-9._-]*$/.test(name);
+  if (typeof name !== 'string') {
+    return false;
+  }
+
+  const plain = /^[a-z0-9][a-z0-9._-]*$/;
+  const scoped = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
+  return plain.test(name) || scoped.test(name);
+}
+
+function packageDirFromName(packageName) {
+  const parts = packageName.split('/');
+  return parts[parts.length - 1];
 }
 
 function copyDirRecursive(sourceDir, targetDir) {
@@ -49,7 +61,7 @@ function main() {
   const args = parseArgs(process.argv.slice(2));
 
   if (!validateName(args.name)) {
-    console.error('Erro: informe um nome válido com --name (ex: hello-package).');
+    console.error('Erro: informe um nome válido com --name (ex: hello-package ou @i-santos/swarm).');
     process.exit(1);
   }
 
@@ -59,7 +71,7 @@ function main() {
   }
 
   const baseOutputDir = path.join(rootDir, args.dir);
-  const targetDir = path.join(baseOutputDir, args.name);
+  const targetDir = path.join(baseOutputDir, packageDirFromName(args.name));
 
   if (fs.existsSync(targetDir)) {
     console.error(`Erro: diretório já existe: ${targetDir}`);
@@ -74,7 +86,8 @@ function main() {
   const releaseCliDir = path.join(rootDir, 'packages', 'release-cli');
   const relativeReleaseCliPath = path.relative(targetDir, releaseCliDir).split(path.sep).join('/');
   packageJson.devDependencies = packageJson.devDependencies || {};
-  packageJson.devDependencies['release-cli'] = `file:${relativeReleaseCliPath}`;
+  packageJson.devDependencies[RELEASE_CLI_PACKAGE] = `file:${relativeReleaseCliPath}`;
+  delete packageJson.devDependencies['release-cli'];
   fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
   const readmePath = path.join(targetDir, 'README.md');
