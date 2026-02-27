@@ -25,13 +25,15 @@ function usage() {
     '  create-package-starter --name <name> [--out <directory>] [--default-branch <branch>]',
     '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>]',
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
+    '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
     'Examples:',
     '  create-package-starter --name hello-package',
     '  create-package-starter --name @i-santos/swarm --out ./packages',
     '  create-package-starter init --dir ./my-package',
     '  create-package-starter init --cleanup-legacy-release',
-    '  create-package-starter setup-github --repo i-santos/firestack --dry-run'
+    '  create-package-starter setup-github --repo i-santos/firestack --dry-run',
+    '  create-package-starter setup-npm --dir . --publish-first'
   ].join('\n');
 }
 
@@ -176,6 +178,43 @@ function parseSetupGithubArgs(argv) {
   return args;
 }
 
+function parseSetupNpmArgs(argv) {
+  const args = {
+    dir: process.cwd(),
+    publishFirst: false,
+    dryRun: false
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+
+    if (token === '--dir') {
+      args.dir = parseValueFlag(argv, i, '--dir');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--publish-first') {
+      args.publishFirst = true;
+      continue;
+    }
+
+    if (token === '--dry-run') {
+      args.dryRun = true;
+      continue;
+    }
+
+    if (token === '--help' || token === '-h') {
+      args.help = true;
+      continue;
+    }
+
+    throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
+  }
+
+  return args;
+}
+
 function parseArgs(argv) {
   if (argv[0] === 'init') {
     return {
@@ -188,6 +227,13 @@ function parseArgs(argv) {
     return {
       mode: 'setup-github',
       args: parseSetupGithubArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'setup-npm') {
+    return {
+      mode: 'setup-npm',
+      args: parseSetupNpmArgs(argv.slice(1))
     };
   }
 
@@ -683,6 +729,95 @@ function updateWorkflowPermissions(deps, repo) {
   }
 }
 
+function ensureNpmAvailable(deps) {
+  const version = deps.exec('npm', ['--version']);
+  if (version.status !== 0) {
+    throw new Error('npm CLI is required. Install npm and rerun.');
+  }
+}
+
+function ensureNpmAuthenticated(deps) {
+  const whoami = deps.exec('npm', ['whoami']);
+  if (whoami.status !== 0) {
+    throw new Error('npm CLI is not authenticated. Run "npm login" and rerun.');
+  }
+}
+
+function packageExistsOnNpm(deps, packageName) {
+  const view = deps.exec('npm', ['view', packageName, 'version', '--json']);
+  if (view.status === 0) {
+    return true;
+  }
+
+  const output = `${view.stderr || ''}\n${view.stdout || ''}`.toLowerCase();
+  if (output.includes('e404') || output.includes('not found') || output.includes('404')) {
+    return false;
+  }
+
+  throw new Error(`Failed to check package on npm: ${view.stderr || view.stdout}`.trim());
+}
+
+function setupNpm(args, dependencies = {}) {
+  const deps = {
+    exec: dependencies.exec || execCommand
+  };
+
+  const targetDir = path.resolve(args.dir);
+  if (!fs.existsSync(targetDir)) {
+    throw new Error(`Directory not found: ${targetDir}`);
+  }
+
+  const packageJsonPath = path.join(targetDir, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
+    throw new Error(`package.json not found in ${targetDir}`);
+  }
+
+  const packageJson = readJsonFile(packageJsonPath);
+  if (!packageJson.name) {
+    throw new Error(`package.json in ${targetDir} must define "name".`);
+  }
+
+  ensureNpmAvailable(deps);
+  ensureNpmAuthenticated(deps);
+
+  const summary = createSummary();
+  summary.updatedScriptKeys.push('npm.auth', 'npm.package.lookup');
+
+  if (!packageJson.publishConfig || packageJson.publishConfig.access !== 'public') {
+    summary.warnings.push('package.json publishConfig.access is not "public". First publish may fail for public packages.');
+  }
+
+  const existsOnNpm = packageExistsOnNpm(deps, packageJson.name);
+  if (existsOnNpm) {
+    summary.skippedScriptKeys.push('npm.first_publish');
+  } else {
+    summary.updatedScriptKeys.push('npm.first_publish_required');
+  }
+
+  if (!existsOnNpm && !args.publishFirst) {
+    summary.warnings.push(`package "${packageJson.name}" was not found on npm. Run "create-package-starter setup-npm --dir ${targetDir} --publish-first" to perform first publish.`);
+  }
+
+  if (args.publishFirst) {
+    if (existsOnNpm) {
+      summary.warnings.push(`package "${packageJson.name}" already exists on npm. Skipping first publish.`);
+    } else if (args.dryRun) {
+      summary.warnings.push(`dry-run: would run "npm publish --access public" in ${targetDir}`);
+    } else {
+      const publish = deps.exec('npm', ['publish', '--access', 'public'], { cwd: targetDir });
+      if (publish.status !== 0) {
+        throw new Error(`First publish failed: ${(publish.stderr || publish.stdout || '').trim()}`);
+      }
+      summary.updatedScriptKeys.push('npm.first_publish_done');
+    }
+  }
+
+  summary.warnings.push('Configure npm Trusted Publisher manually in npm package settings after first publish.');
+  summary.warnings.push('Trusted Publisher requires owner, repository, workflow file (.github/workflows/release.yml), and branch (main by default).');
+
+  printSummary(`npm setup completed for ${packageJson.name}`, summary);
+}
+
 function setupGithub(args, dependencies = {}) {
   const deps = {
     exec: dependencies.exec || execCommand
@@ -750,6 +885,11 @@ async function run(argv, dependencies = {}) {
     return;
   }
 
+  if (parsed.mode === 'setup-npm') {
+    setupNpm(parsed.args, dependencies);
+    return;
+  }
+
   createNewPackage(parsed.args);
 }
 
@@ -757,5 +897,6 @@ module.exports = {
   run,
   parseRepoFromRemote,
   createBaseRulesetPayload,
-  setupGithub
+  setupGithub,
+  setupNpm
 };
