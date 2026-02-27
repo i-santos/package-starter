@@ -1,6 +1,6 @@
 # @i-santos/create-package-starter
 
-Scaffold new npm packages with a consistent release workflow.
+Scaffold new npm packages with a standardized Changesets release workflow.
 
 ## Install / Run
 
@@ -13,17 +13,11 @@ npx @i-santos/create-package-starter --name @i-santos/swarm
 
 - `--name <name>` (required, supports `pkg` and `@scope/pkg`)
 - `--out <directory>` (default: current directory)
-- `--release-cli-pkg <package>` (default: `@i-santos/release-cli`)
-- `--release-cli-version <version>` (default: `^0.1.0`)
 
 ## Output
 
 Generated package includes:
 
-- `release:beta`
-- `release:stable`
-- `release:publish`
-- `registry:start`
 - `changeset`
 - `version-packages`
 - `release`
