@@ -14,20 +14,11 @@ test('template release.yml snapshot', () => {
 
   assert.match(content, /^name: Release/m);
   assert.match(content, /branches:\n\s+- __DEFAULT_BRANCH__/m);
+  assert.match(content, /branches:\n[\s\S]*- __BETA_BRANCH__/m);
   assert.match(content, /id-token: write/m);
   assert.match(content, /uses: changesets\/action@v1/m);
   assert.match(content, /title: "chore: release packages"/m);
   assert.match(content, /publish: npm run release/m);
-});
-
-test('template release-beta.yml snapshot', () => {
-  const content = read('.github/workflows/release-beta.yml');
-
-  assert.match(content, /^name: Release Beta/m);
-  assert.match(content, /branches:\n\s+- __BETA_BRANCH__/m);
-  assert.match(content, /uses: changesets\/action@v1/m);
-  assert.match(content, /version: npm run beta:version/m);
-  assert.match(content, /publish: npm run beta:publish/m);
 });
 
 test('template ci.yml snapshot', () => {

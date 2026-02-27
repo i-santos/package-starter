@@ -12,7 +12,6 @@ const MANAGED_FILE_SPECS = [
   ['.changeset/README.md', '.changeset/README.md'],
   ['.github/workflows/ci.yml', '.github/workflows/ci.yml'],
   ['.github/workflows/release.yml', '.github/workflows/release.yml'],
-  ['.github/workflows/release-beta.yml', '.github/workflows/release-beta.yml'],
   ['.github/PULL_REQUEST_TEMPLATE.md', '.github/PULL_REQUEST_TEMPLATE.md'],
   ['.github/CODEOWNERS', '.github/CODEOWNERS'],
   ['CONTRIBUTING.md', 'CONTRIBUTING.md'],
@@ -26,7 +25,7 @@ function usage() {
     '  create-package-starter --name <name> [--out <directory>] [--default-branch <branch>]',
     '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>]',
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
-    '  create-package-starter setup-beta [--dir <directory>] [--beta-branch <branch>] [--default-branch <branch>] [--force] [--dry-run]',
+    '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--force] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -103,6 +102,12 @@ function parseInitArgs(argv) {
 
     if (token === '--dir') {
       args.dir = parseValueFlag(argv, i, '--dir');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--repo') {
+      args.repo = parseValueFlag(argv, i, '--repo');
       i += 1;
       continue;
     }
@@ -765,6 +770,35 @@ function createBaseRulesetPayload(defaultBranch) {
   };
 }
 
+function createBetaRulesetPayload(betaBranch) {
+  return {
+    name: `Beta branch protection (${betaBranch})`,
+    target: 'branch',
+    enforcement: 'active',
+    conditions: {
+      ref_name: {
+        include: [`refs/heads/${betaBranch}`],
+        exclude: []
+      }
+    },
+    bypass_actors: [],
+    rules: [
+      { type: 'deletion' },
+      { type: 'non_fast_forward' },
+      {
+        type: 'pull_request',
+        parameters: {
+          required_approving_review_count: 0,
+          dismiss_stale_reviews_on_push: true,
+          require_code_owner_review: false,
+          require_last_push_approval: false,
+          required_review_thread_resolution: true
+        }
+      }
+    ]
+  };
+}
+
 function createRulesetPayload(args) {
   if (!args.ruleset) {
     return createBaseRulesetPayload(args.defaultBranch);
@@ -854,6 +888,45 @@ function updateWorkflowPermissions(deps, repo) {
       `Failed to update workflow permissions: ${result.stderr || result.stdout}`.trim()
     );
   }
+}
+
+function isNotFoundResponse(result) {
+  const output = `${result.stderr || ''}\n${result.stdout || ''}`.toLowerCase();
+  return output.includes('404') || output.includes('not found');
+}
+
+function ensureBranchExists(deps, repo, defaultBranch, targetBranch) {
+  const encodedTarget = encodeURIComponent(targetBranch);
+  const getTarget = ghApi(deps, 'GET', `/repos/${repo}/branches/${encodedTarget}`);
+  if (getTarget.status === 0) {
+    return 'exists';
+  }
+
+  if (!isNotFoundResponse(getTarget)) {
+    throw new Error(`Failed to check branch "${targetBranch}": ${getTarget.stderr || getTarget.stdout}`.trim());
+  }
+
+  const encodedDefault = encodeURIComponent(defaultBranch);
+  const getDefaultRef = ghApi(deps, 'GET', `/repos/${repo}/git/ref/heads/${encodedDefault}`);
+  if (getDefaultRef.status !== 0) {
+    throw new Error(`Failed to resolve default branch "${defaultBranch}": ${getDefaultRef.stderr || getDefaultRef.stdout}`.trim());
+  }
+
+  const parsed = parseJsonOutput(getDefaultRef.stdout || '{}', 'Failed to parse default branch ref from GitHub API.');
+  const sha = parsed && parsed.object && parsed.object.sha;
+  if (!sha) {
+    throw new Error(`Could not determine SHA for default branch "${defaultBranch}".`);
+  }
+
+  const createRef = ghApi(deps, 'POST', `/repos/${repo}/git/refs`, {
+    ref: `refs/heads/${targetBranch}`,
+    sha
+  });
+  if (createRef.status !== 0) {
+    throw new Error(`Failed to create branch "${targetBranch}": ${createRef.stderr || createRef.stdout}`.trim());
+  }
+
+  return 'created';
 }
 
 function ensureNpmAvailable(deps) {
@@ -959,7 +1032,11 @@ function setupNpm(args, dependencies = {}) {
   printSummary(`npm setup completed for ${packageJson.name}`, summary);
 }
 
-function setupBeta(args) {
+function setupBeta(args, dependencies = {}) {
+  const deps = {
+    exec: dependencies.exec || execCommand
+  };
+
   const targetDir = path.resolve(args.dir);
   if (!fs.existsSync(targetDir)) {
     throw new Error(`Directory not found: ${targetDir}`);
@@ -975,7 +1052,11 @@ function setupBeta(args) {
   const packageJson = readJsonFile(packageJsonPath);
   packageJson.scripts = packageJson.scripts || {};
 
+  ensureGhAvailable(deps);
+  const repo = resolveRepo(args, deps);
+
   const summary = createSummary();
+  summary.updatedScriptKeys.push('github.beta_branch', 'github.beta_ruleset', 'actions.default_workflow_permissions');
   const desiredScripts = {
     'beta:enter': 'changeset pre enter beta',
     'beta:exit': 'changeset pre exit',
@@ -998,7 +1079,7 @@ function setupBeta(args) {
     }
   }
 
-  const workflowRelativePath = '.github/workflows/release-beta.yml';
+  const workflowRelativePath = '.github/workflows/release.yml';
   const workflowTemplatePath = path.join(templateDir, workflowRelativePath);
   const workflowTargetPath = path.join(targetDir, workflowRelativePath);
   if (!fs.existsSync(workflowTemplatePath)) {
@@ -1016,6 +1097,9 @@ function setupBeta(args) {
     if (packageJsonChanged) {
       summary.warnings.push('dry-run: would update package.json beta scripts');
     }
+    summary.warnings.push(`dry-run: would ensure branch "${args.betaBranch}" exists in ${repo}`);
+    summary.warnings.push(`dry-run: would upsert ruleset for refs/heads/${args.betaBranch}`);
+    summary.warnings.push(`dry-run: would set Actions workflow permissions to write for ${repo}`);
     summary.warnings.push(`dry-run: beta branch configured as ${args.betaBranch}`);
   } else {
     const workflowResult = ensureFileFromTemplate(workflowTargetPath, workflowTemplatePath, {
@@ -1039,9 +1123,23 @@ function setupBeta(args) {
     if (packageJsonChanged) {
       writeJsonFile(packageJsonPath, packageJson);
     }
+
+    updateWorkflowPermissions(deps, repo);
+
+    const branchResult = ensureBranchExists(deps, repo, args.defaultBranch, args.betaBranch);
+    if (branchResult === 'created') {
+      summary.createdFiles.push(`github-branch:${args.betaBranch}`);
+    } else {
+      summary.skippedFiles.push(`github-branch:${args.betaBranch}`);
+    }
+
+    const betaRulesetPayload = createBetaRulesetPayload(args.betaBranch);
+    const upsertResult = upsertRuleset(deps, repo, betaRulesetPayload);
+    summary.overwrittenFiles.push(`github-beta-ruleset:${upsertResult}`);
   }
 
-  summary.warnings.push(`Next step: create or update branch "${args.betaBranch}" and run "npm run beta:enter" once on that branch.`);
+  summary.warnings.push(`Trusted Publisher supports a single workflow file per package. Keep publishing on .github/workflows/release.yml for both stable and beta.`);
+  summary.warnings.push(`Next step: run "npm run beta:enter" once on "${args.betaBranch}", commit .changeset/pre.json, and push.`);
   printSummary(`beta setup completed for ${targetDir}`, summary);
 }
 
@@ -1176,7 +1274,7 @@ async function run(argv, dependencies = {}) {
   }
 
   if (parsed.mode === 'setup-beta') {
-    setupBeta(parsed.args);
+    setupBeta(parsed.args, dependencies);
     return;
   }
 
@@ -1197,6 +1295,7 @@ module.exports = {
   run,
   parseRepoFromRemote,
   createBaseRulesetPayload,
+  createBetaRulesetPayload,
   setupGithub,
   setupNpm,
   setupBeta,

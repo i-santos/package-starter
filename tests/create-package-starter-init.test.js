@@ -46,7 +46,6 @@ test('init bootstraps missing standards files, scripts and dependency in existin
   assert.equal(fs.existsSync(path.join(workDir, '.changeset', 'config.json')), true);
   assert.equal(fs.existsSync(path.join(workDir, '.changeset', 'README.md')), true);
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'workflows', 'release.yml')), true);
-  assert.equal(fs.existsSync(path.join(workDir, '.github', 'workflows', 'release-beta.yml')), true);
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'workflows', 'ci.yml')), true);
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'PULL_REQUEST_TEMPLATE.md')), true);
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'CODEOWNERS')), true);
