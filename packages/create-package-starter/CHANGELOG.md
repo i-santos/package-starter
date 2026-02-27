@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.1.0
+
+### Minor Changes
+
+- db7ad4d: Add `init` mode to bootstrap existing npm projects with standardized Changesets scripts and release workflow files.
+
 ## 1.0.0
 
 ### Major Changes
