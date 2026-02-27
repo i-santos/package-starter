@@ -11,6 +11,7 @@ function usage() {
     '  release-cli stable',
     '  release-cli publish [tag]',
     '  release-cli registry [url]',
+    '  release-cli setup',
     '',
     `Registry padrão: ${DEFAULT_REGISTRY}`
   ].join('\n');
@@ -253,6 +254,158 @@ function setRegistry(packageDir, registryUrl) {
   console.log(`.npmrc atualizado: registry=${registryUrl}`);
 }
 
+function ensureDir(dirPath) {
+  fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function ensureFile(filePath, content) {
+  if (fs.existsSync(filePath)) {
+    return false;
+  }
+
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, content);
+  return true;
+}
+
+function updatePackageJsonScripts(packageDir) {
+  const packageJsonPath = path.join(packageDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+
+  packageJson.scripts = packageJson.scripts || {};
+  packageJson.devDependencies = packageJson.devDependencies || {};
+
+  const scriptDefaults = {
+    'release:beta': 'release-cli beta',
+    'release:stable': 'release-cli stable',
+    'release:publish': 'release-cli publish',
+    'registry:start': `release-cli registry ${DEFAULT_REGISTRY}`,
+    'changeset': 'changeset',
+    'version-packages': 'changeset version',
+    'release': 'npm run check && npm run release:publish'
+  };
+
+  let changed = false;
+
+  for (const [name, command] of Object.entries(scriptDefaults)) {
+    if (!packageJson.scripts[name]) {
+      packageJson.scripts[name] = command;
+      changed = true;
+    }
+  }
+
+  if (!packageJson.devDependencies['@changesets/cli']) {
+    packageJson.devDependencies['@changesets/cli'] = '^2.29.7';
+    changed = true;
+  }
+
+  if (changed) {
+    fs.writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`);
+  }
+
+  return changed;
+}
+
+function setupReleaseCi(packageDir) {
+  const changesetConfig = [
+    '{',
+    '  "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",',
+    '  "changelog": "@changesets/cli/changelog",',
+    '  "commit": false,',
+    '  "fixed": [],',
+    '  "linked": [],',
+    '  "access": "public",',
+    '  "baseBranch": "main",',
+    '  "updateInternalDependencies": "patch",',
+    '  "ignore": []',
+    '}',
+    ''
+  ].join('\n');
+
+  const changesetReadme = [
+    '# Changesets',
+    '',
+    '- Crie um changeset em cada PR com mudança de release: `npm run changeset`.',
+    '- O workflow de release cria/atualiza o PR de versão automaticamente.',
+    ''
+  ].join('\n');
+
+  const releaseWorkflow = [
+    'name: Release',
+    '',
+    'on:',
+    '  push:',
+    '    branches:',
+    '      - main',
+    '',
+    'permissions:',
+    '  contents: write',
+    '  pull-requests: write',
+    '  id-token: write',
+    '',
+    'jobs:',
+    '  release:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - name: Checkout',
+    '        uses: actions/checkout@v4',
+    '        with:',
+    '          fetch-depth: 0',
+    '',
+    '      - name: Setup Node.js',
+    '        uses: actions/setup-node@v4',
+    '        with:',
+    '          node-version: 20',
+    '          cache: npm',
+    '          registry-url: https://registry.npmjs.org',
+    '',
+    '      - name: Install',
+    '        run: npm ci',
+    '',
+    '      - name: Check',
+    '        run: npm run check',
+    '',
+    '      - name: Create Release PR or Publish',
+    '        uses: changesets/action@v1',
+    '        with:',
+    '          version: npm run version-packages',
+    '          publish: npm run release',
+    '          title: "chore: release packages"',
+    '          commit: "chore: release packages"',
+    '        env:',
+    '          GITHUB_TOKEN: ${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}',
+    ''
+  ].join('\n');
+
+  const created = [];
+  if (ensureFile(path.join(packageDir, '.changeset', 'config.json'), changesetConfig)) {
+    created.push('.changeset/config.json');
+  }
+  if (ensureFile(path.join(packageDir, '.changeset', 'README.md'), changesetReadme)) {
+    created.push('.changeset/README.md');
+  }
+  if (ensureFile(path.join(packageDir, '.github', 'workflows', 'release.yml'), releaseWorkflow)) {
+    created.push('.github/workflows/release.yml');
+  }
+
+  const packageUpdated = updatePackageJsonScripts(packageDir);
+
+  if (!created.length && !packageUpdated) {
+    console.log('Setup já estava aplicado. Nenhuma alteração necessária.');
+    return;
+  }
+
+  if (created.length) {
+    console.log(`Arquivos criados: ${created.join(', ')}`);
+  }
+
+  if (packageUpdated) {
+    console.log('package.json atualizado com scripts padrão + @changesets/cli.');
+  }
+
+  console.log('Setup de CI/CD de release concluído.');
+}
+
 async function run(argv) {
   const [command, maybeValue] = argv;
 
@@ -280,6 +433,11 @@ async function run(argv) {
 
   if (command === 'publish') {
     releasePublish(packageDir, maybeValue);
+    return;
+  }
+
+  if (command === 'setup') {
+    setupReleaseCi(packageDir);
     return;
   }
 

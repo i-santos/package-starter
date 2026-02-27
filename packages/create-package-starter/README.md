@@ -24,6 +24,11 @@ Generated package includes:
 - `release:stable`
 - `release:publish`
 - `registry:start`
+- `changeset`
+- `version-packages`
+- `release`
+- `.github/workflows/release.yml`
+- `.changeset/config.json`
 
 plus a minimal README, CHANGELOG, `.gitignore`, and check script.
 
