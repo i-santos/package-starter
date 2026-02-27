@@ -37,6 +37,21 @@ npm run release:beta
 - Add changeset in PR: `npm run changeset`
 - Merge to `main`
 - GitHub Actions opens/updates release PR and publishes on merge
+- npm publish authentication is done via npm Trusted Publishing (OIDC), not long-lived tokens
+
+### Trusted Publishing Setup (npm)
+
+Configure this once for each package (`@i-santos/release-cli` and `@i-santos/create-package-starter`):
+
+1. Open npm package settings -> **Trusted publishers**.
+2. Add a GitHub publisher with:
+   - Owner: `i-santos`
+   - Repository: `package-starter`
+   - Workflow file: `.github/workflows/release.yml`
+   - Branch: `main`
+3. Save and repeat for the second package.
+
+After this, the release workflow can publish without `NPM_TOKEN`.
 
 ### Manual fallback (local)
 
