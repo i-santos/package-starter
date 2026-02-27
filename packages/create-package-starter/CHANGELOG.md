@@ -1,5 +1,16 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.1
+
+### Minor Changes
+
+- 8e6aa78: Add beta release setup and stable promotion commands.
+
+  - Add `setup-beta` to configure beta scripts and `release-beta.yml` workflow.
+  - Add `promote-stable` to exit prerelease mode and generate explicit stable-promotion changeset.
+  - Expand templates/init/create defaults with beta scripts and beta workflow scaffolding.
+  - Update docs and tests for beta branch release flow (`release/beta` -> `main`).
+
 ## 1.4.1-beta.0
 
 ### Patch Changes

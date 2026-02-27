@@ -6,6 +6,7 @@
     "@i-santos/create-package-starter": "1.4.1-beta.0"
   },
   "changesets": [
-    "green-lizards-nail"
+    "green-lizards-nail",
+    "tiny-cups-knock"
   ]
 }
