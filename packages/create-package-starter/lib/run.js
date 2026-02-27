@@ -543,6 +543,118 @@ function ensureFileFromTemplate(targetPath, templatePath, options) {
   return 'created';
 }
 
+function ensureReleaseWorkflowBranches(content, defaultBranch, betaBranch) {
+  const lines = content.split('\n');
+  const onIndex = lines.findIndex((line) => line.trim() === 'on:');
+  const permissionsIndex = lines.findIndex((line) => line.trim() === 'permissions:');
+
+  if (onIndex < 0 || permissionsIndex < 0 || permissionsIndex <= onIndex) {
+    return null;
+  }
+
+  const onBlock = lines.slice(onIndex, permissionsIndex);
+  const pushRelativeIndex = onBlock.findIndex((line) => line.trim() === 'push:');
+  if (pushRelativeIndex < 0) {
+    return null;
+  }
+
+  const branchesRelativeIndex = onBlock.findIndex((line) => line.trim() === 'branches:');
+  if (branchesRelativeIndex < 0 || branchesRelativeIndex <= pushRelativeIndex) {
+    return null;
+  }
+
+  const listStart = branchesRelativeIndex + 1;
+  let listEnd = listStart;
+  while (listEnd < onBlock.length && onBlock[listEnd].trim().startsWith('- ')) {
+    listEnd += 1;
+  }
+
+  if (listEnd === listStart) {
+    return null;
+  }
+
+  const existingBranches = onBlock.slice(listStart, listEnd)
+    .map((line) => line.trim().replace(/^- /, '').trim())
+    .filter(Boolean);
+
+  const desiredBranches = [...new Set([defaultBranch, betaBranch])];
+  const mergedBranches = [...existingBranches];
+  for (const branch of desiredBranches) {
+    if (!mergedBranches.includes(branch)) {
+      mergedBranches.push(branch);
+    }
+  }
+
+  const changed = mergedBranches.length !== existingBranches.length
+    || mergedBranches.some((branch, index) => branch !== existingBranches[index]);
+
+  if (!changed) {
+    return {
+      changed: false,
+      content
+    };
+  }
+
+  const updatedOnBlock = [
+    ...onBlock.slice(0, listStart),
+    ...mergedBranches.map((branch) => `      - ${branch}`),
+    ...onBlock.slice(listEnd)
+  ];
+
+  const updatedLines = [
+    ...lines.slice(0, onIndex),
+    ...updatedOnBlock,
+    ...lines.slice(permissionsIndex)
+  ];
+
+  return {
+    changed: true,
+    content: updatedLines.join('\n')
+  };
+}
+
+function upsertReleaseWorkflow(targetPath, templatePath, options) {
+  const exists = fs.existsSync(targetPath);
+  if (!exists || options.force) {
+    if (options.dryRun) {
+      return {
+        result: exists ? 'overwritten' : 'created'
+      };
+    }
+
+    const result = ensureFileFromTemplate(targetPath, templatePath, {
+      force: options.force,
+      variables: options.variables
+    });
+    return { result };
+  }
+
+  const current = fs.readFileSync(targetPath, 'utf8');
+  const ensured = ensureReleaseWorkflowBranches(
+    current,
+    options.variables.DEFAULT_BRANCH,
+    options.variables.BETA_BRANCH
+  );
+
+  if (!ensured) {
+    return {
+      result: 'skipped',
+      warning: `Could not safely update trigger branches in ${path.basename(targetPath)}. Use --force to overwrite from template.`
+    };
+  }
+
+  if (!ensured.changed) {
+    return { result: 'skipped' };
+  }
+
+  if (options.dryRun) {
+    return { result: 'updated' };
+  }
+
+  fs.writeFileSync(targetPath, ensured.content);
+  return { result: 'updated' };
+}
+
 function detectEquivalentManagedFile(packageDir, targetRelativePath) {
   if (targetRelativePath !== '.github/PULL_REQUEST_TEMPLATE.md') {
     return targetRelativePath;
@@ -1170,12 +1282,27 @@ async function setupBeta(args, dependencies = {}) {
 
   if (args.dryRun) {
     logStep('warn', 'Dry-run mode enabled. No remote or file changes will be applied.');
-    if (!fs.existsSync(workflowTargetPath)) {
+    const workflowPreview = upsertReleaseWorkflow(workflowTargetPath, workflowTemplatePath, {
+      force: args.force,
+      dryRun: true,
+      variables: {
+        PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
+        DEFAULT_BRANCH: args.defaultBranch,
+        BETA_BRANCH: args.betaBranch,
+        SCOPE: deriveScope('', packageJson.name || '')
+      }
+    });
+    if (workflowPreview.result === 'created') {
       summary.warnings.push(`dry-run: would create ${workflowRelativePath}`);
-    } else if (args.force) {
+    } else if (workflowPreview.result === 'overwritten') {
       summary.warnings.push(`dry-run: would overwrite ${workflowRelativePath}`);
+    } else if (workflowPreview.result === 'updated') {
+      summary.warnings.push(`dry-run: would update ${workflowRelativePath} trigger branches`);
     } else {
       summary.warnings.push(`dry-run: would keep existing ${workflowRelativePath}`);
+      if (workflowPreview.warning) {
+        summary.warnings.push(`dry-run: ${workflowPreview.warning}`);
+      }
     }
     if (packageJsonChanged) {
       summary.warnings.push('dry-run: would update package.json beta scripts');
@@ -1209,9 +1336,10 @@ async function setupBeta(args, dependencies = {}) {
       }
     }
 
-    logStep('run', `Updating ${workflowRelativePath}...`);
-    const workflowResult = ensureFileFromTemplate(workflowTargetPath, workflowTemplatePath, {
+    logStep('run', `Ensuring ${workflowRelativePath} includes stable+beta triggers...`);
+    const workflowUpsert = upsertReleaseWorkflow(workflowTargetPath, workflowTemplatePath, {
       force: args.force,
+      dryRun: false,
       variables: {
         PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
         DEFAULT_BRANCH: args.defaultBranch,
@@ -1219,6 +1347,7 @@ async function setupBeta(args, dependencies = {}) {
         SCOPE: deriveScope('', packageJson.name || '')
       }
     });
+    const workflowResult = workflowUpsert.result;
 
     if (workflowResult === 'created') {
       summary.createdFiles.push(workflowRelativePath);
@@ -1226,9 +1355,17 @@ async function setupBeta(args, dependencies = {}) {
     } else if (workflowResult === 'overwritten') {
       summary.overwrittenFiles.push(workflowRelativePath);
       logStep('ok', `${workflowRelativePath} overwritten.`);
+    } else if (workflowResult === 'updated') {
+      summary.overwrittenFiles.push(workflowRelativePath);
+      logStep('ok', `${workflowRelativePath} updated with missing branch triggers.`);
     } else {
       summary.skippedFiles.push(workflowRelativePath);
-      logStep('warn', `${workflowRelativePath} already exists; kept as-is.`);
+      if (workflowUpsert.warning) {
+        summary.warnings.push(workflowUpsert.warning);
+        logStep('warn', workflowUpsert.warning);
+      } else {
+        logStep('warn', `${workflowRelativePath} already configured; kept as-is.`);
+      }
     }
 
     if (packageJsonChanged) {

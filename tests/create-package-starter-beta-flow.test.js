@@ -117,6 +117,62 @@ test('setup-beta dry-run does not mutate files', async () => {
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'workflows', 'release.yml')), false);
 });
 
+test('setup-beta updates existing release workflow trigger when beta branch is missing', async () => {
+  const workDir = createPackageDir();
+  fs.mkdirSync(path.join(workDir, '.github', 'workflows'), { recursive: true });
+  fs.writeFileSync(
+    path.join(workDir, '.github', 'workflows', 'release.yml'),
+    [
+      'name: Release',
+      '',
+      'on:',
+      '  push:',
+      '    branches:',
+      '      - main',
+      '',
+      'permissions:',
+      '  contents: write'
+    ].join('\n')
+  );
+
+  const stub = createExecStub([
+    (command, args) => (command === 'gh' && args[0] === '--version' ? { status: 0, stdout: 'gh version 2.0.0' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'auth' ? { status: 0, stdout: 'ok' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'PUT' && args[3] === '/repos/i-santos/firestack/actions/permissions/workflow') {
+        return { status: 0, stdout: '{}' };
+      }
+      return null;
+    },
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && args[3] === '/repos/i-santos/firestack/branches/release%2Fbeta') {
+        return { status: 0, stdout: '{}' };
+      }
+      return null;
+    },
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && args[3] === '/repos/i-santos/firestack/rulesets') {
+        return { status: 0, stdout: '[]' };
+      }
+      return null;
+    },
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'POST' && args[3] === '/repos/i-santos/firestack/rulesets') {
+        return { status: 0, stdout: '{}' };
+      }
+      return null;
+    }
+  ]);
+
+  await run(['setup-beta', '--dir', workDir, '--repo', 'i-santos/firestack', '--beta-branch', 'release/beta', '--yes'], {
+    exec: stub.exec
+  });
+
+  const workflow = fs.readFileSync(path.join(workDir, '.github', 'workflows', 'release.yml'), 'utf8');
+  assert.match(workflow, /- main/);
+  assert.match(workflow, /- release\/beta/);
+});
+
 test('promote-stable exits pre mode and creates promotion changeset', async () => {
   const workDir = createPackageDir();
   fs.mkdirSync(path.join(workDir, '.changeset'), { recursive: true });
