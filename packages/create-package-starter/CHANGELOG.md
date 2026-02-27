@@ -1,5 +1,15 @@
 # @i-santos/create-package-starter
 
+## 1.3.0
+
+### Minor Changes
+
+- 7609cc4: Improve `setup-github` defaults to better support release automation.
+
+  - Configure GitHub Actions workflow permissions to `write` at repository level.
+  - Enable workflow ability to approve pull request reviews.
+  - Change default branch ruleset approval requirement from 1 reviewer to 0.
+
 ## 1.2.0
 
 ### Minor Changes
