@@ -1,7 +1,6 @@
 {
   "name": "__PACKAGE_NAME__",
   "version": "0.1.0",
-  "private": true,
   "description": "Pacote gerado pelo package-starter",
   "scripts": {
     "check": "node scripts/check.js",
@@ -11,6 +10,6 @@
     "registry:start": "release-cli registry http://127.0.0.1:4873"
   },
   "devDependencies": {
-    "release-cli": "__RELEASE_CLI_DEP__"
+    "@i-santos/release-cli": "__RELEASE_CLI_DEP__"
   }
 }

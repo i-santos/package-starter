@@ -1,18 +1,18 @@
 # __PACKAGE_NAME__
 
-Pacote criado pelo starter com fluxo de release padronizado.
+Package generated from `package-starter` with standardized release scripts.
 
-## Comandos
+## Scripts
 
 - `npm run check`
-- `npm run registry:start` (usa `http://127.0.0.1:4873`)
-- `npm run release:beta` (atômico: bump beta + publish + commit)
-- `npm run release:stable` (atômico: promove/patch + publish + commit)
-- `npm run release:publish` (só publish, sem bump/commit)
+- `npm run registry:start` (default registry: `http://127.0.0.1:4873`)
+- `npm run release:beta` (atomic: bump beta + publish + commit)
+- `npm run release:stable` (atomic: promote/patch + publish + commit)
+- `npm run release:publish` (publish only, no bump/commit)
 
-## Fluxo rápido
+## Typical flow
 
-1. Garanta git limpo.
-2. Aponte o registry local: `npm run registry:start`.
-3. Faça release beta: `npm run release:beta`.
-4. Quando validar, faça stable: `npm run release:stable`.
+1. Ensure git is clean.
+2. Set registry if needed: `npm run registry:start`.
+3. Run beta release: `npm run release:beta`.
+4. Promote to stable when ready: `npm run release:stable`.

@@ -1,57 +1,105 @@
 # package-starter
 
-Starter para padronizar pacotes npm com release `beta`/`stable` usando uma CLI local compartilhada.
+[![CI](https://github.com/i-santos/package-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/i-santos/package-starter/actions/workflows/ci.yml)
+[![npm release-cli](https://img.shields.io/npm/v/@i-santos/release-cli)](https://www.npmjs.com/package/@i-santos/release-cli)
+[![npm create-package-starter](https://img.shields.io/npm/v/@i-santos/create-package-starter)](https://www.npmjs.com/package/@i-santos/create-package-starter)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
-## Arquitetura
+Starter workspace to standardize npm package creation and release.
 
-- `packages/release-cli`: CLI CommonJS com os comandos `beta`, `stable`, `publish` e `registry`.
-- `templates/npm-package`: template base para novos pacotes.
-- `scripts/create-package.js`: gerador de pacote a partir do template.
-- `examples/`: área de exemplos gerados.
+## What This Solves
+
+- Reusable package scaffolding with a consistent release script set.
+- Atomic local fallback release commands (`beta` / `stable`).
+- Official release pipeline using Changesets + GitHub Actions.
+
+## Architecture
+
+- `packages/release-cli`: release command runner (`beta`, `stable`, `publish`, `registry`).
+- `packages/create-package-starter`: `create-*` package for new package scaffolding.
+- `templates/npm-package`: local workspace template.
+- `examples/hello-package`: generated reference package.
 
 ## Quickstart
 
-1. `npm install`
-2. `npm run create:package -- --name hello-package`
-3. `cd examples/hello-package`
-4. `npm run registry:start`
-5. `npm run release:beta`
+```bash
+npm install
+npm run create:package -- --name @i-santos/hello-package
+cd examples/hello-package
+npm run check
+npm run release:beta
+```
 
-## Criar novo pacote
+## Release Model
 
-- Comando padrão (gera em `examples/`):
-  - `npm run create:package -- --name meu-pacote`
-- Para gerar direto em `packages/`:
-  - `npm run create:package -- --name meu-pacote --dir packages`
+### Official (production)
 
-## Release beta/stable (atômico)
+- Add changeset in PR: `npm run changeset`
+- Merge to `main`
+- GitHub Actions opens/updates release PR and publishes on merge
+
+### Manual fallback (local)
+
+Use `release-cli` scripts inside a package:
 
 - `npm run release:beta`
-  - exige git limpo
-  - bump prerelease beta
-  - publica com `npm publish --tag beta`
-  - só commita após publish bem-sucedido (`chore(release): vX.Y.Z-beta.N`)
-  - se publish falhar, rollback automático da versão (sem commit)
 - `npm run release:stable`
-  - exige git limpo
-  - se versão atual for beta, promove para `X.Y.Z`
-  - se já for stable, faz bump patch
-  - publica com `npm publish`
-  - só commita após publish bem-sucedido (`chore(release): vX.Y.Z`)
-  - se publish falhar, rollback automático da versão (sem commit)
 - `npm run release:publish`
-  - apenas publica versão atual
-  - sem bump e sem commit
 
-## Verdaccio / Registry local
+`beta` and `stable` are atomic: if publish fails, version rollback is applied and no release commit is created.
 
-- Definir registry local no pacote:
+## Migration Guide (existing npm package)
+
+1. Install dev dependency:
+
+```bash
+npm i -D @i-santos/release-cli
+```
+
+2. Add scripts:
+
+```json
+{
+  "scripts": {
+    "release:beta": "release-cli beta",
+    "release:stable": "release-cli stable",
+    "release:publish": "release-cli publish",
+    "registry:start": "release-cli registry http://127.0.0.1:4873"
+  }
+}
+```
+
+3. Remove old release scripts and standardize on this flow.
+
+## Creating New Packages
+
+- Local workspace generator:
+  - `npm run create:package -- --name @i-santos/swarm`
+- Published `create-*` package:
+  - `npx @i-santos/create-package-starter --name @i-santos/swarm`
+
+## Verdaccio (Optional Local Dev)
+
+- Set package registry quickly:
   - `npm run registry:start`
-- Ou manualmente:
-  - `npx release-cli registry http://127.0.0.1:4873`
-- Isso grava/atualiza `registry=...` no `.npmrc` do pacote.
-- Em workspace, o `release-cli` passa `--registry` explicitamente no `publish`.
+- Or direct command:
+  - `npx @i-santos/release-cli registry http://127.0.0.1:4873`
+- Optional host-level `.npmrc`:
+  - `@i-santos:registry=http://127.0.0.1:4873`
 
-## Validação
+## Troubleshooting
 
-- `npm run check`
+- `Git is not clean`: commit/stash changes before `release:beta` or `release:stable`.
+- Publish auth errors: run `npm login` for npmjs.org (or set proper token in CI).
+- Registry mismatch: ensure `.npmrc` has expected `registry=` value.
+
+## Branch & PR Policy
+
+- Keep `main` protected.
+- Require PR review + CI checks before merge.
+- Use conventional commit prefixes.
+
+## Roadmap
+
+- Add integration tests against a temporary local npm registry in CI.
+- Add optional changelog sections by package domain.
