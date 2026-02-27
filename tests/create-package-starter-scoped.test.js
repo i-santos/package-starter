@@ -25,6 +25,11 @@ test('create-package-starter accepts scoped package names and includes required 
   assert.equal(packageJson.scripts.changeset, 'changeset');
   assert.equal(packageJson.scripts['version-packages'], 'changeset version');
   assert.equal(packageJson.scripts.release, 'npm run check && changeset publish');
+  assert.equal(packageJson.scripts['beta:enter'], 'changeset pre enter beta');
+  assert.equal(packageJson.scripts['beta:exit'], 'changeset pre exit');
+  assert.equal(packageJson.scripts['beta:version'], 'changeset version');
+  assert.equal(packageJson.scripts['beta:publish'], 'changeset publish');
+  assert.equal(packageJson.scripts['beta:promote'], 'create-package-starter promote-stable --dir .');
   assert.equal(packageJson.scripts['release:beta'], undefined);
   assert.equal(packageJson.scripts['release:stable'], undefined);
   assert.equal(packageJson.scripts['release:publish'], undefined);
@@ -34,6 +39,7 @@ test('create-package-starter accepts scoped package names and includes required 
   assert.equal(config.baseBranch, 'main');
 
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'release.yml')), true);
+  assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'release-beta.yml')), true);
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'ci.yml')), true);
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'PULL_REQUEST_TEMPLATE.md')), true);
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'CODEOWNERS')), true);
