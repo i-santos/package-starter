@@ -12,6 +12,11 @@
     "test": "node --test tests/*.test.js",
     "changeset": "npx @changesets/cli",
     "version-packages": "npx @changesets/cli version",
-    "release": "npm run check && npx @changesets/cli publish"
+    "release": "npm run check && npx @changesets/cli publish",
+    "beta:enter": "changeset pre enter beta",
+    "beta:exit": "changeset pre exit",
+    "beta:version": "changeset version",
+    "beta:publish": "changeset publish",
+    "beta:promote": "create-package-starter promote-stable --dir ."
   }
 }
