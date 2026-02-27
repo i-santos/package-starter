@@ -581,7 +581,7 @@ function createBaseRulesetPayload(defaultBranch) {
       {
         type: 'pull_request',
         parameters: {
-          required_approving_review_count: 1,
+          required_approving_review_count: 0,
           dismiss_stale_reviews_on_push: true,
           require_code_owner_review: false,
           require_last_push_approval: false,
@@ -663,6 +663,26 @@ function upsertRuleset(deps, repo, rulesetPayload) {
   return 'updated';
 }
 
+function updateWorkflowPermissions(deps, repo) {
+  const workflowPermissionsPayload = {
+    default_workflow_permissions: 'write',
+    can_approve_pull_request_reviews: true
+  };
+
+  const result = ghApi(
+    deps,
+    'PUT',
+    `/repos/${repo}/actions/permissions/workflow`,
+    workflowPermissionsPayload
+  );
+
+  if (result.status !== 0) {
+    throw new Error(
+      `Failed to update workflow permissions: ${result.stderr || result.stdout}`.trim()
+    );
+  }
+}
+
 function setupGithub(args, dependencies = {}) {
   const deps = {
     exec: dependencies.exec || execCommand
@@ -674,10 +694,17 @@ function setupGithub(args, dependencies = {}) {
   const rulesetPayload = createRulesetPayload(args);
   const summary = createSummary();
 
-  summary.updatedScriptKeys.push('repository.default_branch', 'repository.delete_branch_on_merge', 'repository.allow_auto_merge', 'repository.merge_policy');
+  summary.updatedScriptKeys.push(
+    'repository.default_branch',
+    'repository.delete_branch_on_merge',
+    'repository.allow_auto_merge',
+    'repository.merge_policy',
+    'actions.default_workflow_permissions'
+  );
 
   if (args.dryRun) {
     summary.warnings.push(`dry-run: would update repository settings for ${repo}`);
+    summary.warnings.push(`dry-run: would set actions workflow permissions to write for ${repo}`);
     summary.warnings.push(`dry-run: would upsert ruleset "${rulesetPayload.name}" for refs/heads/${args.defaultBranch}`);
     printSummary(`GitHub settings dry-run for ${repo}`, summary);
     return;
@@ -696,6 +723,8 @@ function setupGithub(args, dependencies = {}) {
   if (patchRepo.status !== 0) {
     throw new Error(`Failed to update repository settings: ${patchRepo.stderr || patchRepo.stdout}`.trim());
   }
+
+  updateWorkflowPermissions(deps, repo);
 
   const upsertResult = upsertRuleset(deps, repo, rulesetPayload);
   summary.overwrittenFiles.push(`github-ruleset:${upsertResult}`);
