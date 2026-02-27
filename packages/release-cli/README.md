@@ -60,6 +60,8 @@ npm i -D @i-santos/release-cli
   - `registry:start`
 - Adds `@changesets/cli` to `devDependencies` when missing.
 - Idempotent: existing files/scripts are preserved.
+- Workflow token uses `CHANGESETS_GH_TOKEN` (fallback to `GITHUB_TOKEN`).
+  For protected `main`, set `CHANGESETS_GH_TOKEN` so release PRs trigger required checks.
 
 ## Typical scripts
 

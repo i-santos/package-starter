@@ -38,6 +38,8 @@ npm run release:beta
 - Merge to `main`
 - GitHub Actions opens/updates release PR and publishes on merge
 - npm publish authentication is done via npm Trusted Publishing (OIDC), not long-lived tokens
+- Recommended for protected branches: set repository secret `CHANGESETS_GH_TOKEN` (PAT/App token).
+  This allows release PR commits to trigger required CI checks (`check (18)` / `check (20)`).
 
 ### Trusted Publishing Setup (npm)
 

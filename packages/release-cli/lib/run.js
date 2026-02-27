@@ -373,7 +373,7 @@ function setupReleaseCi(packageDir) {
     '          title: "chore: release packages"',
     '          commit: "chore: release packages"',
     '        env:',
-    '          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}',
+    '          GITHUB_TOKEN: ${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}',
     ''
   ].join('\n');
 
