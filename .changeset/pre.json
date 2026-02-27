@@ -1,0 +1,11 @@
+{
+  "mode": "pre",
+  "tag": "beta",
+  "initialVersions": {
+    "hello-package": "0.1.2",
+    "@i-santos/create-package-starter": "1.4.0"
+  },
+  "changesets": [
+    "green-lizards-nail"
+  ]
+}

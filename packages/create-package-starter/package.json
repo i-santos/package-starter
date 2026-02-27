@@ -1,6 +1,6 @@
 {
   "name": "@i-santos/create-package-starter",
-  "version": "1.4.0",
+  "version": "1.4.1-beta.0",
   "description": "Scaffold new npm packages with a standardized Changesets release workflow",
   "license": "MIT",
   "author": "Igor Santos",
