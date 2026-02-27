@@ -1,5 +1,17 @@
 # @i-santos/create-package-starter
 
+## 1.4.0
+
+### Minor Changes
+
+- 36924f3: Add `setup-npm` command to bootstrap npm first-publish readiness.
+
+  - Validate npm CLI availability and authentication.
+  - Check whether package exists on npm.
+  - Support optional first publish execution with `--publish-first`.
+  - Support `--dry-run` to preview first publish without mutating.
+  - Print Trusted Publisher manual next steps after setup.
+
 ## 1.3.0
 
 ### Minor Changes
