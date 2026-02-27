@@ -1,27 +1,21 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_RELEASE_CLI_PKG = '@i-santos/release-cli';
-const DEFAULT_RELEASE_CLI_VERSION = '^0.1.0';
-
 function usage() {
   return [
     'Uso:',
-    '  create-package-starter --name <nome> [--out <diretorio>] [--release-cli-pkg <pkg>] [--release-cli-version <versao>]',
+    '  create-package-starter --name <nome> [--out <diretorio>]',
     '',
     'Exemplo:',
     '  create-package-starter --name hello-package',
     '  create-package-starter --name @i-santos/swarm',
-    '  create-package-starter --name hello-package --out ./packages',
-    '  create-package-starter --name hello-package --release-cli-pkg @i-santos/release-cli --release-cli-version ^1.0.0'
+    '  create-package-starter --name hello-package --out ./packages'
   ].join('\n');
 }
 
 function parseArgs(argv) {
   const args = {
-    out: process.cwd(),
-    releaseCliPkg: DEFAULT_RELEASE_CLI_PKG,
-    releaseCliVersion: DEFAULT_RELEASE_CLI_VERSION
+    out: process.cwd()
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -35,18 +29,6 @@ function parseArgs(argv) {
 
     if (token === '--out') {
       args.out = argv[i + 1];
-      i += 1;
-      continue;
-    }
-
-    if (token === '--release-cli-pkg') {
-      args.releaseCliPkg = argv[i + 1];
-      i += 1;
-      continue;
-    }
-
-    if (token === '--release-cli-version') {
-      args.releaseCliVersion = argv[i + 1];
       i += 1;
       continue;
     }
@@ -96,10 +78,7 @@ function copyDirRecursive(sourceDir, targetDir) {
 
 function renderTemplateFile(filePath, variables) {
   const source = fs.readFileSync(filePath, 'utf8');
-  const output = source
-    .replace(/__PACKAGE_NAME__/g, variables.packageName)
-    .replace(/__RELEASE_CLI_PKG__/g, variables.releaseCliPkg)
-    .replace(/__RELEASE_CLI_VERSION__/g, variables.releaseCliVersion);
+  const output = source.replace(/__PACKAGE_NAME__/g, variables.packageName);
 
   fs.writeFileSync(filePath, output);
 }
@@ -114,10 +93,6 @@ async function run(argv) {
 
   if (!validateName(args.name)) {
     throw new Error('Erro: informe um nome válido com --name (ex: hello-package ou @i-santos/swarm).');
-  }
-
-  if (!args.releaseCliPkg || !args.releaseCliVersion) {
-    throw new Error('Erro: --release-cli-pkg e --release-cli-version devem ser informados corretamente.');
   }
 
   const packageRoot = path.resolve(__dirname, '..');
@@ -137,15 +112,11 @@ async function run(argv) {
   copyDirRecursive(templateDir, targetDir);
 
   renderTemplateFile(path.join(targetDir, 'package.json'), {
-    packageName: args.name,
-    releaseCliPkg: args.releaseCliPkg,
-    releaseCliVersion: args.releaseCliVersion
+    packageName: args.name
   });
 
   renderTemplateFile(path.join(targetDir, 'README.md'), {
-    packageName: args.name,
-    releaseCliPkg: args.releaseCliPkg,
-    releaseCliVersion: args.releaseCliVersion
+    packageName: args.name
   });
 
   console.log(`Pacote criado em ${targetDir}`);
