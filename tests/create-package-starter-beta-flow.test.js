@@ -92,14 +92,21 @@ test('setup-beta updates release workflow and scripts plus github branch/ruleset
 
   const workflowPath = path.join(workDir, '.github', 'workflows', 'release.yml');
   assert.equal(fs.existsSync(workflowPath), true);
+  const ciWorkflowPath = path.join(workDir, '.github', 'workflows', 'ci.yml');
+  assert.equal(fs.existsSync(ciWorkflowPath), true);
 
   const workflow = fs.readFileSync(workflowPath, 'utf8');
   assert.match(workflow, /- main/);
   assert.match(workflow, /- release\/beta/);
   assert.match(workflow, /publish: npm run release/);
+  const ciWorkflow = fs.readFileSync(ciWorkflowPath, 'utf8');
+  assert.match(ciWorkflow, /- main/);
+  assert.match(ciWorkflow, /- release\/beta/);
 
   const rulesetPostCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'api' && call.args[2] === 'POST' && call.args[3] === '/repos/i-santos/firestack/rulesets');
   assert.ok(rulesetPostCall, 'expected beta ruleset upsert');
+  const rulesetPayload = JSON.parse(rulesetPostCall.options.input);
+  assert.equal(rulesetPayload.rules.some((rule) => rule.type === 'required_status_checks'), true);
 });
 
 test('setup-beta dry-run does not mutate files', async () => {
@@ -115,6 +122,7 @@ test('setup-beta dry-run does not mutate files', async () => {
   const packageJsonAfter = fs.readFileSync(path.join(workDir, 'package.json'), 'utf8');
   assert.equal(packageJsonAfter, packageJsonBefore);
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'workflows', 'release.yml')), false);
+  assert.equal(fs.existsSync(path.join(workDir, '.github', 'workflows', 'ci.yml')), false);
 });
 
 test('setup-beta updates existing release workflow trigger when beta branch is missing', async () => {
@@ -132,6 +140,22 @@ test('setup-beta updates existing release workflow trigger when beta branch is m
       '',
       'permissions:',
       '  contents: write'
+    ].join('\n')
+  );
+  fs.writeFileSync(
+    path.join(workDir, '.github', 'workflows', 'ci.yml'),
+    [
+      'name: CI',
+      '',
+      'on:',
+      '  pull_request:',
+      '  push:',
+      '    branches:',
+      '      - main',
+      '',
+      'jobs:',
+      '  check:',
+      '    runs-on: ubuntu-latest'
     ].join('\n')
   );
 
@@ -171,6 +195,9 @@ test('setup-beta updates existing release workflow trigger when beta branch is m
   const workflow = fs.readFileSync(path.join(workDir, '.github', 'workflows', 'release.yml'), 'utf8');
   assert.match(workflow, /- main/);
   assert.match(workflow, /- release\/beta/);
+  const ciWorkflow = fs.readFileSync(path.join(workDir, '.github', 'workflows', 'ci.yml'), 'utf8');
+  assert.match(ciWorkflow, /- main/);
+  assert.match(ciWorkflow, /- release\/beta/);
 });
 
 test('promote-stable exits pre mode and creates promotion changeset', async () => {
