@@ -359,6 +359,8 @@ function setupReleaseCi(packageDir) {
     '          cache: npm',
     '          registry-url: https://registry.npmjs.org',
     '',
+    '      - run: npm install -g npm@latest',
+    '',
     '      - name: Install',
     '        run: npm ci',
     '',
@@ -369,10 +371,11 @@ function setupReleaseCi(packageDir) {
     '        uses: changesets/action@v1',
     '        with:',
     '          version: npm run version-packages',
-    '          publish: env -u NODE_AUTH_TOKEN -u NPM_TOKEN npm run release',
+    '          publish: npm run release',
     '          title: "chore: release packages"',
     '          commit: "chore: release packages"',
     '        env:',
+    '          NODE_AUTH_TOKEN: ""',
     '          GITHUB_TOKEN: ${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}',
     ''
   ].join('\n');
