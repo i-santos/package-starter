@@ -84,7 +84,7 @@ test('setup-beta updates release workflow and scripts plus github branch/ruleset
     }
   ]);
 
-  await run(['setup-beta', '--dir', workDir, '--repo', 'i-santos/firestack', '--beta-branch', 'release/beta'], { exec: stub.exec });
+  await run(['setup-beta', '--dir', workDir, '--repo', 'i-santos/firestack', '--beta-branch', 'release/beta', '--yes'], { exec: stub.exec });
 
   const pkg = JSON.parse(fs.readFileSync(path.join(workDir, 'package.json'), 'utf8'));
   assert.equal(pkg.scripts['beta:enter'], 'changeset pre enter beta');
@@ -110,7 +110,7 @@ test('setup-beta dry-run does not mutate files', async () => {
     (command, args) => (command === 'gh' && args[0] === 'auth' ? { status: 0, stdout: 'ok' } : null)
   ]);
 
-  await run(['setup-beta', '--dir', workDir, '--repo', 'i-santos/firestack', '--dry-run'], { exec: stub.exec });
+  await run(['setup-beta', '--dir', workDir, '--repo', 'i-santos/firestack', '--dry-run', '--yes'], { exec: stub.exec });
 
   const packageJsonAfter = fs.readFileSync(path.join(workDir, 'package.json'), 'utf8');
   assert.equal(packageJsonAfter, packageJsonBefore);

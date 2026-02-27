@@ -48,6 +48,7 @@ Bootstrap beta release flow:
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
 - `--force` (overwrite managed scripts/workflow)
 - `--dry-run` (prints intended operations only)
+- `--yes` (skip interactive confirmations)
 
 Prepare stable promotion from beta track:
 
@@ -120,6 +121,7 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - creates/preserves `.github/workflows/release.yml` with beta+stable branch triggers
 - ensures `release/beta` branch exists remotely (created from default branch if missing)
 - applies beta branch protection ruleset on GitHub
+- asks for confirmation before mutating repository settings and again before overwriting existing beta ruleset
 - supports safe-merge by default and `--force` overwrite
 - supports configurable beta branch (`release/beta` by default)
 

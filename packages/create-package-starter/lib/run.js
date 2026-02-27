@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const readline = require('readline/promises');
 
 const CHANGESETS_DEP = '@changesets/cli';
 const CHANGESETS_DEP_VERSION = '^2.29.7';
@@ -25,7 +26,7 @@ function usage() {
     '  create-package-starter --name <name> [--out <directory>] [--default-branch <branch>]',
     '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>]',
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
-    '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--force] [--dry-run]',
+    '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--force] [--dry-run] [--yes]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -231,6 +232,7 @@ function parseSetupBetaArgs(argv) {
     betaBranch: 'release/beta',
     defaultBranch: DEFAULT_BASE_BRANCH,
     force: false,
+    yes: false,
     dryRun: false
   };
 
@@ -263,6 +265,11 @@ function parseSetupBetaArgs(argv) {
 
     if (token === '--force') {
       args.force = true;
+      continue;
+    }
+
+    if (token === '--yes') {
+      args.yes = true;
       continue;
     }
 
@@ -494,6 +501,26 @@ function logStep(status, message) {
   const prefix = labels[status] || '[INFO]';
   const writer = status === 'err' ? console.error : console.log;
   writer(`${prefix} ${message}`);
+}
+
+async function confirmOrThrow(questionText) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(`Confirmation required but no interactive terminal was detected. Re-run with --yes if you want to proceed non-interactively.`);
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  try {
+    const answer = await rl.question(`${questionText}\nType "yes" to continue: `);
+    if (answer.trim().toLowerCase() !== 'yes') {
+      throw new Error('Operation cancelled by user.');
+    }
+  } finally {
+    rl.close();
+  }
 }
 
 function ensureFileFromTemplate(targetPath, templatePath, options) {
@@ -947,6 +974,30 @@ function ensureBranchExists(deps, repo, defaultBranch, targetBranch) {
   return 'created';
 }
 
+function branchExists(deps, repo, targetBranch) {
+  const encodedTarget = encodeURIComponent(targetBranch);
+  const getTarget = ghApi(deps, 'GET', `/repos/${repo}/branches/${encodedTarget}`);
+  if (getTarget.status === 0) {
+    return true;
+  }
+
+  if (isNotFoundResponse(getTarget)) {
+    return false;
+  }
+
+  throw new Error(`Failed to check branch "${targetBranch}": ${getTarget.stderr || getTarget.stdout}`.trim());
+}
+
+function findRulesetByName(deps, repo, name) {
+  const listResult = ghApi(deps, 'GET', `/repos/${repo}/rulesets`);
+  if (listResult.status !== 0) {
+    throw new Error(`Failed to list rulesets: ${listResult.stderr || listResult.stdout}`.trim());
+  }
+
+  const rulesets = parseJsonOutput(listResult.stdout || '[]', 'Failed to parse rulesets response from GitHub API.');
+  return rulesets.find((ruleset) => ruleset.name === name) || null;
+}
+
 function ensureNpmAvailable(deps) {
   const version = deps.exec('npm', ['--version']);
   if (version.status !== 0) {
@@ -1050,7 +1101,7 @@ function setupNpm(args, dependencies = {}) {
   printSummary(`npm setup completed for ${packageJson.name}`, summary);
 }
 
-function setupBeta(args, dependencies = {}) {
+async function setupBeta(args, dependencies = {}) {
   const deps = {
     exec: dependencies.exec || execCommand
   };
@@ -1134,6 +1185,30 @@ function setupBeta(args, dependencies = {}) {
     summary.warnings.push(`dry-run: would set Actions workflow permissions to write for ${repo}`);
     summary.warnings.push(`dry-run: beta branch configured as ${args.betaBranch}`);
   } else {
+    const betaRulesetPayload = createBetaRulesetPayload(args.betaBranch);
+    const doesBranchExist = branchExists(deps, repo, args.betaBranch);
+    const existingRuleset = findRulesetByName(deps, repo, betaRulesetPayload.name);
+
+    if (args.yes) {
+      logStep('warn', 'Confirmation prompts skipped due to --yes.');
+    } else {
+      await confirmOrThrow(
+        [
+          `This will modify GitHub repository settings for ${repo}:`,
+          `- set Actions workflow permissions to write`,
+          `- ensure branch "${args.betaBranch}" exists${doesBranchExist ? ' (already exists)' : ' (will be created)'}`,
+          `- apply branch protection ruleset "${betaRulesetPayload.name}"`,
+          `- update local ${workflowRelativePath} and package.json beta scripts`
+        ].join('\n')
+      );
+
+      if (existingRuleset) {
+        await confirmOrThrow(
+          `Ruleset "${betaRulesetPayload.name}" already exists and will be overwritten.`
+        );
+      }
+    }
+
     logStep('run', `Updating ${workflowRelativePath}...`);
     const workflowResult = ensureFileFromTemplate(workflowTargetPath, workflowTemplatePath, {
       force: args.force,
@@ -1179,7 +1254,6 @@ function setupBeta(args, dependencies = {}) {
     }
 
     logStep('run', `Applying protection ruleset to "${args.betaBranch}"...`);
-    const betaRulesetPayload = createBetaRulesetPayload(args.betaBranch);
     const upsertResult = upsertRuleset(deps, repo, betaRulesetPayload);
     summary.overwrittenFiles.push(`github-beta-ruleset:${upsertResult}`);
     logStep('ok', `Beta branch ruleset ${upsertResult}.`);

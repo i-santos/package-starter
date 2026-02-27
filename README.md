@@ -98,6 +98,9 @@ Bootstrap beta flow:
 npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
 ```
 
+By default the command asks for confirmation before mutating GitHub settings/rulesets.
+Use `--yes` only for non-interactive/automation runs.
+
 Promote beta to stable:
 
 ```bash
