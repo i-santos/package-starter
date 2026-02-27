@@ -1,6 +1,6 @@
 {
   "name": "@i-santos/release-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Release automation CLI with atomic beta/stable flows for npm packages",
   "license": "MIT",
   "author": "Igor Santos",

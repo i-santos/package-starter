@@ -1,6 +1,6 @@
 {
   "name": "@i-santos/create-package-starter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Scaffold new npm packages with standardized release scripts",
   "license": "MIT",
   "author": "Igor Santos",
