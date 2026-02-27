@@ -9,7 +9,7 @@
   "scripts": {
     "create:package": "node scripts/create-package.js",
     "check": "npm run test && node scripts/check-workspace.js",
-    "test": "node --test tests/**/*.test.js",
+    "test": "node --test tests/*.test.js",
     "changeset": "npx @changesets/cli",
     "version-packages": "npx @changesets/cli version",
     "release": "npm run check && npx @changesets/cli publish"
