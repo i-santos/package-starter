@@ -484,6 +484,18 @@ function printSummary(title, summary) {
   console.log(`warnings: ${list(summary.warnings)}`);
 }
 
+function logStep(status, message) {
+  const labels = {
+    run: '[RUN ]',
+    ok: '[OK  ]',
+    warn: '[WARN]',
+    err: '[ERR ]'
+  };
+  const prefix = labels[status] || '[INFO]';
+  const writer = status === 'err' ? console.error : console.log;
+  writer(`${prefix} ${message}`);
+}
+
 function ensureFileFromTemplate(targetPath, templatePath, options) {
   const exists = fs.existsSync(targetPath);
 
@@ -1058,8 +1070,21 @@ function setupBeta(args, dependencies = {}) {
   const packageJson = readJsonFile(packageJsonPath);
   packageJson.scripts = packageJson.scripts || {};
 
-  ensureGhAvailable(deps);
+  logStep('run', 'Checking GitHub CLI availability and authentication...');
+  try {
+    ensureGhAvailable(deps);
+    logStep('ok', 'GitHub CLI is available and authenticated.');
+  } catch (error) {
+    logStep('err', error.message);
+    if (error.message.includes('not authenticated')) {
+      logStep('warn', 'Run "gh auth login" and retry.');
+    }
+    throw error;
+  }
+
+  logStep('run', 'Resolving repository target...');
   const repo = resolveRepo(args, deps);
+  logStep('ok', `Using repository ${repo}.`);
 
   const summary = createSummary();
   summary.updatedScriptKeys.push('github.beta_branch', 'github.beta_ruleset', 'actions.default_workflow_permissions');
@@ -1093,6 +1118,7 @@ function setupBeta(args, dependencies = {}) {
   }
 
   if (args.dryRun) {
+    logStep('warn', 'Dry-run mode enabled. No remote or file changes will be applied.');
     if (!fs.existsSync(workflowTargetPath)) {
       summary.warnings.push(`dry-run: would create ${workflowRelativePath}`);
     } else if (args.force) {
@@ -1108,6 +1134,7 @@ function setupBeta(args, dependencies = {}) {
     summary.warnings.push(`dry-run: would set Actions workflow permissions to write for ${repo}`);
     summary.warnings.push(`dry-run: beta branch configured as ${args.betaBranch}`);
   } else {
+    logStep('run', `Updating ${workflowRelativePath}...`);
     const workflowResult = ensureFileFromTemplate(workflowTargetPath, workflowTemplatePath, {
       force: args.force,
       variables: {
@@ -1120,28 +1147,42 @@ function setupBeta(args, dependencies = {}) {
 
     if (workflowResult === 'created') {
       summary.createdFiles.push(workflowRelativePath);
+      logStep('ok', `${workflowRelativePath} created.`);
     } else if (workflowResult === 'overwritten') {
       summary.overwrittenFiles.push(workflowRelativePath);
+      logStep('ok', `${workflowRelativePath} overwritten.`);
     } else {
       summary.skippedFiles.push(workflowRelativePath);
+      logStep('warn', `${workflowRelativePath} already exists; kept as-is.`);
     }
 
     if (packageJsonChanged) {
+      logStep('run', 'Updating package.json beta scripts...');
       writeJsonFile(packageJsonPath, packageJson);
+      logStep('ok', 'package.json beta scripts updated.');
+    } else {
+      logStep('warn', 'package.json beta scripts already present; no changes needed.');
     }
 
+    logStep('run', 'Applying GitHub Actions workflow permissions...');
     updateWorkflowPermissions(deps, repo);
+    logStep('ok', 'Workflow permissions configured.');
 
+    logStep('run', `Ensuring branch "${args.betaBranch}" exists...`);
     const branchResult = ensureBranchExists(deps, repo, args.defaultBranch, args.betaBranch);
     if (branchResult === 'created') {
       summary.createdFiles.push(`github-branch:${args.betaBranch}`);
+      logStep('ok', `Branch "${args.betaBranch}" created from "${args.defaultBranch}".`);
     } else {
       summary.skippedFiles.push(`github-branch:${args.betaBranch}`);
+      logStep('warn', `Branch "${args.betaBranch}" already exists.`);
     }
 
+    logStep('run', `Applying protection ruleset to "${args.betaBranch}"...`);
     const betaRulesetPayload = createBetaRulesetPayload(args.betaBranch);
     const upsertResult = upsertRuleset(deps, repo, betaRulesetPayload);
     summary.overwrittenFiles.push(`github-beta-ruleset:${upsertResult}`);
+    logStep('ok', `Beta branch ruleset ${upsertResult}.`);
   }
 
   summary.warnings.push(`Trusted Publisher supports a single workflow file per package. Keep publishing on .github/workflows/release.yml for both stable and beta.`);
