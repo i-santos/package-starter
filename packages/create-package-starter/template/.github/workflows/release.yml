@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     branches:
-      - main
+      - __DEFAULT_BRANCH__
 
 permissions:
   contents: write
@@ -26,8 +26,6 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
-      - run: npm install -g npm@latest
-
       - name: Install
         run: npm ci
 
@@ -42,5 +40,4 @@ jobs:
           title: "chore: release packages"
           commit: "chore: release packages"
         env:
-          NODE_AUTH_TOKEN: ""
           GITHUB_TOKEN: ${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}

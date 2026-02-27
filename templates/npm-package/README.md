@@ -1,6 +1,6 @@
 # __PACKAGE_NAME__
 
-Package generated from `package-starter` with a standardized Changesets release flow.
+Package created by `package-starter`.
 
 ## Scripts
 
@@ -9,14 +9,24 @@ Package generated from `package-starter` with a standardized Changesets release 
 - `npm run version-packages`
 - `npm run release`
 
-## Typical flow
+## Release flow
 
-1. Add a changeset in your feature PR: `npm run changeset`.
-2. Merge to `main`.
-3. GitHub Actions opens/updates `chore: release packages`.
-4. Merge release PR to publish.
+1. Add a changeset in your PR: `npm run changeset`.
+2. Merge into `__DEFAULT_BRANCH__`.
+3. `.github/workflows/release.yml` creates or updates `chore: release packages`.
+4. Merge the release PR to publish.
 
-## CI/CD release
+## Trusted Publishing
 
-- Ready-to-use workflow: `.github/workflows/release.yml`
-- Changesets config: `.changeset/config.json`
+If this package does not exist on npm yet, first publish can be manual:
+
+```bash
+npm publish --access public
+```
+
+After first publish, configure npm Trusted Publisher:
+
+- owner
+- repository
+- workflow file (`.github/workflows/release.yml`)
+- branch (`__DEFAULT_BRANCH__`)
