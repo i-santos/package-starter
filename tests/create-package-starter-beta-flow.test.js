@@ -109,8 +109,7 @@ test('setup-beta updates release workflow and scripts plus github branch/ruleset
   assert.equal(rulesetPayload.rules.some((rule) => rule.type === 'required_status_checks'), true);
   const statusChecksRule = rulesetPayload.rules.find((rule) => rule.type === 'required_status_checks');
   const contexts = statusChecksRule.parameters.required_status_checks.map((item) => item.context);
-  assert.equal(contexts.includes('CI / check (18) (pull_request)'), true);
-  assert.equal(contexts.includes('CI / check (20) (pull_request)'), true);
+  assert.deepEqual(contexts, ['CI / required-check (pull_request)']);
 });
 
 test('setup-beta dry-run does not mutate files', async () => {
