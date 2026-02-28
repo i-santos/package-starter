@@ -6,8 +6,11 @@
     "@i-santos/create-package-starter": "1.4.1-beta.0"
   },
   "changesets": [
+    "clean-cheetahs-judge",
+    "eighty-lions-poke",
     "green-lizards-nail",
     "six-drinks-share",
+    "sixty-coins-play",
     "tiny-cups-knock"
   ]
 }
