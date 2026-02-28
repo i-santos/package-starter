@@ -1,5 +1,16 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.5
+
+### Minor Changes
+
+- 57bd295: Add an auto-retarget pull request workflow template that enforces default base routing (`release/beta -> main`, all other branches -> `release/beta`) and include it in create/init managed assets.
+
+### Patch Changes
+
+- e64018f: Refine `init` behavior to append template entries into existing `.gitignore`, keep `README.md` and `CONTRIBUTING.md` create-only, align PR template content, and run `npm install` at the end of initialization.
+- b221367: Update release workflow template to use `CHANGESETS_GH_TOKEN` (fallback `GITHUB_TOKEN`) in `actions/checkout`, so release PR branch updates are performed with a token that correctly triggers downstream PR checks.
+
 ## 1.5.0-beta.4
 
 ### Patch Changes
