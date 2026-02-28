@@ -419,11 +419,11 @@ function copyDirRecursive(sourceDir, targetDir, variables, relativeBase = '') {
 
   for (const entry of entries) {
     const srcPath = path.join(sourceDir, entry.name);
-    const relativePath = path.posix.join(relativeBase, entry.name);
-    const destinationRelativePath = relativePath === 'gitignore'
+    const destinationEntryName = relativeBase === '' && entry.name === 'gitignore'
       ? '.gitignore'
-      : relativePath;
-    const destPath = path.join(targetDir, destinationRelativePath);
+      : entry.name;
+    const destPath = path.join(targetDir, destinationEntryName);
+    const relativePath = path.posix.join(relativeBase, destinationEntryName);
 
     if (entry.isDirectory()) {
       createdFiles.push(...copyDirRecursive(srcPath, destPath, variables, relativePath));
@@ -433,7 +433,7 @@ function copyDirRecursive(sourceDir, targetDir, variables, relativeBase = '') {
     const source = fs.readFileSync(srcPath, 'utf8');
     const rendered = renderTemplateString(source, variables);
     fs.writeFileSync(destPath, rendered);
-    createdFiles.push(destinationRelativePath);
+    createdFiles.push(relativePath);
   }
 
   return createdFiles;
