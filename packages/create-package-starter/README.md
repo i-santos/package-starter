@@ -137,7 +137,7 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - adds beta scripts to `package.json`
 - creates/preserves `.github/workflows/release.yml` with beta+stable branch triggers
 - creates/preserves `.github/workflows/ci.yml` with beta+stable branch triggers
-- creates/preserves `.github/workflows/auto-retarget-pr.yml` to retarget PR bases automatically (`feat|fix|chore -> release/beta`, `release/beta -> main`)
+- creates/preserves `.github/workflows/auto-retarget-pr.yml` to retarget PR bases automatically (`release/beta -> main`, all other branches -> `release/beta`)
 - ensures `release/beta` branch exists remotely (created from default branch if missing)
 - applies beta branch protection ruleset on GitHub with stable required check context (`required-check`)
 - asks for confirmation before mutating repository settings and again before overwriting existing beta ruleset

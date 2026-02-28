@@ -34,12 +34,11 @@ jobs:
             const currentBase = pr.base.ref;
             const stableBase = '__DEFAULT_BRANCH__';
             const betaBase = '__BETA_BRANCH__';
-            const betaPrefixes = ['feat/', 'fix/', 'chore/'];
 
             let desiredBase = currentBase;
             if (head === betaBase) {
               desiredBase = stableBase;
-            } else if (betaPrefixes.some((prefix) => head.startsWith(prefix))) {
+            } else {
               desiredBase = betaBase;
             }
 

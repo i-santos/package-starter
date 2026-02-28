@@ -44,7 +44,8 @@ test('template auto-retarget-pr.yml snapshot', () => {
   assert.match(content, /group: pr-retarget-\$\{\{ github\.event\.pull_request\.number \}\}/m);
   assert.match(content, /stableBase = '__DEFAULT_BRANCH__'/m);
   assert.match(content, /betaBase = '__BETA_BRANCH__'/m);
-  assert.match(content, /betaPrefixes = \['feat\/', 'fix\/', 'chore\/'\]/m);
+  assert.match(content, /if \(head === betaBase\)/m);
+  assert.match(content, /desiredBase = betaBase;/m);
 });
 
 test('template changeset config snapshot', () => {
