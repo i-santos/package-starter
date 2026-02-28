@@ -15,11 +15,13 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+__RELEASE_AUTH_APP_STEP__
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          token: ${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}
+          token: __RELEASE_AUTH_CHECKOUT_TOKEN__
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -45,5 +47,5 @@ jobs:
           title: "chore: release packages"
           commit: "chore: release packages"
         env:
-          GITHUB_TOKEN: ${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: __RELEASE_AUTH_GITHUB_TOKEN__
           NODE_AUTH_TOKEN: ""

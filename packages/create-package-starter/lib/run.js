@@ -9,6 +9,8 @@ const DEFAULT_BASE_BRANCH = 'main';
 const DEFAULT_BETA_BRANCH = 'release/beta';
 const DEFAULT_RULESET_NAME = 'Default main branch protection';
 const REQUIRED_CHECK_CONTEXT = 'required-check';
+const DEFAULT_RELEASE_AUTH = 'pat';
+const RELEASE_AUTH_MODES = new Set(['github-token', 'pat', 'app', 'manual-trigger']);
 
 const MANAGED_FILE_SPECS = [
   ['.changeset/config.json', '.changeset/config.json'],
@@ -27,21 +29,21 @@ const INIT_CREATE_ONLY_FILES = new Set(['README.md', 'CONTRIBUTING.md']);
 function usage() {
   return [
     'Usage:',
-    '  create-package-starter --name <name> [--out <directory>] [--default-branch <branch>]',
-    '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--dry-run] [--yes]',
+    '  create-package-starter --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
+    '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
-    '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--force] [--dry-run] [--yes]',
+    '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
     'Examples:',
     '  create-package-starter --name hello-package',
-    '  create-package-starter --name @i-santos/swarm --out ./packages',
+    '  create-package-starter --name @i-santos/swarm --out ./packages --release-auth pat',
     '  create-package-starter init --dir ./my-package',
     '  create-package-starter init --cleanup-legacy-release',
     '  create-package-starter setup-github --repo i-santos/firestack --dry-run',
     '  create-package-starter init --dir . --with-github --with-beta --with-npm --yes',
-    '  create-package-starter setup-beta --dir . --beta-branch release/beta',
+    '  create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth app',
     '  create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"',
     '  create-package-starter setup-npm --dir . --publish-first'
   ].join('\n');
@@ -59,7 +61,8 @@ function parseValueFlag(argv, index, flag) {
 function parseCreateArgs(argv) {
   const args = {
     out: process.cwd(),
-    defaultBranch: DEFAULT_BASE_BRANCH
+    defaultBranch: DEFAULT_BASE_BRANCH,
+    releaseAuth: DEFAULT_RELEASE_AUTH
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -79,6 +82,12 @@ function parseCreateArgs(argv) {
 
     if (token === '--default-branch') {
       args.defaultBranch = parseValueFlag(argv, i, '--default-branch');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--release-auth') {
+      args.releaseAuth = parseValueFlag(argv, i, '--release-auth');
       i += 1;
       continue;
     }
@@ -104,6 +113,7 @@ function parseInitArgs(argv) {
     scope: '',
     repo: '',
     ruleset: '',
+    releaseAuth: DEFAULT_RELEASE_AUTH,
     withGithub: false,
     withNpm: false,
     withBeta: false,
@@ -146,6 +156,12 @@ function parseInitArgs(argv) {
 
     if (token === '--ruleset') {
       args.ruleset = parseValueFlag(argv, i, '--ruleset');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--release-auth') {
+      args.releaseAuth = parseValueFlag(argv, i, '--release-auth');
       i += 1;
       continue;
     }
@@ -281,6 +297,7 @@ function parseSetupBetaArgs(argv) {
     dir: process.cwd(),
     betaBranch: DEFAULT_BETA_BRANCH,
     defaultBranch: DEFAULT_BASE_BRANCH,
+    releaseAuth: DEFAULT_RELEASE_AUTH,
     force: false,
     yes: false,
     dryRun: false
@@ -309,6 +326,12 @@ function parseSetupBetaArgs(argv) {
 
     if (token === '--default-branch') {
       args.defaultBranch = parseValueFlag(argv, i, '--default-branch');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--release-auth') {
+      args.releaseAuth = parseValueFlag(argv, i, '--release-auth');
       i += 1;
       continue;
     }
@@ -388,11 +411,19 @@ function parsePromoteStableArgs(argv) {
   return args;
 }
 
+function validateReleaseAuthMode(mode, flagName = '--release-auth') {
+  if (!RELEASE_AUTH_MODES.has(mode)) {
+    throw new Error(`Invalid ${flagName} value: ${mode}. Expected one of: github-token, pat, app, manual-trigger.`);
+  }
+}
+
 function parseArgs(argv) {
   if (argv[0] === 'init') {
+    const args = parseInitArgs(argv.slice(1));
+    validateReleaseAuthMode(args.releaseAuth);
     return {
       mode: 'init',
-      args: parseInitArgs(argv.slice(1))
+      args
     };
   }
 
@@ -411,9 +442,11 @@ function parseArgs(argv) {
   }
 
   if (argv[0] === 'setup-beta') {
+    const args = parseSetupBetaArgs(argv.slice(1));
+    validateReleaseAuthMode(args.releaseAuth);
     return {
       mode: 'setup-beta',
-      args: parseSetupBetaArgs(argv.slice(1))
+      args
     };
   }
 
@@ -424,9 +457,11 @@ function parseArgs(argv) {
     };
   }
 
+  const args = parseCreateArgs(argv);
+  validateReleaseAuthMode(args.releaseAuth);
   return {
     mode: 'create',
-    args: parseCreateArgs(argv)
+    args
   };
 }
 
@@ -456,6 +491,63 @@ function deriveScope(argsScope, packageName) {
   }
 
   return 'team';
+}
+
+function buildReleaseAuthVariables(releaseAuthMode) {
+  if (releaseAuthMode === 'github-token') {
+    return {
+      RELEASE_AUTH_APP_STEP: '',
+      RELEASE_AUTH_CHECKOUT_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+      RELEASE_AUTH_GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+    };
+  }
+
+  if (releaseAuthMode === 'pat') {
+    return {
+      RELEASE_AUTH_APP_STEP: '',
+      RELEASE_AUTH_CHECKOUT_TOKEN: '${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}',
+      RELEASE_AUTH_GITHUB_TOKEN: '${{ secrets.CHANGESETS_GH_TOKEN || secrets.GITHUB_TOKEN }}'
+    };
+  }
+
+  if (releaseAuthMode === 'app') {
+    return {
+      RELEASE_AUTH_APP_STEP: [
+        '      - name: Generate GitHub App token',
+        '        id: app-token',
+        '        uses: actions/create-github-app-token@v1',
+        '        with:',
+        '          app-id: ${{ secrets.GH_APP_ID }}',
+        '          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}',
+        ''
+      ].join('\n'),
+      RELEASE_AUTH_CHECKOUT_TOKEN: '${{ steps.app-token.outputs.token }}',
+      RELEASE_AUTH_GITHUB_TOKEN: '${{ steps.app-token.outputs.token }}'
+    };
+  }
+
+  return {
+    RELEASE_AUTH_APP_STEP: '',
+    RELEASE_AUTH_CHECKOUT_TOKEN: '${{ secrets.GITHUB_TOKEN }}',
+    RELEASE_AUTH_GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+  };
+}
+
+function appendReleaseAuthWarnings(summary, releaseAuthMode) {
+  if (releaseAuthMode === 'manual-trigger') {
+    summary.warnings.push('manual-trigger mode selected: release PR updates may not retrigger CI automatically.');
+    summary.warnings.push('If release PR checks are pending, push an empty commit to changeset-release/* to retrigger CI.');
+    return;
+  }
+
+  if (releaseAuthMode === 'app') {
+    summary.warnings.push('release-auth app mode selected: ensure GH_APP_ID and GH_APP_PRIVATE_KEY repository secrets are configured.');
+    return;
+  }
+
+  if (releaseAuthMode === 'pat') {
+    summary.warnings.push('release-auth pat mode selected: ensure CHANGESETS_GH_TOKEN secret is configured for reliable release PR check retriggers.');
+  }
 }
 
 function renderTemplateString(source, variables) {
@@ -1035,7 +1127,8 @@ function configureExistingPackage(packageDir, templateDir, options) {
       PACKAGE_NAME: packageName,
       DEFAULT_BRANCH: options.defaultBranch,
       BETA_BRANCH: options.betaBranch || DEFAULT_BETA_BRANCH,
-      SCOPE: deriveScope(options.scope, packageName)
+      SCOPE: deriveScope(options.scope, packageName),
+      ...buildReleaseAuthVariables(options.releaseAuth || DEFAULT_RELEASE_AUTH)
     }
   }, summary);
 
@@ -1071,14 +1164,17 @@ function createNewPackage(args) {
     PACKAGE_NAME: args.name,
     DEFAULT_BRANCH: args.defaultBranch,
     BETA_BRANCH: DEFAULT_BETA_BRANCH,
-    SCOPE: deriveScope('', args.name)
+    SCOPE: deriveScope('', args.name),
+    ...buildReleaseAuthVariables(args.releaseAuth || DEFAULT_RELEASE_AUTH)
   });
 
   summary.createdFiles.push(...createdFiles);
 
   summary.updatedScriptKeys.push('check', 'changeset', 'version-packages', 'release');
   summary.updatedScriptKeys.push('beta:enter', 'beta:exit', 'beta:version', 'beta:publish', 'beta:promote');
+  summary.updatedScriptKeys.push(`release.auth:${args.releaseAuth}`);
   summary.updatedDependencyKeys.push(CHANGESETS_DEP);
+  appendReleaseAuthWarnings(summary, args.releaseAuth);
 
   printSummary(`Package created in ${targetDir}`, summary);
 }
@@ -1093,6 +1189,8 @@ async function initExistingPackage(args, dependencies = {}) {
   const deps = {
     exec: dependencies.exec || execCommand
   };
+  overallSummary.updatedScriptKeys.push(`release.auth:${args.releaseAuth}`);
+  appendReleaseAuthWarnings(overallSummary, args.releaseAuth);
 
   if (!selections.withGithub && !selections.withNpm && !selections.withBeta && !process.stdin.isTTY) {
     overallSummary.warnings.push('No --with-* flags were provided in non-interactive mode. Only local init was applied.');
@@ -1120,7 +1218,8 @@ async function initExistingPackage(args, dependencies = {}) {
         defaultBranch: args.defaultBranch,
         betaBranch: args.betaBranch,
         packageName: context.packageName,
-        scope: deriveScope(args.scope, context.packageName)
+        scope: deriveScope(args.scope, context.packageName),
+        releaseAuth: args.releaseAuth
       },
       overallSummary,
       reporter
@@ -1569,7 +1668,8 @@ function ensureBetaWorkflowTriggers(targetDir, templateDir, options, summary, re
     PACKAGE_NAME: options.packageName,
     DEFAULT_BRANCH: options.defaultBranch,
     BETA_BRANCH: options.betaBranch,
-    SCOPE: options.scope
+    SCOPE: options.scope,
+    ...buildReleaseAuthVariables(options.releaseAuth || DEFAULT_RELEASE_AUTH)
   };
 
   reporter.start('workflow-release', `Ensuring ${workflowRelativePath} includes stable+beta triggers...`);
@@ -1892,6 +1992,9 @@ async function setupBeta(args, dependencies = {}) {
 
   const summary = createSummary();
   summary.updatedScriptKeys.push('github.beta_branch', 'github.beta_ruleset', 'actions.default_workflow_permissions');
+  summary.updatedScriptKeys.push(`release.auth:${args.releaseAuth}`);
+  appendReleaseAuthWarnings(summary, args.releaseAuth);
+  const releaseAuthVariables = buildReleaseAuthVariables(args.releaseAuth || DEFAULT_RELEASE_AUTH);
   const desiredScripts = {
     'beta:enter': 'changeset pre enter beta',
     'beta:exit': 'changeset pre exit',
@@ -1936,7 +2039,8 @@ async function setupBeta(args, dependencies = {}) {
         PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
         DEFAULT_BRANCH: args.defaultBranch,
         BETA_BRANCH: args.betaBranch,
-        SCOPE: deriveScope('', packageJson.name || '')
+        SCOPE: deriveScope('', packageJson.name || ''),
+        ...releaseAuthVariables
       }
     });
     if (workflowPreview.result === 'created') {
@@ -1958,7 +2062,8 @@ async function setupBeta(args, dependencies = {}) {
         PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
         DEFAULT_BRANCH: args.defaultBranch,
         BETA_BRANCH: args.betaBranch,
-        SCOPE: deriveScope('', packageJson.name || '')
+        SCOPE: deriveScope('', packageJson.name || ''),
+        ...releaseAuthVariables
       }
     });
     if (ciWorkflowPreview.result === 'created') {
@@ -2014,7 +2119,8 @@ async function setupBeta(args, dependencies = {}) {
         PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
         DEFAULT_BRANCH: args.defaultBranch,
         BETA_BRANCH: args.betaBranch,
-        SCOPE: deriveScope('', packageJson.name || '')
+        SCOPE: deriveScope('', packageJson.name || ''),
+        ...releaseAuthVariables
       }
     });
     const workflowResult = workflowUpsert.result;
@@ -2046,7 +2152,8 @@ async function setupBeta(args, dependencies = {}) {
         PACKAGE_NAME: packageJson.name || packageDirFromName(path.basename(targetDir)),
         DEFAULT_BRANCH: args.defaultBranch,
         BETA_BRANCH: args.betaBranch,
-        SCOPE: deriveScope('', packageJson.name || '')
+        SCOPE: deriveScope('', packageJson.name || ''),
+        ...releaseAuthVariables
       }
     });
     const ciWorkflowResult = ciWorkflowUpsert.result;
