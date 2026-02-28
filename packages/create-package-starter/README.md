@@ -6,11 +6,11 @@ Scaffold and standardize npm packages with a Changesets-first release workflow.
 
 ```bash
 npx @i-santos/create-package-starter --name hello-package
-npx @i-santos/create-package-starter --name @i-santos/swarm --default-branch main
+npx @i-santos/create-package-starter --name @i-santos/swarm --default-branch main --release-auth pat
 npx @i-santos/create-package-starter init --dir ./existing-package
-npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --yes
+npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --release-auth app --yes
 npx @i-santos/create-package-starter setup-github --repo i-santos/firestack --dry-run
-npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
+npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth pat
 npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
 npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
 ```
@@ -22,6 +22,7 @@ Create new package:
 - `--name <name>` (required, supports `pkg` and `@scope/pkg`)
 - `--out <directory>` (default: current directory)
 - `--default-branch <branch>` (default: `main`)
+- `--release-auth <github-token|pat|app|manual-trigger>` (default: `pat`)
 
 Bootstrap existing package:
 
@@ -31,6 +32,7 @@ Bootstrap existing package:
 - `--cleanup-legacy-release` (remove `release:beta*`, `release:stable*`, `release:promote*`, `release:rollback*`, `release:dist-tags`)
 - `--scope <scope>` (optional placeholder helper for docs/templates)
 - `--default-branch <branch>` (default: `main`)
+- `--release-auth <github-token|pat|app|manual-trigger>` (default: `pat`)
 - `--beta-branch <branch>` (default: `release/beta`)
 - `--with-github` (run GitHub setup in same flow)
 - `--with-npm` (run npm setup in same flow)
@@ -138,11 +140,18 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - creates/preserves `.github/workflows/release.yml` with beta+stable branch triggers
 - creates/preserves `.github/workflows/ci.yml` with beta+stable branch triggers
 - creates/preserves `.github/workflows/auto-retarget-pr.yml` to retarget PR bases automatically (`release/beta -> main`, all other branches -> `release/beta`)
+- supports release auth strategy for Changesets branch updates: `pat`, `app`, `github-token`, or `manual-trigger`
 - ensures `release/beta` branch exists remotely (created from default branch if missing)
 - applies beta branch protection ruleset on GitHub with stable required check context (`required-check`)
 - asks for confirmation before mutating repository settings and again before overwriting existing beta ruleset
 - supports safe-merge by default and `--force` overwrite
 - supports configurable beta branch (`release/beta` by default)
+
+`release-auth` modes:
+- `pat` (recommended default): uses `CHANGESETS_GH_TOKEN` fallback to `GITHUB_TOKEN`
+- `app`: generates token via GitHub App (`GH_APP_ID`, `GH_APP_PRIVATE_KEY`)
+- `github-token`: uses built-in `GITHUB_TOKEN` only
+- `manual-trigger`: uses built-in token and expects manual retrigger (empty commit) if release PR checks stay pending
 
 ## promote-stable Behavior
 

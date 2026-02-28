@@ -34,9 +34,9 @@ Published CLI:
 ```bash
 npx @i-santos/create-package-starter --name @i-santos/swarm
 npx @i-santos/create-package-starter init --dir ./existing-package
-npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --yes
+npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --release-auth pat --yes
 npx @i-santos/create-package-starter setup-github --repo i-santos/swarm --dry-run
-npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
+npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth pat
 npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
 npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
 ```
@@ -114,6 +114,7 @@ This exits prerelease mode and creates an explicit promotion changeset before op
 Keep npm Trusted Publisher configured for `release.yml` (single workflow), and run that workflow on both `main` and `release/beta`.
 `setup-beta` also aligns CI trigger branches and applies beta ruleset with required `required-check` status.
 `setup-beta` also provisions an auto-retarget workflow so PR bases follow this policy automatically: `release/beta -> main`, all other branches -> `release/beta`.
+`setup-beta`/`init` also support release auth strategy via `--release-auth`: `pat`, `app`, `github-token`, `manual-trigger`.
 
 ## npm First Publish Bootstrap
 

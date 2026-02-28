@@ -17,10 +17,12 @@ test('template release.yml snapshot', () => {
   assert.match(content, /branches:\n[\s\S]*- __BETA_BRANCH__/m);
   assert.match(content, /id-token: write/m);
   assert.match(content, /uses: changesets\/action@v1/m);
-  assert.match(content, /token: \$\{\{ secrets\.CHANGESETS_GH_TOKEN \|\| secrets\.GITHUB_TOKEN \}\}/m);
+  assert.match(content, /__RELEASE_AUTH_APP_STEP__/m);
+  assert.match(content, /token: __RELEASE_AUTH_CHECKOUT_TOKEN__/m);
   assert.match(content, /name: Setup npm \(latest\)/m);
   assert.match(content, /title: "chore: release packages"/m);
   assert.match(content, /publish: npm run release/m);
+  assert.match(content, /GITHUB_TOKEN: __RELEASE_AUTH_GITHUB_TOKEN__/m);
   assert.match(content, /NODE_AUTH_TOKEN: ""/m);
 });
 
