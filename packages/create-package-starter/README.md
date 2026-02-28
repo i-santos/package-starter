@@ -94,9 +94,12 @@ The generated and managed baseline includes:
 
 - Default mode is safe-merge: existing managed files and keys are preserved.
 - `--force` overwrites managed files and managed script/dependency keys.
+- `README.md` and `CONTRIBUTING.md` are create-only in `init` (never overwritten).
+- Existing `.gitignore` is merged by appending missing template entries.
 - Existing custom `check` script is preserved unless `--force`.
 - Existing `@changesets/cli` version is preserved unless `--force`.
 - Lowercase `.github/pull_request_template.md` is recognized as an existing equivalent template.
+- `npm install` runs at the end of `init` (or is previewed in `--dry-run`).
 - If no `--with-*` flags are provided:
   - TTY: asks interactively which external setup to run (`github`, `npm`, `beta`).
   - non-TTY: runs local init only and prints warning with next steps.
