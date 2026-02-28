@@ -136,7 +136,7 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - creates/preserves `.github/workflows/ci.yml` with beta+stable branch triggers
 - ensures `release/beta` branch exists remotely (created from default branch if missing)
 - applies beta branch protection ruleset on GitHub (including required CI matrix checks for Node 18 and 20)
-- applies beta branch protection ruleset on GitHub with stable required check context (`CI / required-check (pull_request)`)
+- applies beta branch protection ruleset on GitHub with stable required check context (`required-check`)
 - asks for confirmation before mutating repository settings and again before overwriting existing beta ruleset
 - supports safe-merge by default and `--force` overwrite
 - supports configurable beta branch (`release/beta` by default)

@@ -118,7 +118,7 @@ test('init with github+beta+npm runs orchestrated setup and auto-publishes missi
   for (const payload of payloads) {
     const checksRule = payload.rules.find((rule) => rule.type === 'required_status_checks');
     assert.ok(checksRule, 'expected required_status_checks rule');
-    assert.equal(checksRule.parameters.required_status_checks[0].context, 'CI / required-check (pull_request)');
+    assert.equal(checksRule.parameters.required_status_checks[0].context, 'required-check');
   }
 
   const ciWorkflow = fs.readFileSync(path.join(workDir, '.github', 'workflows', 'ci.yml'), 'utf8');
