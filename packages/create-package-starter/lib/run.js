@@ -15,6 +15,7 @@ const MANAGED_FILE_SPECS = [
   ['.changeset/README.md', '.changeset/README.md'],
   ['.github/workflows/ci.yml', '.github/workflows/ci.yml'],
   ['.github/workflows/release.yml', '.github/workflows/release.yml'],
+  ['.github/workflows/auto-retarget-pr.yml', '.github/workflows/auto-retarget-pr.yml'],
   ['.github/PULL_REQUEST_TEMPLATE.md', '.github/PULL_REQUEST_TEMPLATE.md'],
   ['.github/CODEOWNERS', '.github/CODEOWNERS'],
   ['CONTRIBUTING.md', 'CONTRIBUTING.md'],
