@@ -112,7 +112,7 @@ npx @i-santos/create-package-starter promote-stable --dir . --type patch --summa
 
 This exits prerelease mode and creates an explicit promotion changeset before opening PR from beta branch to `main`.
 Keep npm Trusted Publisher configured for `release.yml` (single workflow), and run that workflow on both `main` and `release/beta`.
-`setup-beta` also aligns CI trigger branches and applies beta ruleset with required `CI / required-check (pull_request)` status.
+`setup-beta` also aligns CI trigger branches and applies beta ruleset with required `required-check` status.
 
 ## npm First Publish Bootstrap
 

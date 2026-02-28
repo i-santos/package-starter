@@ -8,7 +8,7 @@ const CHANGESETS_DEP_VERSION = '^2.29.7';
 const DEFAULT_BASE_BRANCH = 'main';
 const DEFAULT_BETA_BRANCH = 'release/beta';
 const DEFAULT_RULESET_NAME = 'Default main branch protection';
-const REQUIRED_CHECK_CONTEXT = 'CI / required-check (pull_request)';
+const REQUIRED_CHECK_CONTEXT = 'required-check';
 
 const MANAGED_FILE_SPECS = [
   ['.changeset/config.json', '.changeset/config.json'],
