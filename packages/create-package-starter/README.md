@@ -8,6 +8,7 @@ Scaffold and standardize npm packages with a Changesets-first release workflow.
 npx @i-santos/create-package-starter --name hello-package
 npx @i-santos/create-package-starter --name @i-santos/swarm --default-branch main
 npx @i-santos/create-package-starter init --dir ./existing-package
+npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --yes
 npx @i-santos/create-package-starter setup-github --repo i-santos/firestack --dry-run
 npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
 npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
@@ -30,6 +31,14 @@ Bootstrap existing package:
 - `--cleanup-legacy-release` (remove `release:beta*`, `release:stable*`, `release:promote*`, `release:rollback*`, `release:dist-tags`)
 - `--scope <scope>` (optional placeholder helper for docs/templates)
 - `--default-branch <branch>` (default: `main`)
+- `--beta-branch <branch>` (default: `release/beta`)
+- `--with-github` (run GitHub setup in same flow)
+- `--with-npm` (run npm setup in same flow)
+- `--with-beta` (run beta flow setup; implies `--with-github`)
+- `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
+- `--ruleset <path>` (optional JSON override for main ruleset payload)
+- `--dry-run` (preview planned operations without mutating)
+- `--yes` (skip confirmation prompts)
 
 Configure GitHub repository settings:
 
@@ -88,6 +97,11 @@ The generated and managed baseline includes:
 - Existing custom `check` script is preserved unless `--force`.
 - Existing `@changesets/cli` version is preserved unless `--force`.
 - Lowercase `.github/pull_request_template.md` is recognized as an existing equivalent template.
+- If no `--with-*` flags are provided:
+  - TTY: asks interactively which external setup to run (`github`, `npm`, `beta`).
+  - non-TTY: runs local init only and prints warning with next steps.
+- Integrated mode (`--with-github/--with-npm/--with-beta`) pre-validates everything first (gh auth, npm auth, repo/branch/ruleset/package checks) and fails fast before local mutations if validation fails.
+- Integrated mode asks confirmation for sensitive external operations and ruleset/branch adoption conflicts (unless `--yes`).
 
 ## Output Summary Contract
 
@@ -122,6 +136,7 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - creates/preserves `.github/workflows/ci.yml` with beta+stable branch triggers
 - ensures `release/beta` branch exists remotely (created from default branch if missing)
 - applies beta branch protection ruleset on GitHub (including required CI matrix checks for Node 18 and 20)
+- applies beta branch protection ruleset on GitHub with stable required check context (`CI / required-check (pull_request)`)
 - asks for confirmation before mutating repository settings and again before overwriting existing beta ruleset
 - supports safe-merge by default and `--force` overwrite
 - supports configurable beta branch (`release/beta` by default)
@@ -146,6 +161,8 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - prints next steps for Trusted Publisher configuration
 
 Important: Trusted Publisher still needs manual setup in npm package settings.
+
+When npm setup runs inside orchestrated `init --with-npm`, first publish is automatic when package is not found on npm.
 
 ## Trusted Publishing Note
 
