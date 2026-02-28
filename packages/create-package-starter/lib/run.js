@@ -21,6 +21,7 @@ const MANAGED_FILE_SPECS = [
   ['README.md', 'README.md'],
   ['.gitignore', 'gitignore']
 ];
+const INIT_CREATE_ONLY_FILES = new Set(['README.md', 'CONTRIBUTING.md']);
 
 function usage() {
   return [
@@ -703,6 +704,47 @@ function ensureFileFromTemplate(targetPath, templatePath, options) {
   return 'created';
 }
 
+function ensureCreateOnlyFromTemplate(targetPath, templatePath, options) {
+  if (fs.existsSync(targetPath)) {
+    return 'skipped';
+  }
+
+  return ensureFileFromTemplate(targetPath, templatePath, options);
+}
+
+function appendGitignoreTemplate(targetPath, templatePath, options) {
+  if (!fs.existsSync(targetPath)) {
+    return ensureFileFromTemplate(targetPath, templatePath, options);
+  }
+
+  const currentRaw = fs.readFileSync(targetPath, 'utf8');
+  const templateRaw = fs.readFileSync(templatePath, 'utf8');
+  const currentSet = new Set(
+    currentRaw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
+
+  const missingLines = templateRaw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !currentSet.has(line));
+
+  if (!missingLines.length) {
+    return 'skipped';
+  }
+
+  if (options.dryRun) {
+    return 'updated';
+  }
+
+  const needsSeparator = currentRaw.length > 0 && !currentRaw.endsWith('\n');
+  const prefix = needsSeparator ? '\n' : '';
+  fs.appendFileSync(targetPath, `${prefix}${missingLines.join('\n')}\n`);
+  return 'updated';
+}
+
 function ensureReleaseWorkflowBranches(content, defaultBranch, betaBranch) {
   const lines = content.split('\n');
   const onIndex = lines.findIndex((line) => line.trim() === 'on:');
@@ -853,14 +895,30 @@ function updateManagedFiles(packageDir, templateDir, options, summary) {
       throw new Error(`Template not found: ${templatePath}`);
     }
 
-    const result = ensureFileFromTemplate(targetPath, templatePath, {
-      force: options.force,
-      variables: options.variables
-    });
+    let result;
+    if (targetRelativePath === '.gitignore') {
+      result = appendGitignoreTemplate(targetPath, templatePath, {
+        force: options.force,
+        dryRun: options.dryRun,
+        variables: options.variables
+      });
+    } else if (INIT_CREATE_ONLY_FILES.has(targetRelativePath)) {
+      result = ensureCreateOnlyFromTemplate(targetPath, templatePath, {
+        force: options.force,
+        dryRun: options.dryRun,
+        variables: options.variables
+      });
+    } else {
+      result = ensureFileFromTemplate(targetPath, templatePath, {
+        force: options.force,
+        dryRun: options.dryRun,
+        variables: options.variables
+      });
+    }
 
     if (result === 'created') {
       summary.createdFiles.push(targetRelativePath);
-    } else if (result === 'overwritten') {
+    } else if (result === 'overwritten' || result === 'updated') {
       summary.overwrittenFiles.push(targetRelativePath);
     } else {
       summary.skippedFiles.push(targetRelativePath);
@@ -1115,6 +1173,20 @@ async function initExistingPackage(args, dependencies = {}) {
       }
     );
     mergeSummary(overallSummary, npmSummary);
+  }
+
+  reporter.start('npm-install-final', 'Running npm install...');
+  if (args.dryRun) {
+    overallSummary.warnings.push(`dry-run: would run "npm install" in ${targetDir}`);
+    reporter.warn('npm-install-final', 'Dry-run enabled; npm install was not executed.');
+  } else {
+    const install = deps.exec('npm', ['install'], { cwd: targetDir, stdio: 'inherit' });
+    if (install.status !== 0) {
+      reporter.fail('npm-install-final', 'npm install failed.');
+      throw new Error(`Failed to run npm install in ${targetDir}.`);
+    }
+    reporter.ok('npm-install-final', 'npm install completed.');
+    overallSummary.updatedDependencyKeys.push('npm.install');
   }
 
   printSummary(`Project initialized in ${targetDir}`, overallSummary);
