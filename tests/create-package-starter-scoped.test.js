@@ -42,6 +42,7 @@ test('create-package-starter accepts scoped package names and includes required 
   assert.match(releaseWorkflow, /- main/);
   assert.match(releaseWorkflow, /- release\/beta/);
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'ci.yml')), true);
+  assert.equal(fs.existsSync(path.join(createdDir, '.github', 'workflows', 'auto-retarget-pr.yml')), true);
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'PULL_REQUEST_TEMPLATE.md')), true);
   assert.equal(fs.existsSync(path.join(createdDir, '.github', 'CODEOWNERS')), true);
   assert.equal(fs.existsSync(path.join(createdDir, 'CONTRIBUTING.md')), true);

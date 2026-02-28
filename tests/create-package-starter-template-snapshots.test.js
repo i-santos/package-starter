@@ -35,6 +35,18 @@ test('template ci.yml snapshot', () => {
   assert.match(content, /required-check/m);
 });
 
+test('template auto-retarget-pr.yml snapshot', () => {
+  const content = read('.github/workflows/auto-retarget-pr.yml');
+
+  assert.match(content, /^name: Auto Retarget PR Base/m);
+  assert.match(content, /pull_request_target:/m);
+  assert.match(content, /pull-requests: write/m);
+  assert.match(content, /group: pr-retarget-\$\{\{ github\.event\.pull_request\.number \}\}/m);
+  assert.match(content, /stableBase = '__DEFAULT_BRANCH__'/m);
+  assert.match(content, /betaBase = '__BETA_BRANCH__'/m);
+  assert.match(content, /betaPrefixes = \['feat\/', 'fix\/', 'chore\/'\]/m);
+});
+
 test('template changeset config snapshot', () => {
   const config = JSON.parse(read('.changeset/config.json'));
 
