@@ -65,3 +65,20 @@ test('create-package-starter supports custom default branch flag', () => {
   const release = fs.readFileSync(path.join(createdDir, '.github', 'workflows', 'release.yml'), 'utf8');
   assert.match(release, /- develop/);
 });
+
+test('create-package-starter supports release auth mode app in release workflow', () => {
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-release-auth-app-'));
+  const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
+
+  const result = spawnSync('node', [binPath, '--name', 'auth-app-package', '--out', outDir, '--release-auth', 'app'], {
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+
+  const createdDir = path.join(outDir, 'auth-app-package');
+  const release = fs.readFileSync(path.join(createdDir, '.github', 'workflows', 'release.yml'), 'utf8');
+  assert.match(release, /Generate GitHub App token/);
+  assert.match(release, /token: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
+  assert.match(release, /GITHUB_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
+});
