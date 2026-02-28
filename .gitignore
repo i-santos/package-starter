@@ -9,3 +9,14 @@ build/
 *.tgz
 .env
 .env.*
+.turbo/
+.cache/
+tmp/
+temp/
+Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+!.env.example
+!.env.*.example
