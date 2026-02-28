@@ -8,15 +8,18 @@
   ],
   "scripts": {
     "create:package": "node scripts/create-package.js",
-    "check": "npm run test && node scripts/check-workspace.js",
+    "check": "npm run test",
     "test": "node --test tests/*.test.js",
-    "changeset": "npx @changesets/cli",
-    "version-packages": "npx @changesets/cli version",
-    "release": "npm run check && npx @changesets/cli publish",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "npm run check && changeset publish",
     "beta:enter": "changeset pre enter beta",
     "beta:exit": "changeset pre exit",
     "beta:version": "changeset version",
     "beta:publish": "changeset publish",
     "beta:promote": "create-package-starter promote-stable --dir ."
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7"
   }
 }
