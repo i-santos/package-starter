@@ -17,7 +17,7 @@ const MANAGED_FILE_SPECS = [
   ['.github/CODEOWNERS', '.github/CODEOWNERS'],
   ['CONTRIBUTING.md', 'CONTRIBUTING.md'],
   ['README.md', 'README.md'],
-  ['.gitignore', '.gitignore']
+  ['.gitignore', 'gitignore']
 ];
 
 function usage() {
@@ -419,8 +419,11 @@ function copyDirRecursive(sourceDir, targetDir, variables, relativeBase = '') {
 
   for (const entry of entries) {
     const srcPath = path.join(sourceDir, entry.name);
-    const destPath = path.join(targetDir, entry.name);
     const relativePath = path.posix.join(relativeBase, entry.name);
+    const destinationRelativePath = relativePath === 'gitignore'
+      ? '.gitignore'
+      : relativePath;
+    const destPath = path.join(targetDir, destinationRelativePath);
 
     if (entry.isDirectory()) {
       createdFiles.push(...copyDirRecursive(srcPath, destPath, variables, relativePath));
@@ -430,7 +433,7 @@ function copyDirRecursive(sourceDir, targetDir, variables, relativeBase = '') {
     const source = fs.readFileSync(srcPath, 'utf8');
     const rendered = renderTemplateString(source, variables);
     fs.writeFileSync(destPath, rendered);
-    createdFiles.push(relativePath);
+    createdFiles.push(destinationRelativePath);
   }
 
   return createdFiles;
