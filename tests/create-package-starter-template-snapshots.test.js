@@ -30,6 +30,7 @@ test('template ci.yml snapshot', () => {
   assert.match(content, /branches:\n[\s\S]*- __BETA_BRANCH__/m);
   assert.match(content, /run: npm ci/m);
   assert.match(content, /run: npm run check/m);
+  assert.match(content, /required-check/m);
 });
 
 test('template changeset config snapshot', () => {

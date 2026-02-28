@@ -127,6 +127,9 @@ test('setup-github composes expected API calls and payloads', async () => {
   const rulesetPayload = JSON.parse(rulesetPost.options.input);
   assert.equal(rulesetPayload.conditions.ref_name.include[0], 'refs/heads/main');
   assert.equal(rulesetPayload.rules[2].parameters.required_approving_review_count, 0);
+  const requiredChecksRule = rulesetPayload.rules.find((rule) => rule.type === 'required_status_checks');
+  assert.ok(requiredChecksRule, 'expected required_status_checks rule');
+  assert.equal(requiredChecksRule.parameters.required_status_checks[0].context, 'CI / required-check (pull_request)');
 });
 
 test('setup-github exits non-zero on API failure', async () => {

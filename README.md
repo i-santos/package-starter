@@ -34,6 +34,7 @@ Published CLI:
 ```bash
 npx @i-santos/create-package-starter --name @i-santos/swarm
 npx @i-santos/create-package-starter init --dir ./existing-package
+npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --yes
 npx @i-santos/create-package-starter setup-github --repo i-santos/swarm --dry-run
 npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
 npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
@@ -77,6 +78,8 @@ Useful flags:
 - `--force` to overwrite managed files and managed script/dependency keys
 - `--cleanup-legacy-release` to remove legacy release script keys (`release:beta*`, `release:stable*`, `release:promote*`, `release:rollback*`, `release:dist-tags`)
 - `--default-branch <branch>` to change base branch defaults
+- `--with-github --with-beta --with-npm` to run integrated infra setup inside `init`
+- `--yes` to skip confirmations in non-interactive contexts
 
 ## GitHub Defaults Automation
 
@@ -109,7 +112,7 @@ npx @i-santos/create-package-starter promote-stable --dir . --type patch --summa
 
 This exits prerelease mode and creates an explicit promotion changeset before opening PR from beta branch to `main`.
 Keep npm Trusted Publisher configured for `release.yml` (single workflow), and run that workflow on both `main` and `release/beta`.
-`setup-beta` also aligns CI trigger branches and applies beta ruleset with required `check` status.
+`setup-beta` also aligns CI trigger branches and applies beta ruleset with required `CI / required-check (pull_request)` status.
 
 ## npm First Publish Bootstrap
 
