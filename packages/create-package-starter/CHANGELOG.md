@@ -1,5 +1,18 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.3
+
+### Minor Changes
+
+- b94b462: Add orchestrated `init` mode with optional integrated GitHub and npm setup (`--with-github`, `--with-beta`, `--with-npm`) including preflight validation, interactive confirmations, and step-by-step progress reporting.
+
+  Also switch branch rulesets to require a stable CI context (`CI / required-check (pull_request)`) and update the CI template to expose a stable `required-check` job.
+
+### Patch Changes
+
+- b3188d2: Fix template gitignore packaging by storing it as `template/gitignore` and mapping it back to `.gitignore` during create/init.
+- 889f282: Update release workflow template to install latest npm before `npm ci` and clear `NODE_AUTH_TOKEN` in the Changesets step to avoid OIDC publish conflicts.
+
 ## 1.5.0-beta.2
 
 ### Patch Changes
