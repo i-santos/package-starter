@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.4
+
+### Patch Changes
+
+- 4465427: Fix GitHub ruleset required status check context to use job name (`required-check`) instead of the full UI label, for both main and beta ruleset payloads.
+
 ## 1.5.0-beta.3
 
 ### Minor Changes
