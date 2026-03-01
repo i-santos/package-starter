@@ -1,5 +1,13 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.7
+
+### Minor Changes
+
+- 488fb41: Add new `open-pr` and `release-cycle` commands to automate PR creation, checks watching, merge progression, and release PR handling for Changesets workflows.
+
+  Include deterministic PR body generation, policy-aware merge behavior, and docs for orchestration usage/troubleshooting.
+
 ## 1.5.0-beta.6
 
 ### Minor Changes
