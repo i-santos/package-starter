@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.13
+
+### Patch Changes
+
+- 544eaa6: Fix `release-cycle` npm validation target resolution for monorepos/workspaces by deriving package names and versions from changed `package.json` files in the release PR. Also adds `--npm-package` override support for explicit package selection.
+
 ## 1.5.0-beta.12
 
 ### Patch Changes
