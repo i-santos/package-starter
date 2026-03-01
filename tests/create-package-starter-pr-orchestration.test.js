@@ -125,6 +125,88 @@ test('open-pr updates existing PR when head/base already has one', async () => {
   assert.equal(createCall, undefined);
 });
 
+test('release-cycle with auto-merge does not explicitly merge code PR', async () => {
+  const calls = [];
+  let listCall = 0;
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args, options) => {
+      calls.push({ command, args, options });
+      return null;
+    },
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/auto-flow\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'list') {
+        listCall += 1;
+        if (listCall === 1) {
+          return { status: 0, stdout: '[]' };
+        }
+        if (listCall === 2) {
+          return {
+            status: 0,
+            stdout: JSON.stringify([{
+              number: 303,
+              url: 'https://github.com/i-santos/firestack/pull/303',
+              headRefName: 'feat/auto-flow',
+              baseRefName: 'release/beta'
+            }])
+          };
+        }
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            number: 404,
+            url: 'https://github.com/i-santos/firestack/pull/404',
+            headRefName: 'changeset-release/release/beta',
+            baseRefName: 'release/beta'
+          }])
+        };
+      }
+      return null;
+    },
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'create'
+      ? { status: 0, stdout: 'https://github.com/i-santos/firestack/pull/303\n' }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [] }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+      ? { status: 0, stdout: 'merged' }
+      : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.1.0-beta.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.1.0-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.1.0-beta.0"}\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
+
+  const codePrExplicitMerge = calls.find((call) => call.command === 'gh'
+    && call.args[0] === 'pr'
+    && call.args[1] === 'merge'
+    && call.args.includes('303')
+    && call.args.includes('--delete-branch'));
+  assert.equal(codePrExplicitMerge, undefined, 'expected no explicit merge for code PR when auto-merge is enabled');
+
+  const codePrAutoMergeEnable = calls.find((call) => call.command === 'gh'
+    && call.args[0] === 'pr'
+    && call.args[1] === 'merge'
+    && call.args.includes('303')
+    && call.args.includes('--auto'));
+  assert.ok(codePrAutoMergeEnable, 'expected auto-merge enable call for code PR');
+});
+
 test('release-cycle auto mode detects publish on changeset-release branch and merges', async () => {
   const stub = createExecStub([
     ...baseHandlers(),

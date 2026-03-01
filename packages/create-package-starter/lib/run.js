@@ -2577,11 +2577,16 @@ async function runReleaseCycle(args, dependencies = {}) {
     summary.warnings.push(...openPrResult.summary.warnings);
 
     if (args.mergeWhenGreen && codePr && !args.dryRun) {
-      reporter.start('release-cycle-merge-code-pr', `Merging code PR #${codePr.number}...`);
-      mergePrWhenGreen(gitContext.repo, codePr.number, args.mergeMethod, deps);
-      reporter.ok('release-cycle-merge-code-pr', `Code PR #${codePr.number} merged.`);
-      summary.merge = `code pr merged (#${codePr.number})`;
-      summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
+      if (args.autoMerge) {
+        summary.merge = `auto-merge pending/completed (#${codePr.number})`;
+        summary.actionsSkipped.push(`explicit merge code pr (#${codePr.number})`);
+      } else {
+        reporter.start('release-cycle-merge-code-pr', `Merging code PR #${codePr.number}...`);
+        mergePrWhenGreen(gitContext.repo, codePr.number, args.mergeMethod, deps);
+        reporter.ok('release-cycle-merge-code-pr', `Code PR #${codePr.number} merged.`);
+        summary.merge = `code pr merged (#${codePr.number})`;
+        summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
+      }
     } else {
       summary.merge = args.dryRun ? 'dry-run: would merge code PR' : 'skipped';
       summary.actionsSkipped.push('merge code pr');
