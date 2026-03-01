@@ -1,5 +1,16 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.9
+
+### Minor Changes
+
+- 19c7035: Improve `release-cycle` with automatic resume and base-branch synchronization. Adds `--sync-base` (default `auto`) to rebase/merge feature branches when behind `release/beta`, and resume behavior (default on, disable with `--no-resume`) so reruns can continue release stages when code is already integrated.
+
+### Patch Changes
+
+- 4b02237: Refine `release-cycle` with safer auto mode detection, phased execution (`--phase code|full`), merge confirmations (`--confirm-merges`), and cleanup confirmation (`--confirm-cleanup`) gated by successful npm validation.
+- 4b02237: Fix release-cycle to avoid explicit code PR merge when auto-merge is already enabled, preventing branch policy merge failures.
+
 ## 1.5.0-beta.8
 
 ### Minor Changes
