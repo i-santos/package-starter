@@ -107,6 +107,8 @@ Orchestrate release cycle:
 - `--merge-release-pr` (default behavior: enabled)
 - `--verify-npm` (default behavior: enabled)
 - `--confirm-cleanup` (require confirmation before cleanup; only after npm validation pass)
+- `--sync-base <auto|rebase|merge|off>` (default: `auto`; keeps code branch updated with `release/beta`)
+- `--no-resume` (disable automatic resume/reconciliation behavior)
 - `--no-cleanup` (disable default local cleanup after successful cycle)
 - `--yes`
 - `--dry-run`
@@ -224,12 +226,14 @@ Body source priority:
 
 Default mode is `auto`:
 - if current branch starts with `changeset-release/` => `publish`
-- else if exactly one open `changeset-release/*` PR exists => `publish`
+- else if current branch is `release/beta` and exactly one open `changeset-release/*` PR exists => `publish`
 - else => `open-pr`
 
 For `open-pr` mode:
 - runs open-pr flow
+- auto-syncs feature/fix branch with `origin/release/beta` before PR (default `--sync-base auto`)
 - enables auto-merge for code PR by default
+- auto-resumes release phase if current code branch is already integrated into `release/beta`
 - supports `--phase code` to stop after code PR merge
 - can wait for release PR creation (`changeset-release/*`)
 - enables auto-merge for release PR by default

@@ -59,7 +59,7 @@ create-package-starter release-cycle --promote-stable --promote-type minor --yes
 Mode detection (`--mode auto`):
 
 - branch starts with `changeset-release/` -> `publish`
-- exactly one open `changeset-release/*` PR -> `publish`
+- current branch is `release/beta` and exactly one open `changeset-release/*` PR -> `publish`
 - otherwise -> `open-pr`
 
 Track behavior:
@@ -79,6 +79,8 @@ Phase behavior:
 
 - `--phase full` (default): code PR + release PR + npm validation + cleanup
 - `--phase code`: stops after code PR merge into `release/beta`
+- default branch sync before code PR: `--sync-base auto` (rebase onto `origin/release/beta` when behind)
+- resume behavior (default): if code branch is already integrated into `release/beta`, cycle skips code PR and continues release phase (`--no-resume` disables this)
 
 Promotion flow (`--promote-stable`) on protected `release/beta`:
 
