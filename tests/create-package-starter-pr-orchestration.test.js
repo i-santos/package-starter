@@ -185,7 +185,7 @@ test('release-cycle with auto-merge does not explicitly merge code PR', async ()
       }
       return null;
     },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.1.0-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.1.0-beta.0"}\n' } : null),
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
     (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
@@ -275,7 +275,7 @@ test('release-cycle full uses release PR matching beta track base branch', async
       }
       return null;
     },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.3.0-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.3.0-beta.0"}\n' } : null),
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
     (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
@@ -320,7 +320,7 @@ test('release-cycle auto mode detects publish on changeset-release branch and en
       }
       return null;
     },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.1.0-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"1.1.0-beta.0"}\n' } : null),
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
@@ -486,7 +486,7 @@ test('release-cycle validates npm tag and version for beta track', async () => {
       }
       return null;
     },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.2.3-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"1.2.3-beta.0"}\n' } : null),
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: ' M local-file\n' } : null)
   ]);
@@ -515,7 +515,7 @@ test('release-cycle skips cleanup with --no-cleanup', async () => {
       }
       return null;
     },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.0.0-beta.1"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.0-beta.1"}\n' } : null)
   ]);
 
@@ -630,7 +630,7 @@ test('release-cycle resumes from release phase when code branch is already integ
       }
       return null;
     },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.2.0-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.2.0-beta.0"}\n' } : null),
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
     (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
