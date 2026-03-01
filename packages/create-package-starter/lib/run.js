@@ -546,6 +546,7 @@ function parseReleaseCycleArgs(argv) {
     repo: '',
     mode: 'auto',
     phase: 'full',
+    phaseProvided: false,
     track: 'auto',
     promoteStable: false,
     promoteType: 'patch',
@@ -590,6 +591,7 @@ function parseReleaseCycleArgs(argv) {
 
     if (token === '--phase') {
       args.phase = parseValueFlag(argv, i, '--phase');
+      args.phaseProvided = true;
       i += 1;
       continue;
     }
@@ -1633,30 +1635,64 @@ function getPrMergeReadiness(repo, prNumber, deps) {
   };
 }
 
-function ensurePrReadyForMergeOrThrow(readiness, label) {
-  if (readiness.isDraft) {
-    throw new Error(`${label} is still a draft PR. Mark it ready for review before merge.`);
+function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps) {
+  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  let lastReadiness = null;
+  let lastChecks = null;
+  while (Date.now() <= timeoutAt) {
+    const readiness = getPrMergeReadiness(repo, prNumber, deps);
+    const checks = getPrCheckState(repo, prNumber, deps);
+    lastReadiness = readiness;
+    lastChecks = checks;
+
+    if (readiness.isDraft) {
+      throw new Error(`${label} is still a draft PR. Mark it ready for review before merge.`);
+    }
+
+    if (readiness.reviewDecision === 'REVIEW_REQUIRED' || readiness.reviewDecision === 'CHANGES_REQUESTED') {
+      throw new Error(
+        [
+          `${label} still requires review approval before merge.`,
+          `reviewDecision: ${readiness.reviewDecision}`,
+          readiness.url ? `PR: ${readiness.url}` : ''
+        ].filter(Boolean).join('\n')
+      );
+    }
+
+    if (checks.failed > 0) {
+      throw new Error(`${label} has failing required checks.`);
+    }
+
+    if (readiness.mergeStateStatus === 'DIRTY' || readiness.mergeStateStatus === 'BEHIND') {
+      throw new Error(
+        [
+          `${label} is not mergeable yet due to branch policy/state.`,
+          `mergeStateStatus: ${readiness.mergeStateStatus}`,
+          readiness.url ? `PR: ${readiness.url}` : ''
+        ].filter(Boolean).join('\n')
+      );
+    }
+
+    const mergeStateReady = readiness.mergeStateStatus === 'CLEAN'
+      || readiness.mergeStateStatus === 'HAS_HOOKS'
+      || readiness.mergeStateStatus === 'UNSTABLE';
+    const mergeStateUnknown = !readiness.mergeStateStatus || readiness.mergeStateStatus === 'UNKNOWN' || readiness.mergeStateStatus === 'BLOCKED';
+    if ((mergeStateReady && checks.pending === 0) || (mergeStateUnknown && checks.pending === 0 && !readiness.mergeStateStatus)) {
+      return readiness;
+    }
+
+    sleepMs(5000);
   }
 
-  if (readiness.reviewDecision === 'REVIEW_REQUIRED' || readiness.reviewDecision === 'CHANGES_REQUESTED') {
-    throw new Error(
-      [
-        `${label} still requires review approval before merge.`,
-        `reviewDecision: ${readiness.reviewDecision}`,
-        readiness.url ? `PR: ${readiness.url}` : ''
-      ].filter(Boolean).join('\n')
-    );
-  }
-
-  if (readiness.mergeStateStatus === 'BLOCKED' || readiness.mergeStateStatus === 'DIRTY' || readiness.mergeStateStatus === 'BEHIND') {
-    throw new Error(
-      [
-        `${label} is not mergeable yet due to branch policy/state.`,
-        `mergeStateStatus: ${readiness.mergeStateStatus}`,
-        readiness.url ? `PR: ${readiness.url}` : ''
-      ].filter(Boolean).join('\n')
-    );
-  }
+  throw new Error(
+    [
+      `${label} did not become merge-ready after ${timeoutMinutes} minutes.`,
+      `mergeStateStatus: ${lastReadiness ? (lastReadiness.mergeStateStatus || 'n/a') : 'n/a'}`,
+      `reviewDecision: ${lastReadiness ? (lastReadiness.reviewDecision || 'n/a') : 'n/a'}`,
+      `pending checks: ${lastChecks ? lastChecks.pending : 'n/a'}`,
+      lastReadiness && lastReadiness.url ? `PR: ${lastReadiness.url}` : ''
+    ].filter(Boolean).join('\n')
+  );
 }
 
 async function confirmMergeIfNeeded(args, readiness, label) {
@@ -2698,6 +2734,9 @@ async function runReleaseCycle(args, dependencies = {}) {
 
   const gitContext = resolveGitContext(args, deps);
   summary.repoResolved = gitContext.repo;
+  const isCodeBranch = gitContext.head !== DEFAULT_BETA_BRANCH && !gitContext.head.startsWith('changeset-release/');
+  const holdReleaseByDefault = isCodeBranch && !args.promoteStable && !args.phaseProvided && args.mode !== 'publish';
+  const effectivePhase = holdReleaseByDefault ? 'code' : args.phase;
   const requestedTrack = args.track === 'auto' ? (args.promoteStable ? 'stable' : 'beta') : args.track;
   if (args.promoteStable && gitContext.head !== DEFAULT_BETA_BRANCH) {
     throw new Error(`--promote-stable is only allowed when running from "${DEFAULT_BETA_BRANCH}".`);
@@ -2710,6 +2749,10 @@ async function runReleaseCycle(args, dependencies = {}) {
   }
   summary.actionsPerformed.push(`release track: ${requestedTrack}`);
   summary.releaseTrack = requestedTrack;
+  if (holdReleaseByDefault) {
+    summary.warnings.push('Default behavior on code branches is now phase=code. Use --phase full to continue through release PR + npm publish.');
+    summary.actionsPerformed.push('phase override: code (default hold-release on code branch)');
+  }
 
   let detectedMode = args.mode;
   if (args.promoteStable) {
@@ -2848,8 +2891,13 @@ async function runReleaseCycle(args, dependencies = {}) {
 
       if (args.mergeWhenGreen && codePr && !args.dryRun) {
         reporter.start('release-cycle-merge-code-ready', `Checking merge readiness for code PR #${codePr.number}...`);
-        const codeReadiness = getPrMergeReadiness(gitContext.repo, codePr.number, deps);
-        ensurePrReadyForMergeOrThrow(codeReadiness, `Code PR #${codePr.number}`);
+        const codeReadiness = waitForPrMergeReadinessOrThrow(
+          gitContext.repo,
+          codePr.number,
+          `Code PR #${codePr.number}`,
+          args.checkTimeout,
+          deps
+        );
         await confirmMergeIfNeeded(args, codeReadiness, `Code PR #${codePr.number}`);
         reporter.ok('release-cycle-merge-code-ready', `Code PR #${codePr.number} is ready for merge.`);
         reporter.start('release-cycle-code-auto-merge', `Enabling auto-merge for code PR #${codePr.number}...`);
@@ -2866,7 +2914,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       }
     }
 
-    if (args.phase === 'code') {
+    if (effectivePhase === 'code') {
       summary.releasePr = 'skipped (phase=code)';
       summary.npmValidation = 'skipped (phase=code)';
       summary.cleanup = 'skipped (phase=code; requires npm validation)';
@@ -2896,8 +2944,13 @@ async function runReleaseCycle(args, dependencies = {}) {
 
         if (args.mergeReleasePr) {
           reporter.start('release-cycle-merge-release-ready', `Checking merge readiness for release PR #${releasePr.number}...`);
-          const releaseReadiness = getPrMergeReadiness(gitContext.repo, releasePr.number, deps);
-          ensurePrReadyForMergeOrThrow(releaseReadiness, `Release PR #${releasePr.number}`);
+          const releaseReadiness = waitForPrMergeReadinessOrThrow(
+            gitContext.repo,
+            releasePr.number,
+            `Release PR #${releasePr.number}`,
+            args.checkTimeout,
+            deps
+          );
           await confirmMergeIfNeeded(args, releaseReadiness, `Release PR #${releasePr.number}`);
           reporter.ok('release-cycle-merge-release-ready', `Release PR #${releasePr.number} is ready for merge.`);
           reporter.start('release-cycle-release-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
@@ -3019,8 +3072,13 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.releasePr = `dry-run: would merge (#${releasePr.number})`;
     } else {
       reporter.start('release-cycle-publish-merge-ready', `Checking merge readiness for release PR #${releasePr.number}...`);
-      const publishReadiness = getPrMergeReadiness(gitContext.repo, releasePr.number, deps);
-      ensurePrReadyForMergeOrThrow(publishReadiness, `Release PR #${releasePr.number}`);
+      const publishReadiness = waitForPrMergeReadinessOrThrow(
+        gitContext.repo,
+        releasePr.number,
+        `Release PR #${releasePr.number}`,
+        args.checkTimeout,
+        deps
+      );
       await confirmMergeIfNeeded(args, publishReadiness, `Release PR #${releasePr.number}`);
       reporter.ok('release-cycle-publish-merge-ready', `Release PR #${releasePr.number} is ready for merge.`);
       reporter.start('release-cycle-publish-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
