@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.12
+
+### Patch Changes
+
+- 9691d80: Improve `release-cycle` observability with periodic progress logs: while waiting for release PR creation it now reports release workflow status on `release/beta`, and while waiting npm propagation it reports observed `npm view version` and expected dist-tag values every 30 seconds.
+
 ## 1.5.0-beta.11
 
 ### Patch Changes
