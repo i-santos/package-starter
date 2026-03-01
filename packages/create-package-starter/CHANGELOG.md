@@ -1,5 +1,21 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.6
+
+### Minor Changes
+
+- ed0ed07: Add release auth strategy support for generated and managed release workflows via `--release-auth` (`pat`, `app`, `github-token`, `manual-trigger`) across create/init/setup-beta.
+
+  This allows teams to choose between PAT-based reliability, GitHub App tokens, built-in `GITHUB_TOKEN`, or explicit manual retrigger mode for release PR checks.
+
+- a1af545: Improve release-auth setup DX with explicit interactive auth-mode selection, consolidated safety confirmations, app-secret preflight warnings, and clearer summary output sections.
+
+  Add release-auth documentation updates, including an auth mode decision table and a new GitHub App setup guide.
+
+### Patch Changes
+
+- 9ac0d83: Improve `release-auth=app` guidance by supporting `GH_APP_CLIENT_ID` as fallback for `app-id` in generated release workflow, while keeping compatibility with `GH_APP_ID`.
+
 ## 1.5.0-beta.5
 
 ### Minor Changes
