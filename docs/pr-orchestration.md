@@ -39,10 +39,10 @@ Use `release-cycle` to orchestrate full progression:
 
 1. code PR open/update
 2. checks
-3. merge code PR
+3. enable auto-merge for code PR and wait merge
 4. wait release PR (`changeset-release/*`)
 5. checks
-6. merge release PR
+6. enable auto-merge for release PR and wait merge
 
 Example:
 
@@ -67,6 +67,19 @@ Track behavior:
 - branch != `release/beta` -> beta track only
 - stable requires explicit `--promote-stable`
 
+Merge strategy behavior:
+
+- default: auto-merge for both code PR and release PR
+- optional: `--confirm-merges` to ask confirmation before each merge step
+- after checks are green, CLI verifies review/merge readiness:
+  - if approvals are still required, it stops with actionable guidance
+  - if ready and `--confirm-merges` is set, it asks confirmation (unless `--yes`)
+
+Phase behavior:
+
+- `--phase full` (default): code PR + release PR + npm validation + cleanup
+- `--phase code`: stops after code PR merge into `release/beta`
+
 Promotion flow (`--promote-stable`) on protected `release/beta`:
 
 1. dispatch workflow `.github/workflows/promote-stable.yml`
@@ -82,9 +95,11 @@ Post-merge checks:
   - expected version
   - expected dist-tag (`beta` for beta track, `latest` for stable track)
 - cleanup runs by default after success:
+- cleanup only runs when npm validation passed
   - checkout base branch
   - pull latest
   - delete local feature branch
+  - optional confirmation with `--confirm-cleanup`
   - disable with `--no-cleanup`
 
 ## Team-safe behavior
