@@ -1640,6 +1640,17 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
   let lastReadiness = null;
   let lastChecks = null;
   while (Date.now() <= timeoutAt) {
+    const mergeState = getPrMergeState(repo, prNumber, deps);
+    if (mergeState.state === 'MERGED' || mergeState.mergedAt) {
+      return {
+        number: prNumber,
+        url: '',
+        reviewDecision: 'APPROVED',
+        mergeStateStatus: 'MERGED',
+        isDraft: false
+      };
+    }
+
     const readiness = getPrMergeReadiness(repo, prNumber, deps);
     const checks = getPrCheckState(repo, prNumber, deps);
     lastReadiness = readiness;
