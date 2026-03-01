@@ -11,6 +11,15 @@ const DEFAULT_RULESET_NAME = 'Default main branch protection';
 const REQUIRED_CHECK_CONTEXT = 'required-check';
 const DEFAULT_RELEASE_AUTH = 'pat';
 const RELEASE_AUTH_MODES = new Set(['github-token', 'pat', 'app', 'manual-trigger']);
+const RELEASE_AUTH_APP_REQUIRED_SECRETS = ['GH_APP_PRIVATE_KEY'];
+const RELEASE_AUTH_APP_ID_SECRETS = ['GH_APP_CLIENT_ID', 'GH_APP_ID'];
+const RELEASE_AUTH_DOC_LINKS = {
+  overview: 'https://docs.github.com/apps',
+  create: 'https://docs.github.com/apps/creating-github-apps/registering-a-github-app/registering-a-github-app',
+  install: 'https://docs.github.com/apps/using-github-apps/installing-your-own-github-app',
+  secrets: 'https://docs.github.com/actions/security-guides/using-secrets-in-github-actions',
+  internal: 'https://github.com/i-santos/package-starter/blob/main/docs/release-auth-github-app.md'
+};
 
 const MANAGED_FILE_SPECS = [
   ['.changeset/config.json', '.changeset/config.json'],
@@ -62,7 +71,8 @@ function parseCreateArgs(argv) {
   const args = {
     out: process.cwd(),
     defaultBranch: DEFAULT_BASE_BRANCH,
-    releaseAuth: DEFAULT_RELEASE_AUTH
+    releaseAuth: DEFAULT_RELEASE_AUTH,
+    releaseAuthProvided: false
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -88,6 +98,7 @@ function parseCreateArgs(argv) {
 
     if (token === '--release-auth') {
       args.releaseAuth = parseValueFlag(argv, i, '--release-auth');
+      args.releaseAuthProvided = true;
       i += 1;
       continue;
     }
@@ -114,6 +125,7 @@ function parseInitArgs(argv) {
     repo: '',
     ruleset: '',
     releaseAuth: DEFAULT_RELEASE_AUTH,
+    releaseAuthProvided: false,
     withGithub: false,
     withNpm: false,
     withBeta: false,
@@ -162,6 +174,7 @@ function parseInitArgs(argv) {
 
     if (token === '--release-auth') {
       args.releaseAuth = parseValueFlag(argv, i, '--release-auth');
+      args.releaseAuthProvided = true;
       i += 1;
       continue;
     }
@@ -298,6 +311,7 @@ function parseSetupBetaArgs(argv) {
     betaBranch: DEFAULT_BETA_BRANCH,
     defaultBranch: DEFAULT_BASE_BRANCH,
     releaseAuth: DEFAULT_RELEASE_AUTH,
+    releaseAuthProvided: false,
     force: false,
     yes: false,
     dryRun: false
@@ -332,6 +346,7 @@ function parseSetupBetaArgs(argv) {
 
     if (token === '--release-auth') {
       args.releaseAuth = parseValueFlag(argv, i, '--release-auth');
+      args.releaseAuthProvided = true;
       i += 1;
       continue;
     }
@@ -533,21 +548,59 @@ function buildReleaseAuthVariables(releaseAuthMode) {
   };
 }
 
-function appendReleaseAuthWarnings(summary, releaseAuthMode) {
+function appendReleaseAuthWarnings(summary, releaseAuthMode, options = {}) {
   if (releaseAuthMode === 'manual-trigger') {
+    summary.warnings.push('release-auth recommendation: use pat/app when you need automatic CI retriggers for release PR updates.');
     summary.warnings.push('manual-trigger mode selected: release PR updates may not retrigger CI automatically.');
     summary.warnings.push('If release PR checks are pending, push an empty commit to changeset-release/* to retrigger CI.');
     return;
   }
 
   if (releaseAuthMode === 'app') {
-    summary.warnings.push('release-auth app mode selected: ensure GH_APP_ID (or GH_APP_CLIENT_ID) and GH_APP_PRIVATE_KEY repository secrets are configured.');
+    summary.warnings.push('release-auth recommendation: app mode is preferred for long-lived org/repo automation.');
+    const missing = options.missingAppSecrets || [];
+    if (missing.length > 0) {
+      summary.warnings.push(`release-auth app mode selected: missing repository secrets: ${missing.join(', ')}`);
+    } else if (options.appSecretsChecked) {
+      summary.warnings.push('release-auth app mode selected: required repository secrets detected.');
+    } else {
+      summary.warnings.push('release-auth app mode selected: ensure GH_APP_CLIENT_ID (or GH_APP_ID) and GH_APP_PRIVATE_KEY repository secrets are configured.');
+    }
+    summary.warnings.push(`GitHub Apps overview: ${RELEASE_AUTH_DOC_LINKS.overview}`);
+    summary.warnings.push(`Create GitHub App: ${RELEASE_AUTH_DOC_LINKS.create}`);
+    summary.warnings.push(`Install GitHub App: ${RELEASE_AUTH_DOC_LINKS.install}`);
+    summary.warnings.push(`Manage Actions secrets: ${RELEASE_AUTH_DOC_LINKS.secrets}`);
+    summary.warnings.push(`Project guide: ${RELEASE_AUTH_DOC_LINKS.internal}`);
     return;
   }
 
   if (releaseAuthMode === 'pat') {
+    summary.warnings.push('release-auth recommendation: pat mode is the fastest setup for solo/small projects.');
     summary.warnings.push('release-auth pat mode selected: ensure CHANGESETS_GH_TOKEN secret is configured for reliable release PR check retriggers.');
+    return;
   }
+
+  summary.warnings.push('release-auth recommendation: github-token mode is simplest, but may skip downstream workflow retriggers.');
+}
+
+async function resolveReleaseAuthSelection(args, summary, options = {}) {
+  if (args.releaseAuthProvided) {
+    return;
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    summary.warnings.push(`--release-auth not provided in non-interactive mode. Defaulting to "${args.releaseAuth}".`);
+    return;
+  }
+
+  const selected = await askChoice(
+    `${options.contextLabel || 'Select release auth mode'}:`,
+    ['pat', 'app', 'github-token', 'manual-trigger'],
+    0
+  );
+
+  args.releaseAuth = selected;
+  summary.warnings.push(`release-auth selected interactively: ${selected}`);
 }
 
 function renderTemplateString(source, variables) {
@@ -622,18 +675,42 @@ function createSummary() {
 }
 
 function printSummary(title, summary) {
-  const list = (values) => (values.length ? values.join(', ') : 'none');
+  const unique = (values) => [...new Set(values)];
+  const formatList = (values) => {
+    const normalized = unique(values);
+    if (!normalized.length) {
+      return ['  - none'];
+    }
+
+    return normalized.map((item) => `  - ${item}`);
+  };
 
   console.log(title);
-  console.log(`files created: ${list(summary.createdFiles)}`);
-  console.log(`files overwritten: ${list(summary.overwrittenFiles)}`);
-  console.log(`files skipped: ${list(summary.skippedFiles)}`);
-  console.log(`scripts updated: ${list(summary.updatedScriptKeys)}`);
-  console.log(`scripts skipped: ${list(summary.skippedScriptKeys)}`);
-  console.log(`scripts removed: ${list(summary.removedScriptKeys)}`);
-  console.log(`dependencies updated: ${list(summary.updatedDependencyKeys)}`);
-  console.log(`dependencies skipped: ${list(summary.skippedDependencyKeys)}`);
-  console.log(`warnings: ${list(summary.warnings)}`);
+  console.log('');
+  console.log('Preflight');
+  console.log('  - completed');
+  console.log('');
+  console.log('Apply');
+  console.log('files created:');
+  formatList(summary.createdFiles).forEach((line) => console.log(line));
+  console.log('files overwritten:');
+  formatList(summary.overwrittenFiles).forEach((line) => console.log(line));
+  console.log('files skipped:');
+  formatList(summary.skippedFiles).forEach((line) => console.log(line));
+  console.log('scripts updated:');
+  formatList(summary.updatedScriptKeys).forEach((line) => console.log(line));
+  console.log('scripts skipped:');
+  formatList(summary.skippedScriptKeys).forEach((line) => console.log(line));
+  console.log('scripts removed:');
+  formatList(summary.removedScriptKeys).forEach((line) => console.log(line));
+  console.log('dependencies updated:');
+  formatList(summary.updatedDependencyKeys).forEach((line) => console.log(line));
+  console.log('dependencies skipped:');
+  formatList(summary.skippedDependencyKeys).forEach((line) => console.log(line));
+  console.log('');
+  console.log('Summary');
+  console.log('warnings:');
+  formatList(summary.warnings).forEach((line) => console.log(line));
 }
 
 class StepReporter {
@@ -756,6 +833,35 @@ async function askYesNo(questionText, defaultValue = false) {
     }
 
     return normalized === 'y' || normalized === 'yes';
+  } finally {
+    rl.close();
+  }
+}
+
+async function askChoice(questionText, choices, defaultIndex = 0) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    return choices[defaultIndex];
+  }
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  try {
+    const lines = choices.map((choice, index) => `${index + 1}. ${choice}`);
+    const answer = await rl.question(`${questionText}\n${lines.join('\n')}\nSelect option [${defaultIndex + 1}]: `);
+    const trimmed = answer.trim();
+    if (!trimmed) {
+      return choices[defaultIndex];
+    }
+
+    const numeric = Number.parseInt(trimmed, 10);
+    if (Number.isNaN(numeric) || numeric < 1 || numeric > choices.length) {
+      return choices[defaultIndex];
+    }
+
+    return choices[numeric - 1];
   } finally {
     rl.close();
   }
@@ -1189,14 +1295,18 @@ async function initExistingPackage(args, dependencies = {}) {
   const deps = {
     exec: dependencies.exec || execCommand
   };
+  await resolveReleaseAuthSelection(args, overallSummary, { contextLabel: 'Select release auth mode for release workflow' });
   overallSummary.updatedScriptKeys.push(`release.auth:${args.releaseAuth}`);
-  appendReleaseAuthWarnings(overallSummary, args.releaseAuth);
 
   if (!selections.withGithub && !selections.withNpm && !selections.withBeta && !process.stdin.isTTY) {
     overallSummary.warnings.push('No --with-* flags were provided in non-interactive mode. Only local init was applied.');
   }
 
   const context = prevalidateInitExecution(args, selections, dependencies, reporter);
+  appendReleaseAuthWarnings(overallSummary, args.releaseAuth, {
+    missingAppSecrets: context.missingReleaseAuthAppSecrets,
+    appSecretsChecked: selections.withGithub && args.releaseAuth === 'app'
+  });
   await confirmInitPlan(args, selections, context, overallSummary);
 
   reporter.start('local-init', 'Applying local package bootstrap...');
@@ -1571,6 +1681,30 @@ function listRulesets(deps, repo) {
   return parseJsonOutput(listResult.stdout || '[]', 'Failed to parse rulesets response from GitHub API.');
 }
 
+function listActionsSecretNames(deps, repo) {
+  const listResult = ghApi(deps, 'GET', `/repos/${repo}/actions/secrets?per_page=100`);
+  if (listResult.status !== 0) {
+    throw new Error(`Failed to list Actions secrets: ${listResult.stderr || listResult.stdout}`.trim());
+  }
+
+  const parsed = parseJsonOutput(listResult.stdout || '{}', 'Failed to parse Actions secrets response from GitHub API.');
+  const secrets = Array.isArray(parsed.secrets) ? parsed.secrets : [];
+  return secrets
+    .map((item) => item && item.name)
+    .filter(Boolean);
+}
+
+function findMissingReleaseAuthAppSecrets(existingNames) {
+  const nameSet = new Set(existingNames || []);
+  const missing = [...RELEASE_AUTH_APP_REQUIRED_SECRETS].filter((name) => !nameSet.has(name));
+  const hasClientOrAppId = RELEASE_AUTH_APP_ID_SECRETS.some((name) => nameSet.has(name));
+  if (!hasClientOrAppId) {
+    missing.push('GH_APP_CLIENT_ID or GH_APP_ID');
+  }
+
+  return missing;
+}
+
 function ensureNpmAvailable(deps) {
   const version = deps.exec('npm', ['--version']);
   if (version.status !== 0) {
@@ -1740,7 +1874,8 @@ function prevalidateInitExecution(args, selections, dependencies = {}, reporter 
     existingMainRuleset: null,
     existingBetaRuleset: null,
     mainRulesetPayload: null,
-    betaRulesetPayload: createBetaRulesetPayload(args.betaBranch)
+    betaRulesetPayload: createBetaRulesetPayload(args.betaBranch),
+    missingReleaseAuthAppSecrets: []
   };
 
   reporter.start('validate-local', 'Validating local project and templates...');
@@ -1798,6 +1933,17 @@ function prevalidateInitExecution(args, selections, dependencies = {}, reporter 
           : `Beta branch "${args.betaBranch}" will be created from "${args.defaultBranch}".`
       );
     }
+
+    if (args.releaseAuth === 'app') {
+      reporter.start('validate-release-auth-app', 'Checking repository secrets for release-auth app mode...');
+      const secretNames = listActionsSecretNames(deps, result.repo);
+      result.missingReleaseAuthAppSecrets = findMissingReleaseAuthAppSecrets(secretNames);
+      if (result.missingReleaseAuthAppSecrets.length > 0) {
+        reporter.warn('validate-release-auth-app', `Missing app secrets: ${result.missingReleaseAuthAppSecrets.join(', ')}`);
+      } else {
+        reporter.ok('validate-release-auth-app', 'Required app secrets detected.');
+      }
+    }
   }
 
   if (selections.withNpm) {
@@ -1831,24 +1977,29 @@ async function confirmInitPlan(args, selections, context, summary) {
     summary.warnings.push('Confirmation prompts skipped due to --yes.');
     return;
   }
-
-  await confirmOrThrow(summarizePlannedInitActions(selections, args, context));
+  const details = [summarizePlannedInitActions(selections, args, context)];
 
   if (args.force) {
-    await confirmOrThrow('--force will overwrite managed files/scripts/dependencies when applicable.');
+    details.push('- --force will overwrite managed files/scripts/dependencies when applicable.');
   }
 
   if (selections.withGithub && context.existingMainRuleset) {
-    await confirmOrThrow(`Ruleset "${context.mainRulesetPayload.name}" already exists and will be overwritten.`);
+    details.push(`- Ruleset "${context.mainRulesetPayload.name}" already exists and will be overwritten.`);
   }
 
   if (selections.withBeta && context.betaBranchExists) {
-    await confirmOrThrow(`Branch "${args.betaBranch}" already exists and will be used as beta release flow branch.`);
+    details.push(`- Branch "${args.betaBranch}" already exists and will be used as beta release flow branch.`);
   }
 
   if (selections.withBeta && context.existingBetaRuleset) {
-    await confirmOrThrow(`Ruleset "${context.betaRulesetPayload.name}" already exists and will be overwritten.`);
+    details.push(`- Ruleset "${context.betaRulesetPayload.name}" already exists and will be overwritten.`);
   }
+
+  if (args.releaseAuth === 'app' && context.missingReleaseAuthAppSecrets.length > 0) {
+    details.push(`- release-auth app mode is missing secrets: ${context.missingReleaseAuthAppSecrets.join(', ')}`);
+  }
+
+  await confirmOrThrow(details.join('\n'));
 }
 
 function runNpmSetup(args, dependencies = {}, options = {}) {
@@ -1991,9 +2142,9 @@ async function setupBeta(args, dependencies = {}) {
   logStep('ok', `Using repository ${repo}.`);
 
   const summary = createSummary();
+  await resolveReleaseAuthSelection(args, summary, { contextLabel: 'Select release auth mode for beta flow' });
   summary.updatedScriptKeys.push('github.beta_branch', 'github.beta_ruleset', 'actions.default_workflow_permissions');
   summary.updatedScriptKeys.push(`release.auth:${args.releaseAuth}`);
-  appendReleaseAuthWarnings(summary, args.releaseAuth);
   const releaseAuthVariables = buildReleaseAuthVariables(args.releaseAuth || DEFAULT_RELEASE_AUTH);
   const desiredScripts = {
     'beta:enter': 'changeset pre enter beta',
@@ -2029,6 +2180,19 @@ async function setupBeta(args, dependencies = {}) {
   if (!fs.existsSync(ciWorkflowTemplatePath)) {
     throw new Error(`Template not found: ${ciWorkflowTemplatePath}`);
   }
+
+  let missingAppSecrets = [];
+  let appSecretsChecked = false;
+  if (args.releaseAuth === 'app') {
+    try {
+      const secretNames = listActionsSecretNames(deps, repo);
+      missingAppSecrets = findMissingReleaseAuthAppSecrets(secretNames);
+      appSecretsChecked = true;
+    } catch (error) {
+      summary.warnings.push(`Could not validate release-auth app secrets: ${error.message}`);
+    }
+  }
+  appendReleaseAuthWarnings(summary, args.releaseAuth, { missingAppSecrets, appSecretsChecked });
 
   if (args.dryRun) {
     logStep('warn', 'Dry-run mode enabled. No remote or file changes will be applied.');
@@ -2093,22 +2257,24 @@ async function setupBeta(args, dependencies = {}) {
     if (args.yes) {
       logStep('warn', 'Confirmation prompts skipped due to --yes.');
     } else {
-      await confirmOrThrow(
-        [
-          `This will modify GitHub repository settings for ${repo}:`,
-          `- set Actions workflow permissions to write`,
-          `- ensure branch "${args.betaBranch}" exists${doesBranchExist ? ' (already exists)' : ' (will be created)'}`,
-          `- apply branch protection ruleset "${betaRulesetPayload.name}"`,
+      const confirmDetails = [
+        `This will modify GitHub repository settings for ${repo}:`,
+        '- set Actions workflow permissions to write',
+        `- ensure branch "${args.betaBranch}" exists${doesBranchExist ? ' (already exists)' : ' (will be created)'}`,
+        `- apply branch protection ruleset "${betaRulesetPayload.name}"`,
         `- require CI status check "${REQUIRED_CHECK_CONTEXT}" on beta branch`,
-          `- update local ${workflowRelativePath} and package.json beta scripts`
-        ].join('\n')
-      );
+        `- update local ${workflowRelativePath} and package.json beta scripts`
+      ];
 
       if (existingRuleset) {
-        await confirmOrThrow(
-          `Ruleset "${betaRulesetPayload.name}" already exists and will be overwritten.`
-        );
+        confirmDetails.push(`- existing ruleset "${betaRulesetPayload.name}" will be overwritten`);
       }
+
+      if (missingAppSecrets.length > 0) {
+        confirmDetails.push(`- release-auth app mode is missing secrets: ${missingAppSecrets.join(', ')}`);
+      }
+
+      await confirmOrThrow(confirmDetails.join('\n'));
     }
 
     logStep('run', `Ensuring ${workflowRelativePath} includes stable+beta triggers...`);
