@@ -42,6 +42,8 @@ function usage() {
     '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
+    '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
+    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--yes] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -53,6 +55,8 @@ function usage() {
     '  create-package-starter setup-github --repo i-santos/firestack --dry-run',
     '  create-package-starter init --dir . --with-github --with-beta --with-npm --yes',
     '  create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth app',
+    '  create-package-starter open-pr --auto-merge --watch-checks',
+    '  create-package-starter release-cycle --yes',
     '  create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"',
     '  create-package-starter setup-npm --dir . --publish-first'
   ].join('\n');
@@ -426,6 +430,259 @@ function parsePromoteStableArgs(argv) {
   return args;
 }
 
+function parseOpenPrArgs(argv) {
+  const args = {
+    repo: '',
+    base: '',
+    head: '',
+    title: '',
+    body: '',
+    bodyFile: '',
+    template: '',
+    draft: false,
+    autoMerge: false,
+    watchChecks: false,
+    checkTimeout: 30,
+    yes: false,
+    dryRun: false
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+
+    if (token === '--repo') {
+      args.repo = parseValueFlag(argv, i, '--repo');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--base') {
+      args.base = parseValueFlag(argv, i, '--base');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--head') {
+      args.head = parseValueFlag(argv, i, '--head');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--title') {
+      args.title = parseValueFlag(argv, i, '--title');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--body') {
+      args.body = parseValueFlag(argv, i, '--body');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--body-file') {
+      args.bodyFile = parseValueFlag(argv, i, '--body-file');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--template') {
+      args.template = parseValueFlag(argv, i, '--template');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--check-timeout') {
+      args.checkTimeout = Number.parseInt(parseValueFlag(argv, i, '--check-timeout'), 10);
+      i += 1;
+      continue;
+    }
+
+    if (token === '--draft') {
+      args.draft = true;
+      continue;
+    }
+
+    if (token === '--auto-merge') {
+      args.autoMerge = true;
+      continue;
+    }
+
+    if (token === '--watch-checks') {
+      args.watchChecks = true;
+      continue;
+    }
+
+    if (token === '--yes') {
+      args.yes = true;
+      continue;
+    }
+
+    if (token === '--dry-run') {
+      args.dryRun = true;
+      continue;
+    }
+
+    if (token === '--help' || token === '-h') {
+      args.help = true;
+      continue;
+    }
+
+    throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
+  }
+
+  if (!Number.isInteger(args.checkTimeout) || args.checkTimeout <= 0) {
+    throw new Error('Invalid --check-timeout value. Expected a positive integer (minutes).');
+  }
+
+  return args;
+}
+
+function parseReleaseCycleArgs(argv) {
+  const args = {
+    repo: '',
+    mode: 'auto',
+    head: '',
+    base: '',
+    title: '',
+    bodyFile: '',
+    draft: false,
+    autoMerge: true,
+    watchChecks: true,
+    checkTimeout: 30,
+    mergeWhenGreen: true,
+    mergeMethod: 'squash',
+    waitReleasePr: true,
+    releasePrTimeout: 30,
+    mergeReleasePr: true,
+    yes: false,
+    dryRun: false
+  };
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const token = argv[i];
+
+    if (token === '--repo') {
+      args.repo = parseValueFlag(argv, i, '--repo');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--mode') {
+      args.mode = parseValueFlag(argv, i, '--mode');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--head') {
+      args.head = parseValueFlag(argv, i, '--head');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--base') {
+      args.base = parseValueFlag(argv, i, '--base');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--title') {
+      args.title = parseValueFlag(argv, i, '--title');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--body-file') {
+      args.bodyFile = parseValueFlag(argv, i, '--body-file');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--check-timeout') {
+      args.checkTimeout = Number.parseInt(parseValueFlag(argv, i, '--check-timeout'), 10);
+      i += 1;
+      continue;
+    }
+
+    if (token === '--release-pr-timeout') {
+      args.releasePrTimeout = Number.parseInt(parseValueFlag(argv, i, '--release-pr-timeout'), 10);
+      i += 1;
+      continue;
+    }
+
+    if (token === '--merge-method') {
+      args.mergeMethod = parseValueFlag(argv, i, '--merge-method');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--draft') {
+      args.draft = true;
+      continue;
+    }
+
+    if (token === '--auto-merge') {
+      args.autoMerge = true;
+      continue;
+    }
+
+    if (token === '--watch-checks') {
+      args.watchChecks = true;
+      continue;
+    }
+
+    if (token === '--merge-when-green') {
+      args.mergeWhenGreen = true;
+      continue;
+    }
+
+    if (token === '--wait-release-pr') {
+      args.waitReleasePr = true;
+      continue;
+    }
+
+    if (token === '--merge-release-pr') {
+      args.mergeReleasePr = true;
+      continue;
+    }
+
+    if (token === '--yes') {
+      args.yes = true;
+      continue;
+    }
+
+    if (token === '--dry-run') {
+      args.dryRun = true;
+      continue;
+    }
+
+    if (token === '--help' || token === '-h') {
+      args.help = true;
+      continue;
+    }
+
+    throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
+  }
+
+  if (!['auto', 'open-pr', 'publish'].includes(args.mode)) {
+    throw new Error('Invalid --mode value. Expected auto, open-pr, or publish.');
+  }
+
+  if (!['squash', 'merge', 'rebase'].includes(args.mergeMethod)) {
+    throw new Error('Invalid --merge-method value. Expected squash, merge, or rebase.');
+  }
+
+  if (!Number.isInteger(args.checkTimeout) || args.checkTimeout <= 0) {
+    throw new Error('Invalid --check-timeout value. Expected a positive integer (minutes).');
+  }
+
+  if (!Number.isInteger(args.releasePrTimeout) || args.releasePrTimeout <= 0) {
+    throw new Error('Invalid --release-pr-timeout value. Expected a positive integer (minutes).');
+  }
+
+  return args;
+}
+
 function validateReleaseAuthMode(mode, flagName = '--release-auth') {
   if (!RELEASE_AUTH_MODES.has(mode)) {
     throw new Error(`Invalid ${flagName} value: ${mode}. Expected one of: github-token, pat, app, manual-trigger.`);
@@ -469,6 +726,20 @@ function parseArgs(argv) {
     return {
       mode: 'promote-stable',
       args: parsePromoteStableArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'open-pr') {
+    return {
+      mode: 'open-pr',
+      args: parseOpenPrArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'release-cycle') {
+    return {
+      mode: 'release-cycle',
+      args: parseReleaseCycleArgs(argv.slice(1))
     };
   }
 
@@ -877,6 +1148,404 @@ function mergeSummary(target, source) {
   target.updatedDependencyKeys.push(...source.updatedDependencyKeys);
   target.skippedDependencyKeys.push(...source.skippedDependencyKeys);
   target.warnings.push(...source.warnings);
+}
+
+function createOrchestrationSummary() {
+  return {
+    modeDetected: '',
+    repoResolved: '',
+    branchPushed: '',
+    prAction: '',
+    prUrl: '',
+    autoMerge: '',
+    checks: '',
+    merge: '',
+    releasePr: '',
+    actionsPerformed: [],
+    actionsSkipped: [],
+    warnings: [],
+    errors: []
+  };
+}
+
+function printOrchestrationSummary(title, summary) {
+  const unique = (values) => [...new Set(values)];
+  const formatList = (values) => {
+    const normalized = unique(values || []);
+    if (!normalized.length) {
+      return ['  - none'];
+    }
+
+    return normalized.map((item) => `  - ${item}`);
+  };
+
+  console.log(title);
+  console.log('');
+  console.log('Preflight');
+  console.log(`  - mode detected: ${summary.modeDetected || 'n/a'}`);
+  console.log(`  - repo resolved: ${summary.repoResolved || 'n/a'}`);
+  console.log('');
+  console.log('Plan');
+  console.log(`  - branch pushed: ${summary.branchPushed || 'n/a'}`);
+  console.log(`  - pr created/updated/skipped: ${summary.prAction || 'n/a'}`);
+  console.log(`  - pr url: ${summary.prUrl || 'n/a'}`);
+  console.log('');
+  console.log('Apply');
+  console.log(`  - auto-merge enabled/skipped: ${summary.autoMerge || 'n/a'}`);
+  console.log(`  - checks watched result: ${summary.checks || 'n/a'}`);
+  console.log(`  - merge performed/skipped: ${summary.merge || 'n/a'}`);
+  console.log(`  - release pr discovered/merged: ${summary.releasePr || 'n/a'}`);
+  console.log('actions performed:');
+  formatList(summary.actionsPerformed).forEach((line) => console.log(line));
+  console.log('actions skipped:');
+  formatList(summary.actionsSkipped).forEach((line) => console.log(line));
+  console.log('');
+  console.log('Summary');
+  console.log('warnings:');
+  formatList(summary.warnings).forEach((line) => console.log(line));
+  console.log('errors:');
+  formatList(summary.errors).forEach((line) => console.log(line));
+}
+
+function parseJsonSafely(raw, fallback = {}) {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function sleepMs(milliseconds) {
+  const shared = new SharedArrayBuffer(4);
+  const view = new Int32Array(shared);
+  Atomics.wait(view, 0, 0, milliseconds);
+}
+
+function resolveGitContext(args, deps) {
+  const insideWorkTree = deps.exec('git', ['rev-parse', '--is-inside-work-tree']);
+  if (insideWorkTree.status !== 0 || insideWorkTree.stdout.trim() !== 'true') {
+    throw new Error('Current directory is not a git repository.');
+  }
+
+  const headBranch = args.head || deps.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
+  if (!headBranch || headBranch === 'HEAD') {
+    throw new Error('Detached HEAD is not supported. Checkout a branch and rerun.');
+  }
+
+  const repo = resolveRepo({ repo: args.repo }, deps);
+  const baseBranch = args.base || (headBranch === DEFAULT_BETA_BRANCH ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH);
+  const latestTitleResult = deps.exec('git', ['log', '-1', '--pretty=%s']);
+  const latestTitle = latestTitleResult.status === 0 ? latestTitleResult.stdout.trim() : '';
+  const title = args.title || latestTitle || headBranch;
+
+  return {
+    repo,
+    head: headBranch,
+    base: baseBranch,
+    title
+  };
+}
+
+function getRecentCommitSubjects(deps, count = 10) {
+  const result = deps.exec('git', ['log', `-n${count}`, '--pretty=%h %s']);
+  if (result.status !== 0) {
+    return [];
+  }
+
+  return result.stdout
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function collectChangesetPackages(cwd) {
+  const changesetDir = path.join(cwd, '.changeset');
+  if (!fs.existsSync(changesetDir)) {
+    return [];
+  }
+
+  const files = fs.readdirSync(changesetDir)
+    .filter((name) => name.endsWith('.md'));
+  const packages = new Set();
+
+  for (const fileName of files) {
+    const fullPath = path.join(changesetDir, fileName);
+    const content = fs.readFileSync(fullPath, 'utf8');
+    const parts = content.split('---');
+    if (parts.length < 3) {
+      continue;
+    }
+
+    const frontmatter = parts[1];
+    const lines = frontmatter.split('\n');
+    for (const line of lines) {
+      const match = line.match(/"([^"]+)"\s*:/);
+      if (match) {
+        packages.add(match[1]);
+      }
+    }
+  }
+
+  return [...packages];
+}
+
+function renderPrBodyDeterministic(context, deps, options = {}) {
+  const commits = getRecentCommitSubjects(deps, 10);
+  const changedPackages = collectChangesetPackages(options.cwd || process.cwd());
+  const summaryBlock = [
+    '## Summary',
+    `- Source branch: \`${context.head}\``,
+    `- Target branch: \`${context.base}\``,
+    ''
+  ].join('\n');
+  const changesBlock = [
+    '## Changes',
+    ...(commits.length ? commits.map((item) => `- ${item}`) : ['- No recent commit messages found.']),
+    ''
+  ].join('\n');
+  const releaseImpactBlock = [
+    '## Release Impact',
+    ...(changedPackages.length
+      ? changedPackages.map((name) => `- Changeset package: \`${name}\``)
+      : ['- No explicit package entries found in `.changeset/*.md`.']),
+    ''
+  ].join('\n');
+  const validationBlock = [
+    '## Validation',
+    '- [ ] `npm run check`',
+    '- [ ] CI green',
+    ''
+  ].join('\n');
+  const checklistBlock = [
+    '## Checklist',
+    '- [ ] Scope and risks reviewed',
+    '- [ ] Release impact reviewed',
+    '- [ ] Ready to merge',
+    ''
+  ].join('\n');
+  const generated = [summaryBlock, changesBlock, releaseImpactBlock, validationBlock, checklistBlock].join('\n');
+
+  if (options.body) {
+    return options.body;
+  }
+
+  if (options.bodyFile) {
+    const fullPath = path.resolve(options.cwd || process.cwd(), options.bodyFile);
+    return fs.readFileSync(fullPath, 'utf8');
+  }
+
+  const templatePath = options.template
+    ? path.resolve(options.cwd || process.cwd(), options.template)
+    : path.resolve(options.cwd || process.cwd(), '.github/PULL_REQUEST_TEMPLATE.md');
+  if (fs.existsSync(templatePath)) {
+    const templateContent = fs.readFileSync(templatePath, 'utf8');
+    if (templateContent.includes('<!-- GENERATED_PR_BODY -->')) {
+      return templateContent.replace('<!-- GENERATED_PR_BODY -->', generated);
+    }
+
+    return `${templateContent.trim()}\n\n---\n\n${generated}`;
+  }
+
+  return generated;
+}
+
+function listOpenPullRequests(repo, deps) {
+  const list = deps.exec('gh', ['pr', 'list', '--repo', repo, '--state', 'open', '--json', 'number,url,title,headRefName,baseRefName']);
+  if (list.status !== 0) {
+    throw new Error(`Failed to list pull requests: ${list.stderr || list.stdout}`.trim());
+  }
+
+  const parsed = parseJsonSafely(list.stdout || '[]', []);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+function findOpenPrByHeadBase(repo, head, base, deps) {
+  const prs = listOpenPullRequests(repo, deps);
+  return prs.find((item) => item.headRefName === head && item.baseRefName === base) || null;
+}
+
+function ensureBranchPushed(repo, head, deps) {
+  const upstream = deps.exec('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+  const hasUpstream = upstream.status === 0;
+  if (hasUpstream) {
+    const ahead = deps.exec('git', ['rev-list', '--count', '@{u}..HEAD']);
+    const aheadCount = ahead.status === 0 ? Number.parseInt(ahead.stdout.trim(), 10) : 0;
+    const push = deps.exec('git', ['push']);
+    if (push.status !== 0) {
+      throw new Error(`Failed to push branch "${head}": ${push.stderr || push.stdout}`.trim());
+    }
+
+    return {
+      status: aheadCount > 0 ? 'updated' : 'up-to-date',
+      hasUpstream: true
+    };
+  }
+
+  const push = deps.exec('git', ['push', '--set-upstream', 'origin', head]);
+  if (push.status !== 0) {
+    throw new Error(`Failed to push branch "${head}" with upstream: ${push.stderr || push.stdout}`.trim());
+  }
+
+  return {
+    status: 'upstream-set',
+    hasUpstream: false
+  };
+}
+
+function createOrUpdatePr(context, body, args, deps) {
+  const existing = findOpenPrByHeadBase(context.repo, context.head, context.base, deps);
+  const bodyFilePath = path.join(process.cwd(), `.tmp-pr-body-${Date.now()}.md`);
+  fs.writeFileSync(bodyFilePath, body);
+
+  try {
+    if (existing) {
+      const editArgs = ['pr', 'edit', String(existing.number), '--repo', context.repo, '--title', context.title, '--body-file', bodyFilePath];
+      const edit = deps.exec('gh', editArgs);
+      if (edit.status !== 0) {
+        throw new Error(`Failed to update PR #${existing.number}: ${edit.stderr || edit.stdout}`.trim());
+      }
+
+      return {
+        action: 'updated',
+        number: existing.number,
+        url: existing.url
+      };
+    }
+
+    const createArgs = ['pr', 'create', '--repo', context.repo, '--head', context.head, '--base', context.base, '--title', context.title, '--body-file', bodyFilePath];
+    if (args.draft) {
+      createArgs.push('--draft');
+    }
+    const create = deps.exec('gh', createArgs);
+    if (create.status !== 0) {
+      throw new Error(`Failed to create PR: ${create.stderr || create.stdout}`.trim());
+    }
+
+    const url = (create.stdout || '').trim().split('\n').find((line) => line.includes('http')) || '';
+    const created = findOpenPrByHeadBase(context.repo, context.head, context.base, deps);
+    return {
+      action: 'created',
+      number: created ? created.number : 0,
+      url: url || (created ? created.url : '')
+    };
+  } finally {
+    if (fs.existsSync(bodyFilePath)) {
+      fs.unlinkSync(bodyFilePath);
+    }
+  }
+}
+
+function enablePrAutoMerge(repo, prNumber, mergeMethod, deps) {
+  const methodFlag = mergeMethod === 'merge'
+    ? '--merge'
+    : mergeMethod === 'rebase'
+      ? '--rebase'
+      : '--squash';
+  const result = deps.exec('gh', ['pr', 'merge', String(prNumber), '--repo', repo, methodFlag, '--auto']);
+  if (result.status !== 0) {
+    throw new Error(`Failed to enable auto-merge for PR #${prNumber}: ${result.stderr || result.stdout}`.trim());
+  }
+}
+
+function getPrCheckState(repo, prNumber, deps) {
+  const result = deps.exec('gh', ['pr', 'view', String(prNumber), '--repo', repo, '--json', 'statusCheckRollup,url,number']);
+  if (result.status !== 0) {
+    throw new Error(`Failed to inspect PR #${prNumber} checks: ${result.stderr || result.stdout}`.trim());
+  }
+
+  const parsed = parseJsonSafely(result.stdout || '{}', {});
+  const rollup = Array.isArray(parsed.statusCheckRollup) ? parsed.statusCheckRollup : [];
+  let pending = 0;
+  let failed = 0;
+
+  for (const item of rollup) {
+    const rawState = String(item.conclusion || item.state || item.status || '').toUpperCase();
+    if (!rawState || rawState === 'EXPECTED' || rawState === 'PENDING' || rawState === 'IN_PROGRESS' || rawState === 'QUEUED' || rawState === 'WAITING') {
+      pending += 1;
+      continue;
+    }
+
+    if (rawState === 'SUCCESS' || rawState === 'NEUTRAL' || rawState === 'SKIPPED') {
+      continue;
+    }
+
+    failed += 1;
+  }
+
+  return {
+    pending,
+    failed,
+    total: rollup.length
+  };
+}
+
+function watchPrChecks(repo, prNumber, timeoutMinutes, deps) {
+  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  while (Date.now() <= timeoutAt) {
+    const state = getPrCheckState(repo, prNumber, deps);
+    if (state.failed > 0) {
+      throw new Error(`PR #${prNumber} has failing required checks.`);
+    }
+
+    if (state.pending === 0) {
+      return 'green';
+    }
+
+    sleepMs(5000);
+  }
+
+  throw new Error(`Timed out waiting for checks on PR #${prNumber} after ${timeoutMinutes} minutes.`);
+}
+
+function mergePrWhenGreen(repo, prNumber, mergeMethod, deps) {
+  const methodFlag = mergeMethod === 'merge'
+    ? '--merge'
+    : mergeMethod === 'rebase'
+      ? '--rebase'
+      : '--squash';
+  const merge = deps.exec('gh', ['pr', 'merge', String(prNumber), '--repo', repo, methodFlag, '--delete-branch']);
+  if (merge.status !== 0) {
+    throw new Error(`Failed to merge PR #${prNumber}: ${merge.stderr || merge.stdout}`.trim());
+  }
+}
+
+function findReleasePrs(repo, deps) {
+  const prs = listOpenPullRequests(repo, deps);
+  return prs.filter(
+    (item) => item.headRefName
+      && item.headRefName.startsWith('changeset-release/')
+      && (item.baseRefName === DEFAULT_BASE_BRANCH || item.baseRefName === DEFAULT_BETA_BRANCH)
+  );
+}
+
+function waitForReleasePr(repo, timeoutMinutes, deps) {
+  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  while (Date.now() <= timeoutAt) {
+    const releasePrs = findReleasePrs(repo, deps);
+    if (releasePrs.length === 1) {
+      return releasePrs[0];
+    }
+    if (releasePrs.length > 1) {
+      throw new Error(`Multiple release PRs detected: ${releasePrs.map((item) => item.url).join(', ')}`);
+    }
+
+    sleepMs(5000);
+  }
+
+  throw new Error(`Timed out waiting for release PR after ${timeoutMinutes} minutes.`);
+}
+
+async function confirmDetectedModeIfNeeded(args, mode, planText) {
+  if (args.yes) {
+    return;
+  }
+
+  await confirmOrThrow(
+    [
+      `release-cycle detected mode: ${mode}`,
+      planText
+    ].join('\n')
+  );
 }
 
 function ensureFileFromTemplate(targetPath, templatePath, options) {
@@ -1407,6 +2076,267 @@ function execCommand(command, args, options = {}) {
     encoding: 'utf8',
     ...options
   });
+}
+
+async function runOpenPrFlow(args, dependencies = {}) {
+  const deps = {
+    exec: dependencies.exec || execCommand
+  };
+  const summary = createOrchestrationSummary();
+  const reporter = new StepReporter();
+
+  reporter.start('open-pr-preflight-gh', 'Validating GitHub CLI and authentication...');
+  ensureGhAvailable(deps);
+  reporter.ok('open-pr-preflight-gh', 'GitHub CLI available and authenticated.');
+
+  reporter.start('open-pr-preflight-git', 'Resolving git context...');
+  const context = resolveGitContext(args, deps);
+  reporter.ok('open-pr-preflight-git', `Using ${context.head} -> ${context.base} in ${context.repo}.`);
+  summary.modeDetected = 'open-pr';
+  summary.repoResolved = context.repo;
+
+  const generatedBody = renderPrBodyDeterministic(context, deps, {
+    cwd: process.cwd(),
+    body: args.body,
+    bodyFile: args.bodyFile,
+    template: args.template
+  });
+
+  const shouldPrintSummary = args.printSummary !== false;
+
+  if (args.dryRun) {
+    summary.branchPushed = `dry-run: would push ${context.head}`;
+    summary.prAction = `dry-run: would create/update PR ${context.head} -> ${context.base}`;
+    summary.prUrl = 'dry-run';
+    summary.autoMerge = args.autoMerge ? 'dry-run: would enable auto-merge' : 'skipped';
+    summary.checks = args.watchChecks ? `dry-run: would watch checks (${args.checkTimeout}m)` : 'skipped';
+    summary.merge = 'skipped';
+    summary.releasePr = 'skipped';
+    summary.actionsPerformed.push('rendered deterministic PR body', 'prepared push/create/update plan');
+    if (!args.body && !args.bodyFile && !args.template) {
+      summary.warnings.push('No body inputs provided; deterministic generated body would be used.');
+    }
+    if (shouldPrintSummary) {
+      printOrchestrationSummary(`open-pr dry-run for ${context.repo}`, summary);
+    }
+    return {
+      summary,
+      context,
+      pr: null
+    };
+  }
+
+  reporter.start('open-pr-push', `Pushing branch "${context.head}"...`);
+  const pushResult = ensureBranchPushed(context.repo, context.head, deps);
+  reporter.ok('open-pr-push', `Branch "${context.head}" pushed (${pushResult.status}).`);
+  summary.branchPushed = `${context.head} (${pushResult.status})`;
+  summary.actionsPerformed.push(`branch pushed: ${context.head}`);
+  if (pushResult.status === 'up-to-date') {
+    summary.warnings.push(`Branch "${context.head}" had no new commits to push.`);
+  }
+
+  reporter.start('open-pr-upsert', 'Creating or updating pull request...');
+  const prResult = createOrUpdatePr(context, generatedBody, args, deps);
+  reporter.ok('open-pr-upsert', `PR ${prResult.action}: #${prResult.number}`);
+  summary.prAction = `${prResult.action} (#${prResult.number})`;
+  summary.prUrl = prResult.url || 'n/a';
+  summary.actionsPerformed.push(`pr ${prResult.action}: #${prResult.number}`);
+
+  if (args.autoMerge) {
+    reporter.start('open-pr-auto-merge', `Enabling auto-merge for PR #${prResult.number}...`);
+    enablePrAutoMerge(context.repo, prResult.number, 'squash', deps);
+    reporter.ok('open-pr-auto-merge', `Auto-merge enabled for PR #${prResult.number}.`);
+    summary.autoMerge = 'enabled';
+    summary.actionsPerformed.push(`auto-merge enabled for #${prResult.number}`);
+  } else {
+    summary.autoMerge = 'skipped';
+    summary.actionsSkipped.push('auto-merge');
+  }
+
+  if (args.watchChecks) {
+    reporter.start('open-pr-checks', `Watching checks for PR #${prResult.number}...`);
+    watchPrChecks(context.repo, prResult.number, args.checkTimeout, deps);
+    reporter.ok('open-pr-checks', `Checks green for PR #${prResult.number}.`);
+    summary.checks = 'green';
+    summary.actionsPerformed.push(`checks watched for #${prResult.number}`);
+  } else {
+    summary.checks = 'skipped';
+    summary.actionsSkipped.push('watch-checks');
+  }
+
+  if (!args.body && !args.bodyFile && !args.template) {
+    summary.warnings.push('PR body used deterministic generated markdown (no body/template inputs).');
+  }
+  summary.merge = 'skipped';
+  summary.releasePr = 'skipped';
+  if (shouldPrintSummary) {
+    printOrchestrationSummary(`open-pr completed for ${context.repo}`, summary);
+  }
+
+  return {
+    summary,
+    context,
+    pr: prResult
+  };
+}
+
+async function runReleaseCycle(args, dependencies = {}) {
+  const deps = {
+    exec: dependencies.exec || execCommand
+  };
+  const summary = createOrchestrationSummary();
+  const reporter = new StepReporter();
+
+  reporter.start('release-cycle-preflight-gh', 'Validating GitHub CLI and authentication...');
+  ensureGhAvailable(deps);
+  reporter.ok('release-cycle-preflight-gh', 'GitHub CLI available and authenticated.');
+
+  const gitContext = resolveGitContext(args, deps);
+  summary.repoResolved = gitContext.repo;
+
+  let detectedMode = args.mode;
+  if (detectedMode === 'auto') {
+    const releasePrs = findReleasePrs(gitContext.repo, deps);
+    if (gitContext.head.startsWith('changeset-release/')) {
+      detectedMode = 'publish';
+    } else if (releasePrs.length === 1) {
+      detectedMode = 'publish';
+    } else if (releasePrs.length > 1) {
+      throw new Error(`Multiple candidate release PRs detected: ${releasePrs.map((item) => item.url).join(', ')}`);
+    } else {
+      detectedMode = 'open-pr';
+    }
+  }
+  summary.modeDetected = detectedMode;
+
+  await confirmDetectedModeIfNeeded(
+    args,
+    detectedMode,
+    detectedMode === 'open-pr'
+      ? 'Will create/update code PR, watch checks, merge, then wait/merge release PR.'
+      : 'Will operate on release PR (changeset-release/*), watch checks, and merge when green.'
+  );
+
+  if (detectedMode === 'open-pr') {
+    const openPrResult = await runOpenPrFlow(
+      {
+        ...args,
+        autoMerge: args.autoMerge,
+        watchChecks: args.watchChecks,
+        checkTimeout: args.checkTimeout,
+        printSummary: false
+      },
+      dependencies
+    );
+
+    const codePr = openPrResult.pr;
+    summary.prAction = openPrResult.summary.prAction;
+    summary.prUrl = openPrResult.summary.prUrl;
+    summary.branchPushed = openPrResult.summary.branchPushed;
+    summary.autoMerge = openPrResult.summary.autoMerge;
+    summary.checks = openPrResult.summary.checks;
+    summary.actionsPerformed.push(...openPrResult.summary.actionsPerformed);
+    summary.actionsSkipped.push(...openPrResult.summary.actionsSkipped);
+    summary.warnings.push(...openPrResult.summary.warnings);
+
+    if (args.mergeWhenGreen && codePr && !args.dryRun) {
+      reporter.start('release-cycle-merge-code-pr', `Merging code PR #${codePr.number}...`);
+      mergePrWhenGreen(gitContext.repo, codePr.number, args.mergeMethod, deps);
+      reporter.ok('release-cycle-merge-code-pr', `Code PR #${codePr.number} merged.`);
+      summary.merge = `code pr merged (#${codePr.number})`;
+      summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
+    } else {
+      summary.merge = args.dryRun ? 'dry-run: would merge code PR' : 'skipped';
+      summary.actionsSkipped.push('merge code pr');
+    }
+
+    if (args.waitReleasePr) {
+      if (args.dryRun) {
+        summary.releasePr = `dry-run: would wait release PR (${args.releasePrTimeout}m)`;
+      } else {
+        reporter.start('release-cycle-wait-release-pr', 'Waiting for release PR (changeset-release/*)...');
+        const releasePr = waitForReleasePr(gitContext.repo, args.releasePrTimeout, deps);
+        reporter.ok('release-cycle-wait-release-pr', `Release PR found: #${releasePr.number}`);
+        summary.releasePr = `found (#${releasePr.number})`;
+        summary.actionsPerformed.push(`release pr discovered: #${releasePr.number}`);
+
+        if (args.watchChecks) {
+          reporter.start('release-cycle-watch-release-checks', `Watching release PR checks #${releasePr.number}...`);
+          watchPrChecks(gitContext.repo, releasePr.number, args.checkTimeout, deps);
+          reporter.ok('release-cycle-watch-release-checks', `Release PR checks green (#${releasePr.number}).`);
+        }
+
+        if (args.mergeReleasePr) {
+          reporter.start('release-cycle-merge-release-pr', `Merging release PR #${releasePr.number}...`);
+          mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
+          reporter.ok('release-cycle-merge-release-pr', `Release PR #${releasePr.number} merged.`);
+          summary.releasePr = `merged (#${releasePr.number})`;
+          summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+        } else {
+          summary.actionsSkipped.push('merge release pr');
+        }
+      }
+    } else {
+      summary.releasePr = 'skipped';
+      summary.actionsSkipped.push('wait release pr');
+    }
+
+    printOrchestrationSummary(`release-cycle completed in ${detectedMode} mode`, summary);
+    return;
+  }
+
+  const releasePrCandidates = findReleasePrs(gitContext.repo, deps);
+  const explicitHeadCandidates = args.head
+    ? releasePrCandidates.filter((item) => item.headRefName === args.head)
+    : releasePrCandidates;
+  if (explicitHeadCandidates.length !== 1) {
+    throw new Error(
+      explicitHeadCandidates.length === 0
+        ? 'No release PR found. Expected an open PR with head changeset-release/*.'
+        : `Ambiguous release PR selection: ${explicitHeadCandidates.map((item) => item.url).join(', ')}`
+    );
+  }
+
+  const releasePr = explicitHeadCandidates[0];
+  summary.prAction = `selected release pr (#${releasePr.number})`;
+  summary.prUrl = releasePr.url;
+  summary.branchPushed = 'skipped';
+  summary.autoMerge = 'skipped';
+
+  if (args.watchChecks) {
+    if (args.dryRun) {
+      summary.checks = `dry-run: would watch checks (${args.checkTimeout}m)`;
+    } else {
+      reporter.start('release-cycle-publish-checks', `Watching release PR checks #${releasePr.number}...`);
+      watchPrChecks(gitContext.repo, releasePr.number, args.checkTimeout, deps);
+      reporter.ok('release-cycle-publish-checks', `Release PR checks green (#${releasePr.number}).`);
+      summary.checks = 'green';
+      summary.actionsPerformed.push(`release checks watched: #${releasePr.number}`);
+    }
+  } else {
+    summary.checks = 'skipped';
+    summary.actionsSkipped.push('watch release checks');
+  }
+
+  if (args.mergeReleasePr || args.mergeWhenGreen) {
+    if (args.dryRun) {
+      summary.merge = `dry-run: would merge release PR #${releasePr.number}`;
+      summary.releasePr = `dry-run: would merge (#${releasePr.number})`;
+    } else {
+      reporter.start('release-cycle-publish-merge', `Merging release PR #${releasePr.number}...`);
+      mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
+      reporter.ok('release-cycle-publish-merge', `Release PR #${releasePr.number} merged.`);
+      summary.merge = `merged release pr (#${releasePr.number})`;
+      summary.releasePr = `merged (#${releasePr.number})`;
+      summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+    }
+  } else {
+    summary.merge = 'skipped';
+    summary.releasePr = `discovered (#${releasePr.number})`;
+    summary.actionsSkipped.push('merge release pr');
+  }
+
+  printOrchestrationSummary(`release-cycle completed in ${detectedMode} mode`, summary);
 }
 
 function parseRepoFromRemote(remoteUrl) {
@@ -2563,6 +3493,16 @@ async function run(argv, dependencies = {}) {
     return;
   }
 
+  if (parsed.mode === 'open-pr') {
+    await runOpenPrFlow(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'release-cycle') {
+    await runReleaseCycle(parsed.args, dependencies);
+    return;
+  }
+
   createNewPackage(parsed.args);
 }
 
@@ -2574,5 +3514,8 @@ module.exports = {
   setupGithub,
   setupNpm,
   setupBeta,
-  promoteStable
+  promoteStable,
+  runOpenPrFlow,
+  runReleaseCycle,
+  renderPrBodyDeterministic
 };

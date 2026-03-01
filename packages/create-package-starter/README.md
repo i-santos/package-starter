@@ -11,6 +11,8 @@ npx @i-santos/create-package-starter init --dir ./existing-package
 npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --release-auth app --yes
 npx @i-santos/create-package-starter setup-github --repo i-santos/firestack --dry-run
 npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth pat
+npx @i-santos/create-package-starter open-pr --auto-merge --watch-checks
+npx @i-santos/create-package-starter release-cycle --yes
 npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
 npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
 ```
@@ -61,6 +63,44 @@ Bootstrap beta release flow:
 - `--force` (overwrite managed scripts/workflow)
 - `--dry-run` (prints intended operations only)
 - `--yes` (skip interactive confirmations)
+
+Create/update pull requests:
+
+- `open-pr`
+- `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
+- `--base <branch>` (default: `release/beta`, or `main` when head is `release/beta`)
+- `--head <branch>` (default: current branch)
+- `--title <text>` (default: latest commit subject)
+- `--body <text>` (highest priority body source)
+- `--body-file <path>`
+- `--template <path>` (default fallback `.github/PULL_REQUEST_TEMPLATE.md`)
+- `--draft`
+- `--auto-merge`
+- `--watch-checks`
+- `--check-timeout <minutes>` (default: `30`)
+- `--yes`
+- `--dry-run`
+
+Orchestrate release cycle:
+
+- `release-cycle`
+- `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
+- `--mode <auto|open-pr|publish>` (default: `auto`)
+- `--head <branch>`
+- `--base <branch>`
+- `--title <text>`
+- `--body-file <path>`
+- `--draft`
+- `--auto-merge` (default behavior: enabled)
+- `--watch-checks` (default behavior: enabled)
+- `--check-timeout <minutes>` (default: `30`)
+- `--merge-when-green` (default behavior: enabled)
+- `--merge-method <squash|merge|rebase>` (default: `squash`)
+- `--wait-release-pr` (default behavior: enabled)
+- `--release-pr-timeout <minutes>` (default: `30`)
+- `--merge-release-pr` (default behavior: enabled)
+- `--yes`
+- `--dry-run`
 
 Prepare stable promotion from beta track:
 
@@ -151,6 +191,47 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - supports safe-merge by default and `--force` overwrite
 - supports configurable beta branch (`release/beta` by default)
 
+## open-pr Behavior
+
+`open-pr` removes repetitive manual PR steps:
+
+- resolves repo + branch defaults
+- pushes branch (set upstream when needed)
+- creates PR or updates existing PR for same `head -> base`
+- generates deterministic PR body when explicit body is not provided
+- optionally enables auto-merge
+- optionally watches checks until green/fail/timeout
+
+Body source priority:
+1. `--body`
+2. `--body-file`
+3. `--template` (or `.github/PULL_REQUEST_TEMPLATE.md`)
+4. deterministic generated body
+
+## release-cycle Behavior
+
+`release-cycle` orchestrates code PR and release PR progression end-to-end.
+
+Default mode is `auto`:
+- if current branch starts with `changeset-release/` => `publish`
+- else if exactly one open `changeset-release/*` PR exists => `publish`
+- else => `open-pr`
+
+For `open-pr` mode:
+- runs open-pr flow
+- can merge code PR when green
+- can wait for release PR creation (`changeset-release/*`)
+- can watch checks and merge release PR when green
+
+For `publish` mode:
+- resolves release PR directly
+- watches checks
+- merges when green (policy permitting)
+
+The command is policy-aware:
+- never bypasses required checks/reviews/rulesets
+- fails fast with actionable diagnostics when blocked
+
 `release-auth` modes:
 - `pat` (recommended default): uses `CHANGESETS_GH_TOKEN` fallback to `GITHUB_TOKEN`
 - `app`: generates token via GitHub App (`GH_APP_ID` or `GH_APP_CLIENT_ID`, plus `GH_APP_PRIVATE_KEY`)
@@ -177,6 +258,7 @@ GitHub App docs:
 - Install app: https://docs.github.com/apps/using-github-apps/installing-your-own-github-app
 - Manage secrets: https://docs.github.com/actions/security-guides/using-secrets-in-github-actions
 - Project guide: https://github.com/i-santos/package-starter/blob/main/docs/release-auth-github-app.md
+- PR orchestration guide: https://github.com/i-santos/package-starter/blob/main/docs/pr-orchestration.md
 
 ## promote-stable Behavior
 
