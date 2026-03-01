@@ -1619,7 +1619,7 @@ function getPrMergeReadiness(repo, prNumber, deps) {
     '--repo',
     repo,
     '--json',
-    'number,url,reviewDecision,mergeStateStatus,isDraft'
+    'number,url,reviewDecision,mergeStateStatus,isDraft,headRefName'
   ]);
   if (view.status !== 0) {
     throw new Error(`Failed to inspect merge readiness for PR #${prNumber}: ${view.stderr || view.stdout}`.trim());
@@ -1631,8 +1631,38 @@ function getPrMergeReadiness(repo, prNumber, deps) {
     url: parsed.url || '',
     reviewDecision: String(parsed.reviewDecision || '').toUpperCase(),
     mergeStateStatus: String(parsed.mergeStateStatus || '').toUpperCase(),
-    isDraft: Boolean(parsed.isDraft)
+    isDraft: Boolean(parsed.isDraft),
+    headRefName: String(parsed.headRefName || '')
   };
+}
+
+function getLatestWorkflowRunForBranch(repo, branch, deps) {
+  if (!branch) {
+    return null;
+  }
+
+  const runs = deps.exec('gh', [
+    'run',
+    'list',
+    '--repo',
+    repo,
+    '--branch',
+    branch,
+    '--json',
+    'databaseId,workflowName,status,conclusion,url',
+    '--limit',
+    '10'
+  ]);
+  if (runs.status !== 0) {
+    return null;
+  }
+
+  const parsed = parseJsonSafely(runs.stdout || '[]', []);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return null;
+  }
+
+  return parsed[0];
 }
 
 function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps, options = {}) {
@@ -1687,6 +1717,20 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
 
     if (readiness.mergeStateStatus === 'BEHIND') {
       if (allowBehindTransient) {
+        const workflowRun = getLatestWorkflowRunForBranch(repo, readiness.headRefName, deps);
+        if (workflowRun
+          && String(workflowRun.status || '').toLowerCase() === 'completed'
+          && !['success', 'neutral', 'skipped'].includes(String(workflowRun.conclusion || '').toLowerCase())) {
+          throw new Error(
+            [
+              `${label} stayed BEHIND because latest workflow run failed.`,
+              `workflow: ${workflowRun.workflowName || 'unknown'}`,
+              `status/conclusion: ${workflowRun.status || 'n/a'}/${workflowRun.conclusion || 'n/a'}`,
+              workflowRun.url ? `run: ${workflowRun.url}` : '',
+              readiness.url ? `PR: ${readiness.url}` : ''
+            ].filter(Boolean).join('\n')
+          );
+        }
         sleepMs(5000);
         continue;
       }
