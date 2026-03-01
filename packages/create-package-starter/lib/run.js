@@ -1511,7 +1511,11 @@ function mergePrWhenGreen(repo, prNumber, mergeMethod, deps) {
 
 function findReleasePrs(repo, deps) {
   const prs = listOpenPullRequests(repo, deps);
-  return prs.filter((item) => item.headRefName && item.headRefName.startsWith('changeset-release/'));
+  return prs.filter(
+    (item) => item.headRefName
+      && item.headRefName.startsWith('changeset-release/')
+      && (item.baseRefName === DEFAULT_BASE_BRANCH || item.baseRefName === DEFAULT_BETA_BRANCH)
+  );
 }
 
 function waitForReleasePr(repo, timeoutMinutes, deps) {
