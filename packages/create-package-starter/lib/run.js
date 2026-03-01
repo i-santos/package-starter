@@ -45,7 +45,7 @@ function usage() {
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -561,6 +561,7 @@ function parseReleaseCycleArgs(argv) {
     base: '',
     title: '',
     bodyFile: '',
+    npmPackages: [],
     updatePrDescription: false,
     draft: false,
     autoMerge: true,
@@ -641,6 +642,12 @@ function parseReleaseCycleArgs(argv) {
 
     if (token === '--body-file') {
       args.bodyFile = parseValueFlag(argv, i, '--body-file');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--npm-package') {
+      args.npmPackages.push(parseValueFlag(argv, i, '--npm-package'));
       i += 1;
       continue;
     }
@@ -1992,64 +1999,145 @@ function waitForPromotionPr(repo, timeoutMinutes, deps) {
   throw new Error(`Timed out waiting for promotion PR after ${timeoutMinutes} minutes.`);
 }
 
-function getRemotePackageVersion(repo, ref, deps) {
-  const endpoint = `/repos/${repo}/contents/package.json?ref=${encodeURIComponent(ref)}`;
+function encodePathForGitHubContent(pathValue) {
+  return String(pathValue || '')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+}
+
+function getRemotePackageVersionFromPath(repo, ref, packageJsonPath, deps) {
+  const safePath = encodePathForGitHubContent(packageJsonPath);
+  const endpoint = `/repos/${repo}/contents/${safePath}?ref=${encodeURIComponent(ref)}`;
   const contentResponse = ghApiJson(deps, 'GET', endpoint);
   if (!contentResponse.content) {
-    throw new Error(`Could not read package.json content from ${repo}@${ref}.`);
+    throw new Error(`Could not read ${packageJsonPath} content from ${repo}@${ref}.`);
   }
 
   const decoded = Buffer.from(String(contentResponse.content).replace(/\n/g, ''), 'base64').toString('utf8');
   const parsed = parseJsonSafely(decoded, {});
   if (!parsed.name || !parsed.version) {
-    throw new Error(`package.json from ${repo}@${ref} must include name and version.`);
+    throw new Error(`${packageJsonPath} from ${repo}@${ref} must include name and version.`);
   }
 
   return {
     name: parsed.name,
-    version: parsed.version
+    version: parsed.version,
+    packageJsonPath
   };
 }
 
-function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expectedTag, timeoutMinutes, deps) {
+function getRemotePackageVersion(repo, ref, deps) {
+  return getRemotePackageVersionFromPath(repo, ref, 'package.json', deps);
+}
+
+function listPullRequestFiles(repo, prNumber, deps) {
+  const files = ghApiJson(deps, 'GET', `/repos/${repo}/pulls/${prNumber}/files?per_page=100`);
+  return Array.isArray(files) ? files : [];
+}
+
+function resolveExpectedNpmPackages(repo, releasePrNumber, targetRef, expectedTag, args, deps) {
+  const explicitPackages = Array.isArray(args.npmPackages) ? args.npmPackages : [];
+  const files = listPullRequestFiles(repo, releasePrNumber, deps);
+  const packageJsonPaths = [...new Set(
+    files
+      .filter((file) => file && file.status !== 'removed' && typeof file.filename === 'string')
+      .map((file) => file.filename)
+      .filter((fileName) => fileName.endsWith('/package.json') || fileName === 'package.json')
+  )];
+
+  const fallbackPaths = packageJsonPaths.length > 0 ? packageJsonPaths : ['package.json'];
+  const resolved = fallbackPaths
+    .map((filePath) => getRemotePackageVersionFromPath(repo, targetRef, filePath, deps))
+    .filter((pkg) => pkg && pkg.name && pkg.version);
+
+  const byName = new Map();
+  for (const pkg of resolved) {
+    if (!byName.has(pkg.name)) {
+      byName.set(pkg.name, pkg);
+    }
+  }
+
+  if (explicitPackages.length === 0) {
+    return [...byName.values()];
+  }
+
+  const filtered = [];
+  const missing = [];
+  for (const pkgName of explicitPackages) {
+    if (byName.has(pkgName)) {
+      filtered.push(byName.get(pkgName));
+    } else {
+      missing.push(pkgName);
+    }
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      [
+        `Could not resolve expected npm package(s) from release PR #${releasePrNumber}: ${missing.join(', ')}`,
+        `Resolved package names: ${[...byName.keys()].join(', ') || 'none'}`,
+        `Expected tag: ${expectedTag}`
+      ].join('\n')
+    );
+  }
+
+  return filtered;
+}
+
+function validateNpmPublishedPackages(packageTargets, expectedTag, timeoutMinutes, deps) {
   const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
-  let lastObservedVersion = '';
-  let lastObservedTagVersion = '';
+  const observations = {};
   const isStableTrack = expectedTag === 'latest';
   const onProgress = typeof deps.onNpmValidationProgress === 'function' ? deps.onNpmValidationProgress : null;
   let lastProgressAt = 0;
 
   while (nowMs(deps) <= timeoutAt) {
-    const versionResult = deps.exec('npm', ['view', packageName, 'version', '--json']);
-    const tagsResult = deps.exec('npm', ['view', packageName, 'dist-tags', '--json']);
-    if (versionResult.status === 0 && tagsResult.status === 0) {
-      const observedVersion = String(parseJsonSafely(versionResult.stdout || '""', '') || '');
-      const tags = parseJsonSafely(tagsResult.stdout || '{}', {});
-      const observedTagVersion = tags && tags[expectedTag] ? String(tags[expectedTag]) : '';
-      lastObservedVersion = observedVersion;
-      lastObservedTagVersion = observedTagVersion;
-
-      // npm "version" reflects the default dist-tag (usually latest), so beta verification
-      // must rely on the expected dist-tag value instead of global version.
-      const versionMatches = isStableTrack ? observedVersion === expectedVersion : true;
-      if (versionMatches && observedTagVersion === expectedVersion) {
-        return {
-          status: 'pass',
-          observedVersion,
-          observedTagVersion
-        };
+    let allPass = true;
+    for (const target of packageTargets) {
+      const versionResult = deps.exec('npm', ['view', target.name, 'version', '--json']);
+      const tagsResult = deps.exec('npm', ['view', target.name, 'dist-tags', '--json']);
+      let observedVersion = '';
+      let observedTagVersion = '';
+      if (versionResult.status === 0) {
+        observedVersion = String(parseJsonSafely(versionResult.stdout || '""', '') || '');
+      }
+      if (tagsResult.status === 0) {
+        const tags = parseJsonSafely(tagsResult.stdout || '{}', {});
+        observedTagVersion = tags && tags[expectedTag] ? String(tags[expectedTag]) : '';
       }
 
-      const now = nowMs(deps);
-      if (onProgress && (lastProgressAt === 0 || now - lastProgressAt >= 30_000)) {
-        lastProgressAt = now;
-        onProgress({
-          observedVersion,
-          observedTagVersion,
-          expectedVersion,
-          expectedTag
-        });
+      const versionMatches = isStableTrack ? observedVersion === target.version : true;
+      const tagMatches = observedTagVersion === target.version;
+      const passed = versionMatches && tagMatches;
+      if (!passed) {
+        allPass = false;
       }
+
+      observations[target.name] = {
+        name: target.name,
+        expectedVersion: target.version,
+        observedVersion,
+        observedTagVersion,
+        passed
+      };
+    }
+
+    if (allPass) {
+      return {
+        status: 'pass',
+        observations
+      };
+    }
+
+    const now = nowMs(deps);
+    if (onProgress && (lastProgressAt === 0 || now - lastProgressAt >= 30_000)) {
+      lastProgressAt = now;
+      onProgress({
+        expectedTag,
+        observations
+      });
     }
 
     waitForNextPoll(timeoutAt, 10000, deps);
@@ -2057,8 +2145,7 @@ function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expecte
 
   return {
     status: 'timeout',
-    observedVersion: lastObservedVersion,
-    observedTagVersion: lastObservedTagVersion
+    observations
   };
 }
 
@@ -3164,36 +3251,45 @@ async function runReleaseCycle(args, dependencies = {}) {
       reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
       const targetRef = args.promoteStable ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
       const expectedTag = requestedTrack === 'stable' ? 'latest' : 'beta';
-      const remotePackage = getRemotePackageVersion(gitContext.repo, targetRef, deps);
-      const npmValidation = validateNpmPublishedVersionAndTag(
-        remotePackage.name,
-        remotePackage.version,
+      const targetPackages = resolveExpectedNpmPackages(
+        gitContext.repo,
+        mergedReleasePr.number,
+        targetRef,
+        expectedTag,
+        args,
+        deps
+      );
+      const npmValidation = validateNpmPublishedPackages(
+        targetPackages,
         expectedTag,
         args.releasePrTimeout,
         {
           ...deps,
-          onNpmValidationProgress: ({ observedVersion, observedTagVersion, expectedVersion: expectedVersionValue, expectedTag: expectedTagValue }) => {
-            logStep(
-              'run',
-              `Waiting npm propagation... expected ${expectedTagValue}=${expectedVersionValue}; observed version=${observedVersion || 'n/a'}, ${expectedTagValue}=${observedTagVersion || 'n/a'}.`
-            );
+          onNpmValidationProgress: ({ expectedTag: expectedTagValue, observations }) => {
+            const statusLine = Object.values(observations)
+              .map((entry) => `${entry.name}: expected ${expectedTagValue}=${entry.expectedVersion}, observed version=${entry.observedVersion || 'n/a'}, ${expectedTagValue}=${entry.observedTagVersion || 'n/a'}`)
+              .join(' | ');
+            logStep('run', `Waiting npm propagation... ${statusLine}`);
           }
         }
       );
       if (npmValidation.status !== 'pass') {
         summary.npmValidation = `failed (${expectedTag})`;
+        const observedLines = Object.values(npmValidation.observations || {})
+          .map((entry) => `${entry.name}: version=${entry.observedVersion || 'n/a'}, ${expectedTag}=${entry.observedTagVersion || 'n/a'}`);
+        const expectedLines = targetPackages
+          .map((pkg) => `${pkg.name}@${pkg.version}`);
         throw new Error(
           [
             'npm validation failed after release merge.',
-            `Expected: ${remotePackage.name}@${remotePackage.version} with dist-tag ${expectedTag}`,
-            `Observed version: ${npmValidation.observedVersion || 'n/a'}`,
-            `Observed tag (${expectedTag}): ${npmValidation.observedTagVersion || 'n/a'}`
+            `Expected (${expectedTag}): ${expectedLines.join(', ')}`,
+            ...observedLines
           ].join('\n')
         );
       }
-      reporter.ok('release-cycle-verify-npm', `${remotePackage.name}@${remotePackage.version} validated on tag ${expectedTag}.`);
-      summary.actionsPerformed.push(`npm validation: ${remotePackage.name}@${remotePackage.version} (${expectedTag})`);
-      summary.npmValidation = `pass (${expectedTag} -> ${remotePackage.version})`;
+      reporter.ok('release-cycle-verify-npm', `${targetPackages.length} package(s) validated on tag ${expectedTag}.`);
+      summary.actionsPerformed.push(`npm validation: ${targetPackages.map((pkg) => `${pkg.name}@${pkg.version}`).join(', ')} (${expectedTag})`);
+      summary.npmValidation = `pass (${expectedTag} -> ${targetPackages.map((pkg) => pkg.version).join(', ')})`;
       npmValidationPassed = true;
     } else if (!args.verifyNpm) {
       summary.actionsSkipped.push('verify npm');
@@ -3303,36 +3399,45 @@ async function runReleaseCycle(args, dependencies = {}) {
     reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
     const targetRef = effectivePublishTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
     const expectedTag = effectivePublishTrack === 'stable' ? 'latest' : 'beta';
-    const remotePackage = getRemotePackageVersion(gitContext.repo, targetRef, deps);
-    const npmValidation = validateNpmPublishedVersionAndTag(
-      remotePackage.name,
-      remotePackage.version,
+    const targetPackages = resolveExpectedNpmPackages(
+      gitContext.repo,
+      releasePr.number,
+      targetRef,
+      expectedTag,
+      args,
+      deps
+    );
+    const npmValidation = validateNpmPublishedPackages(
+      targetPackages,
       expectedTag,
       args.releasePrTimeout,
       {
         ...deps,
-        onNpmValidationProgress: ({ observedVersion, observedTagVersion, expectedVersion: expectedVersionValue, expectedTag: expectedTagValue }) => {
-          logStep(
-            'run',
-            `Waiting npm propagation... expected ${expectedTagValue}=${expectedVersionValue}; observed version=${observedVersion || 'n/a'}, ${expectedTagValue}=${observedTagVersion || 'n/a'}.`
-          );
+        onNpmValidationProgress: ({ expectedTag: expectedTagValue, observations }) => {
+          const statusLine = Object.values(observations)
+            .map((entry) => `${entry.name}: expected ${expectedTagValue}=${entry.expectedVersion}, observed version=${entry.observedVersion || 'n/a'}, ${expectedTagValue}=${entry.observedTagVersion || 'n/a'}`)
+            .join(' | ');
+          logStep('run', `Waiting npm propagation... ${statusLine}`);
         }
       }
     );
     if (npmValidation.status !== 'pass') {
       summary.npmValidation = `failed (${expectedTag})`;
+      const observedLines = Object.values(npmValidation.observations || {})
+        .map((entry) => `${entry.name}: version=${entry.observedVersion || 'n/a'}, ${expectedTag}=${entry.observedTagVersion || 'n/a'}`);
+      const expectedLines = targetPackages
+        .map((pkg) => `${pkg.name}@${pkg.version}`);
       throw new Error(
         [
           'npm validation failed after release merge.',
-          `Expected: ${remotePackage.name}@${remotePackage.version} with dist-tag ${expectedTag}`,
-          `Observed version: ${npmValidation.observedVersion || 'n/a'}`,
-          `Observed tag (${expectedTag}): ${npmValidation.observedTagVersion || 'n/a'}`
+          `Expected (${expectedTag}): ${expectedLines.join(', ')}`,
+          ...observedLines
         ].join('\n')
       );
     }
-    reporter.ok('release-cycle-verify-npm', `${remotePackage.name}@${remotePackage.version} validated on tag ${expectedTag}.`);
-    summary.actionsPerformed.push(`npm validation: ${remotePackage.name}@${remotePackage.version} (${expectedTag})`);
-    summary.npmValidation = `pass (${expectedTag} -> ${remotePackage.version})`;
+    reporter.ok('release-cycle-verify-npm', `${targetPackages.length} package(s) validated on tag ${expectedTag}.`);
+    summary.actionsPerformed.push(`npm validation: ${targetPackages.map((pkg) => `${pkg.name}@${pkg.version}`).join(', ')} (${expectedTag})`);
+    summary.npmValidation = `pass (${expectedTag} -> ${targetPackages.map((pkg) => pkg.version).join(', ')})`;
     npmValidationPassed = true;
   } else if (!args.verifyNpm) {
     summary.npmValidation = 'skipped';

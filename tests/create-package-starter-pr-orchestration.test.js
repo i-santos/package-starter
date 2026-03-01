@@ -494,6 +494,69 @@ test('release-cycle validates npm tag and version for beta track', async () => {
   await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 });
 
+test('release-cycle resolves npm target package from release PR files in monorepo', async () => {
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 500, url: 'https://github.com/i-santos/firestack/pull/500', headRefName: 'changeset-release/release/beta', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+      ? { status: 0, stdout: 'merged' }
+      : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/pulls/500/files')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify([
+            { filename: 'packages/create-package-starter/package.json', status: 'modified' }
+          ])
+        };
+      }
+
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/packages/create-package-starter/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.5.0-beta.11' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: 'package-starter', version: '1.0.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+
+      return null;
+    },
+    (command, args) => {
+      if (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/create-package-starter' && args[2] === 'version') {
+        return { status: 0, stdout: '"1.4.0"\n' };
+      }
+
+      if (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/create-package-starter' && args[2] === 'dist-tags') {
+        return { status: 0, stdout: '{"beta":"1.5.0-beta.11","latest":"1.4.0"}\n' };
+      }
+
+      if (command === 'npm' && args[0] === 'view' && args[1] === 'package-starter') {
+        return { status: 0, stdout: '"0.2.1"\n' };
+      }
+
+      return null;
+    },
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
+  ]);
+
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+
+  const npmCalls = stub.calls
+    .filter((call) => call.command === 'npm' && call.args[0] === 'view')
+    .map((call) => `${call.args[1]}:${call.args[2]}`);
+
+  assert.ok(npmCalls.includes('@i-santos/create-package-starter:dist-tags'), 'expected validation on workspace package');
+  assert.equal(npmCalls.some((entry) => entry.startsWith('package-starter:')), false, 'expected root package not to be validated');
+});
+
 test('release-cycle skips cleanup with --no-cleanup', async () => {
   const calls = [];
   const stub = createExecStub([
