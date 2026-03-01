@@ -546,6 +546,7 @@ function parseReleaseCycleArgs(argv) {
     repo: '',
     mode: 'auto',
     phase: 'full',
+    phaseProvided: false,
     track: 'auto',
     promoteStable: false,
     promoteType: 'patch',
@@ -590,6 +591,7 @@ function parseReleaseCycleArgs(argv) {
 
     if (token === '--phase') {
       args.phase = parseValueFlag(argv, i, '--phase');
+      args.phaseProvided = true;
       i += 1;
       continue;
     }
@@ -2732,6 +2734,9 @@ async function runReleaseCycle(args, dependencies = {}) {
 
   const gitContext = resolveGitContext(args, deps);
   summary.repoResolved = gitContext.repo;
+  const isCodeBranch = gitContext.head !== DEFAULT_BETA_BRANCH && !gitContext.head.startsWith('changeset-release/');
+  const holdReleaseByDefault = isCodeBranch && !args.promoteStable && !args.phaseProvided && args.mode !== 'publish';
+  const effectivePhase = holdReleaseByDefault ? 'code' : args.phase;
   const requestedTrack = args.track === 'auto' ? (args.promoteStable ? 'stable' : 'beta') : args.track;
   if (args.promoteStable && gitContext.head !== DEFAULT_BETA_BRANCH) {
     throw new Error(`--promote-stable is only allowed when running from "${DEFAULT_BETA_BRANCH}".`);
@@ -2744,6 +2749,10 @@ async function runReleaseCycle(args, dependencies = {}) {
   }
   summary.actionsPerformed.push(`release track: ${requestedTrack}`);
   summary.releaseTrack = requestedTrack;
+  if (holdReleaseByDefault) {
+    summary.warnings.push('Default behavior on code branches is now phase=code. Use --phase full to continue through release PR + npm publish.');
+    summary.actionsPerformed.push('phase override: code (default hold-release on code branch)');
+  }
 
   let detectedMode = args.mode;
   if (args.promoteStable) {
@@ -2905,7 +2914,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       }
     }
 
-    if (args.phase === 'code') {
+    if (effectivePhase === 'code') {
       summary.releasePr = 'skipped (phase=code)';
       summary.npmValidation = 'skipped (phase=code)';
       summary.cleanup = 'skipped (phase=code; requires npm validation)';
