@@ -6,6 +6,7 @@
     "@i-santos/create-package-starter": "1.4.1-beta.0"
   },
   "changesets": [
+    "bright-geckos-reply",
     "clean-cheetahs-judge",
     "clean-hats-warn",
     "clever-donkeys-sit",
