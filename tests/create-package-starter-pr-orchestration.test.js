@@ -249,7 +249,7 @@ test('release-cycle auto mode detects publish on changeset-release branch and en
 test('release-cycle auto mode fails on ambiguous release PR candidates', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
-    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/next\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'release/beta\n' } : null),
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
       ? {
         status: 0,
@@ -438,36 +438,31 @@ test('release-cycle skips cleanup with --no-cleanup', async () => {
   assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped');
 });
 
-test('release-cycle --explicit-merge uses explicit merge for release PR', async () => {
+test('release-cycle --phase code stops after code PR merge', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
-    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/phase-code\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
-      ? { status: 0, stdout: JSON.stringify([{ number: 505, url: 'https://github.com/i-santos/firestack/pull/505', headRefName: 'changeset-release/release/beta', baseRefName: 'release/beta' }]) }
+      ? { status: 0, stdout: JSON.stringify([{ number: 505, url: 'https://github.com/i-santos/firestack/pull/505', headRefName: 'feat/phase-code', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'edit'
+      ? { status: 0, stdout: 'updated' }
       : null),
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
       ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
       : null),
-    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--delete-branch') ? { status: 0, stdout: 'merged' } : null),
-    (command, args) => {
-      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.0.1-beta.0' }), 'utf8').toString('base64');
-        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
-      }
-      return null;
-    },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.0.1-beta.0"\n' } : null),
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.1-beta.0"}\n' } : null),
-    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--explicit-merge'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code'], { exec: stub.exec });
 
-  const explicitMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--delete-branch'));
-  assert.ok(explicitMergeCall, 'expected explicit release PR merge call');
+  const npmViewCall = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'view');
+  assert.equal(npmViewCall, undefined, 'expected no npm validation in code-only mode');
 });
 
-test('release-cycle --explicit-merge fails when release PR needs approval', async () => {
+test('release-cycle fails when release PR needs approval before merge', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
@@ -486,7 +481,7 @@ test('release-cycle --explicit-merge fails when release PR needs approval', asyn
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--explicit-merge'], { exec: stub.exec }),
+    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec }),
     /requires review approval/
   );
 });

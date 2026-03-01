@@ -95,16 +95,18 @@ Orchestrate release cycle:
 - `--title <text>`
 - `--body-file <path>`
 - `--draft`
+- `--phase <code|full>` (default: `full`)
 - `--auto-merge` (default behavior: enabled)
-- `--explicit-merge` (disable auto-merge strategy and force explicit merge calls)
 - `--watch-checks` (default behavior: enabled)
 - `--check-timeout <minutes>` (default: `30`)
+- `--confirm-merges` (require confirmation before each merge step)
 - `--merge-when-green` (default behavior: enabled)
 - `--merge-method <squash|merge|rebase>` (default: `squash`)
 - `--wait-release-pr` (default behavior: enabled)
 - `--release-pr-timeout <minutes>` (default: `30`)
 - `--merge-release-pr` (default behavior: enabled)
 - `--verify-npm` (default behavior: enabled)
+- `--confirm-cleanup` (require confirmation before cleanup; only after npm validation pass)
 - `--no-cleanup` (disable default local cleanup after successful cycle)
 - `--yes`
 - `--dry-run`
@@ -228,6 +230,7 @@ Default mode is `auto`:
 For `open-pr` mode:
 - runs open-pr flow
 - enables auto-merge for code PR by default
+- supports `--phase code` to stop after code PR merge
 - can wait for release PR creation (`changeset-release/*`)
 - enables auto-merge for release PR by default
 - validates npm publish (package + version + expected dist-tag)
@@ -241,6 +244,8 @@ For `publish` mode:
 The command is policy-aware:
 - never bypasses required checks/reviews/rulesets
 - fails fast with actionable diagnostics when blocked
+- stops with actionable guidance when approval is still required before merge
+- cleanup runs only when npm validation passes
 
 ### Protected `release/beta` stable promotion
 

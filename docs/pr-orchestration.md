@@ -70,10 +70,15 @@ Track behavior:
 Merge strategy behavior:
 
 - default: auto-merge for both code PR and release PR
-- optional: `--explicit-merge` to force direct merge calls instead of auto-merge
-- with `--explicit-merge`, after checks are green the CLI verifies review/merge readiness:
+- optional: `--confirm-merges` to ask confirmation before each merge step
+- after checks are green, CLI verifies review/merge readiness:
   - if approvals are still required, it stops with actionable guidance
-  - if ready, it asks for confirmation (unless `--yes`)
+  - if ready and `--confirm-merges` is set, it asks confirmation (unless `--yes`)
+
+Phase behavior:
+
+- `--phase full` (default): code PR + release PR + npm validation + cleanup
+- `--phase code`: stops after code PR merge into `release/beta`
 
 Promotion flow (`--promote-stable`) on protected `release/beta`:
 
@@ -90,9 +95,11 @@ Post-merge checks:
   - expected version
   - expected dist-tag (`beta` for beta track, `latest` for stable track)
 - cleanup runs by default after success:
+- cleanup only runs when npm validation passed
   - checkout base branch
   - pull latest
   - delete local feature branch
+  - optional confirmation with `--confirm-cleanup`
   - disable with `--no-cleanup`
 
 ## Team-safe behavior
