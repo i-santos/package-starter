@@ -57,6 +57,7 @@ Bootstrap beta release flow:
 - `--beta-branch <branch>` (default: `release/beta`)
 - `--default-branch <branch>` (default: `main`)
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
+- `--release-auth <github-token|pat|app|manual-trigger>` (default: `pat`)
 - `--force` (overwrite managed scripts/workflow)
 - `--dry-run` (prints intended operations only)
 - `--yes` (skip interactive confirmations)
@@ -105,6 +106,9 @@ The generated and managed baseline includes:
 - If no `--with-*` flags are provided:
   - TTY: asks interactively which external setup to run (`github`, `npm`, `beta`).
   - non-TTY: runs local init only and prints warning with next steps.
+- If `--release-auth` is omitted:
+  - TTY: asks explicitly to choose release auth mode (`pat`, `app`, `github-token`, `manual-trigger`).
+  - non-TTY: defaults to `pat` and prints warning.
 - Integrated mode (`--with-github/--with-npm/--with-beta`) pre-validates everything first (gh auth, npm auth, repo/branch/ruleset/package checks) and fails fast before local mutations if validation fails.
 - Integrated mode asks confirmation for sensitive external operations and ruleset/branch adoption conflicts (unless `--yes`).
 
@@ -152,6 +156,27 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - `app`: generates token via GitHub App (`GH_APP_ID` or `GH_APP_CLIENT_ID`, plus `GH_APP_PRIVATE_KEY`)
 - `github-token`: uses built-in `GITHUB_TOKEN` only
 - `manual-trigger`: uses built-in token and expects manual retrigger (empty commit) if release PR checks stay pending
+
+If `--release-auth` is omitted in interactive mode, setup prompts for explicit mode selection.
+
+### release-auth decision table
+
+| Mode | When to use | Required secrets | Trade-off |
+| --- | --- | --- | --- |
+| `pat` | Fastest setup for solo/small repos | `CHANGESETS_GH_TOKEN` | Simpler, but relies on PAT lifecycle/rotation |
+| `app` | Preferred for long-lived org/repo automation | `GH_APP_PRIVATE_KEY` + (`GH_APP_CLIENT_ID` or `GH_APP_ID`) | More setup, better long-term security and governance |
+| `github-token` | Minimal setup / experiments | none | Some downstream workflow retriggers may not happen |
+| `manual-trigger` | Accept manual CI retrigger on release PR updates | none | Extra manual empty-commit step when checks are pending |
+
+`GITHUB_TOKEN` can create/update release PRs in many cases, but events emitted by that workflow token may not retrigger downstream workflows (anti-recursion behavior).  
+For reliable retriggers on `changeset-release/*` updates, prefer `pat` or `app`.
+
+GitHub App docs:
+- Overview: https://docs.github.com/apps
+- Create app: https://docs.github.com/apps/creating-github-apps/registering-a-github-app/registering-a-github-app
+- Install app: https://docs.github.com/apps/using-github-apps/installing-your-own-github-app
+- Manage secrets: https://docs.github.com/actions/security-guides/using-secrets-in-github-actions
+- Project guide: https://github.com/i-santos/package-starter/blob/main/docs/release-auth-github-app.md
 
 ## promote-stable Behavior
 
