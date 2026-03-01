@@ -1903,6 +1903,9 @@ function findReleasePrs(repo, deps, options = {}) {
 
 function waitForReleasePr(repo, timeoutMinutes, deps, options = {}) {
   const expectedBase = options.expectedBase || '';
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+  const progressIntervalMs = Number.isFinite(options.progressIntervalMs) ? options.progressIntervalMs : 30_000;
+  let lastProgressAt = 0;
   const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   while (nowMs(deps) <= timeoutAt) {
     const releasePrs = findReleasePrs(repo, deps, { expectedBase });
@@ -1911,6 +1914,12 @@ function waitForReleasePr(repo, timeoutMinutes, deps, options = {}) {
     }
     if (releasePrs.length > 1) {
       throw new Error(`Multiple release PRs detected: ${releasePrs.map((item) => item.url).join(', ')}`);
+    }
+
+    const now = nowMs(deps);
+    if (onProgress && (lastProgressAt === 0 || now - lastProgressAt >= progressIntervalMs)) {
+      lastProgressAt = now;
+      onProgress();
     }
 
     waitForNextPoll(timeoutAt, 5000, deps);
@@ -2007,6 +2016,8 @@ function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expecte
   let lastObservedVersion = '';
   let lastObservedTagVersion = '';
   const isStableTrack = expectedTag === 'latest';
+  const onProgress = typeof deps.onNpmValidationProgress === 'function' ? deps.onNpmValidationProgress : null;
+  let lastProgressAt = 0;
 
   while (nowMs(deps) <= timeoutAt) {
     const versionResult = deps.exec('npm', ['view', packageName, 'version', '--json']);
@@ -2027,6 +2038,17 @@ function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expecte
           observedVersion,
           observedTagVersion
         };
+      }
+
+      const now = nowMs(deps);
+      if (onProgress && (lastProgressAt === 0 || now - lastProgressAt >= 30_000)) {
+        lastProgressAt = now;
+        onProgress({
+          observedVersion,
+          observedTagVersion,
+          expectedVersion,
+          expectedTag
+        });
       }
     }
 
@@ -3083,7 +3105,18 @@ async function runReleaseCycle(args, dependencies = {}) {
       } else {
         reporter.start('release-cycle-wait-release-pr', 'Waiting for release PR (changeset-release/*)...');
         const releasePr = waitForReleasePr(gitContext.repo, args.releasePrTimeout, deps, {
-          expectedBase: releaseBaseBranchForTrack(requestedTrack)
+          expectedBase: releaseBaseBranchForTrack(requestedTrack),
+          onProgress: () => {
+            const run = getLatestWorkflowRunForBranch(gitContext.repo, DEFAULT_BETA_BRANCH, deps);
+            if (!run) {
+              logStep('run', `Still waiting release PR... no workflow runs found yet on ${DEFAULT_BETA_BRANCH}.`);
+              return;
+            }
+            logStep(
+              'run',
+              `Still waiting release PR... workflow "${run.workflowName || 'unknown'}" is ${run.status || 'unknown'}${run.conclusion ? ` (${run.conclusion})` : ''}.`
+            );
+          }
         });
         reporter.ok('release-cycle-wait-release-pr', `Release PR found: #${releasePr.number}`);
         summary.releasePr = `found (#${releasePr.number})`;
@@ -3137,7 +3170,15 @@ async function runReleaseCycle(args, dependencies = {}) {
         remotePackage.version,
         expectedTag,
         args.releasePrTimeout,
-        deps
+        {
+          ...deps,
+          onNpmValidationProgress: ({ observedVersion, observedTagVersion, expectedVersion: expectedVersionValue, expectedTag: expectedTagValue }) => {
+            logStep(
+              'run',
+              `Waiting npm propagation... expected ${expectedTagValue}=${expectedVersionValue}; observed version=${observedVersion || 'n/a'}, ${expectedTagValue}=${observedTagVersion || 'n/a'}.`
+            );
+          }
+        }
       );
       if (npmValidation.status !== 'pass') {
         summary.npmValidation = `failed (${expectedTag})`;
@@ -3268,7 +3309,15 @@ async function runReleaseCycle(args, dependencies = {}) {
       remotePackage.version,
       expectedTag,
       args.releasePrTimeout,
-      deps
+      {
+        ...deps,
+        onNpmValidationProgress: ({ observedVersion, observedTagVersion, expectedVersion: expectedVersionValue, expectedTag: expectedTagValue }) => {
+          logStep(
+            'run',
+            `Waiting npm propagation... expected ${expectedTagValue}=${expectedVersionValue}; observed version=${observedVersion || 'n/a'}, ${expectedTagValue}=${observedTagVersion || 'n/a'}.`
+          );
+        }
+      }
     );
     if (npmValidation.status !== 'pass') {
       summary.npmValidation = `failed (${expectedTag})`;
