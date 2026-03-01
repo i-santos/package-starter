@@ -1670,6 +1670,7 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
   let lastReadiness = null;
   let lastChecks = null;
   const allowBehindTransient = Boolean(options.allowBehindTransient);
+  let behindObservedAt = 0;
   while (Date.now() <= timeoutAt) {
     const mergeState = getPrMergeState(repo, prNumber, deps);
     if (mergeState.state === 'MERGED' || mergeState.mergedAt) {
@@ -1718,9 +1719,13 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
     if (readiness.mergeStateStatus === 'BEHIND') {
       if (allowBehindTransient) {
         const workflowRun = getLatestWorkflowRunForBranch(repo, readiness.headRefName, deps);
-        if (workflowRun
-          && String(workflowRun.status || '').toLowerCase() === 'completed'
-          && !['success', 'neutral', 'skipped'].includes(String(workflowRun.conclusion || '').toLowerCase())) {
+        const runStatus = String((workflowRun && workflowRun.status) || '').toLowerCase();
+        const runConclusion = String((workflowRun && workflowRun.conclusion) || '').toLowerCase();
+        const runCompleted = runStatus === 'completed';
+        const runFailed = runCompleted && !['success', 'neutral', 'skipped'].includes(runConclusion);
+        const runInProgress = ['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(runStatus);
+
+        if (runFailed) {
           throw new Error(
             [
               `${label} stayed BEHIND because latest workflow run failed.`,
@@ -1731,6 +1736,26 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
             ].filter(Boolean).join('\n')
           );
         }
+
+        if (!behindObservedAt) {
+          behindObservedAt = Date.now();
+        }
+
+        // Avoid waiting the full global timeout when there is no active workflow progress.
+        const behindElapsedMs = Date.now() - behindObservedAt;
+        const stagnationWindowMs = 10 * 1000;
+        if (!runInProgress && behindElapsedMs >= stagnationWindowMs) {
+          throw new Error(
+            [
+              `${label} remained BEHIND for more than 10s with no active workflow progress.`,
+              runCompleted ? `latest workflow conclusion: ${runConclusion || 'n/a'}` : 'latest workflow status: unavailable',
+              workflowRun && workflowRun.url ? `run: ${workflowRun.url}` : '',
+              readiness.url ? `PR: ${readiness.url}` : '',
+              'If changeset workflow is still updating, rerun release-cycle in a moment.'
+            ].filter(Boolean).join('\n')
+          );
+        }
+
         sleepMs(5000);
         continue;
       }

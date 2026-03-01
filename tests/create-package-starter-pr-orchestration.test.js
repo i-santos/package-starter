@@ -476,8 +476,18 @@ test('release-cycle fails when release PR needs approval before merge', async ()
       if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args.includes('statusCheckRollup,url,number')) {
         return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
       }
-      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft')) {
-        return { status: 0, stdout: JSON.stringify({ number: 606, url: 'https://github.com/i-santos/firestack/pull/606', reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED', isDraft: false }) };
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft,headRefName')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 606,
+            url: 'https://github.com/i-santos/firestack/pull/606',
+            reviewDecision: 'REVIEW_REQUIRED',
+            mergeStateStatus: 'BLOCKED',
+            isDraft: false,
+            headRefName: 'changeset-release/release/beta'
+          })
+        };
       }
       return null;
     }
