@@ -32,6 +32,9 @@ function baseHandlers() {
     (command, args) => (command === 'gh' && args[0] === '--version' ? { status: 0, stdout: 'gh version 2.0.0' } : null),
     (command, args) => (command === 'gh' && args[0] === 'auth' && args[1] === 'status' ? { status: 0, stdout: 'ok' } : null),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--is-inside-work-tree' ? { status: 0, stdout: 'true\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'fetch' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-list' && args[1] === '--left-right' ? { status: 0, stdout: '1 0\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor' ? { status: 1, stdout: '' } : null),
     (command, args) => (command === 'git' && args[0] === 'log' && args[1] === '-1' ? { status: 0, stdout: 'feat: title\n' } : null),
     (command, args) => (command === 'git' && args[0] === 'log' && args[1] === '-n10' ? { status: 0, stdout: 'abc123 feat: sample\n' } : null)
   ];
@@ -484,4 +487,66 @@ test('release-cycle fails when release PR needs approval before merge', async ()
     () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec }),
     /requires review approval/
   );
+});
+
+test('release-cycle auto syncs feature branch with release/beta when behind', async () => {
+  const stub = createExecStub([
+    (command, args) => (command === 'git' && args[0] === 'rev-list' && args[1] === '--left-right' ? { status: 0, stdout: '1 2\n' } : null),
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/sync-base\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rebase' ? { status: 0, stdout: 'rebased' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 707, url: 'https://github.com/i-santos/firestack/pull/707', headRefName: 'feat/sync-base', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'edit' ? { status: 0, stdout: 'updated' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
+  ]);
+
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code'], { exec: stub.exec });
+
+  const rebaseCall = stub.calls.find((call) => call.command === 'git' && call.args[0] === 'rebase');
+  assert.ok(rebaseCall, 'expected rebase while syncing branch with base');
+});
+
+test('release-cycle resumes from release phase when code branch is already integrated', async () => {
+  const calls = [];
+  const stub = createExecStub([
+    (command, args, options) => {
+      calls.push({ command, args, options });
+      return null;
+    },
+    (command, args) => (command === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor' ? { status: 0, stdout: '' } : null),
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/already-merged\n' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 808, url: 'https://github.com/i-santos/firestack/pull/808', headRefName: 'changeset-release/release/beta', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z', reviewDecision: 'APPROVED', mergeStateStatus: 'CLEAN', isDraft: false }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.2.0-beta.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.2.0-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.2.0-beta.0"}\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
+
+  const pushCall = calls.find((call) => call.command === 'git' && call.args[0] === 'push');
+  assert.equal(pushCall, undefined, 'expected no feature branch push while resuming');
 });

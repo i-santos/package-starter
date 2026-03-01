@@ -45,7 +45,7 @@ function usage() {
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--no-cleanup] [--yes] [--dry-run]',
+    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -559,9 +559,10 @@ function parseReleaseCycleArgs(argv) {
     watchChecks: true,
     checkTimeout: 30,
     confirmMerges: false,
+    syncBase: 'auto',
+    resume: true,
     mergeWhenGreen: true,
     mergeMethod: 'squash',
-    explicitMerge: false,
     waitReleasePr: true,
     releasePrTimeout: 30,
     mergeReleasePr: true,
@@ -673,6 +674,17 @@ function parseReleaseCycleArgs(argv) {
       continue;
     }
 
+    if (token === '--sync-base') {
+      args.syncBase = parseValueFlag(argv, i, '--sync-base');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--no-resume') {
+      args.resume = false;
+      continue;
+    }
+
     if (token === '--merge-when-green') {
       args.mergeWhenGreen = true;
       continue;
@@ -740,6 +752,10 @@ function parseReleaseCycleArgs(argv) {
 
   if (!['patch', 'minor', 'major'].includes(args.promoteType)) {
     throw new Error('Invalid --promote-type value. Expected patch, minor, or major.');
+  }
+
+  if (!['auto', 'rebase', 'merge', 'off'].includes(args.syncBase)) {
+    throw new Error('Invalid --sync-base value. Expected auto, rebase, merge, or off.');
   }
 
   if (!['squash', 'merge', 'rebase'].includes(args.mergeMethod)) {
@@ -1864,6 +1880,103 @@ function isCleanupCandidateBranch(branchName) {
   return /^(feat|fix|chore|refactor|test)\//.test(branchName);
 }
 
+function syncBranchWithBase({
+  deps,
+  headBranch,
+  baseBranch,
+  strategy,
+  reporter,
+  summary,
+  dryRun
+}) {
+  if (strategy === 'off') {
+    summary.actionsSkipped.push('sync base branch');
+    return {
+      synchronized: false,
+      wasBehind: false
+    };
+  }
+
+  reporter.start('release-cycle-sync-fetch', `Fetching origin/${baseBranch}...`);
+  const fetch = deps.exec('git', ['fetch', 'origin', baseBranch]);
+  if (fetch.status !== 0) {
+    throw new Error(`Failed to fetch origin/${baseBranch}: ${(fetch.stderr || fetch.stdout || '').trim()}`);
+  }
+  reporter.ok('release-cycle-sync-fetch', `Fetched origin/${baseBranch}.`);
+
+  const behindCheck = deps.exec('git', ['rev-list', '--left-right', '--count', `${headBranch}...origin/${baseBranch}`]);
+  if (behindCheck.status !== 0) {
+    throw new Error(`Failed to compare ${headBranch} against origin/${baseBranch}.`);
+  }
+
+  const parts = (behindCheck.stdout || '').trim().split(/\s+/);
+  const behindCount = Number.parseInt(parts[1] || '0', 10);
+  const isBehind = Number.isInteger(behindCount) && behindCount > 0;
+  if (!isBehind) {
+    summary.actionsPerformed.push(`sync base: ${headBranch} already up to date with origin/${baseBranch}`);
+    return {
+      synchronized: true,
+      wasBehind: false
+    };
+  }
+
+  const effectiveStrategy = strategy === 'auto' ? 'rebase' : strategy;
+  if (dryRun) {
+    summary.actionsPerformed.push(`dry-run: would ${effectiveStrategy} ${headBranch} onto origin/${baseBranch}`);
+    return {
+      synchronized: false,
+      wasBehind: true
+    };
+  }
+
+  if (effectiveStrategy === 'rebase') {
+    reporter.start('release-cycle-sync-rebase', `Rebasing ${headBranch} onto origin/${baseBranch}...`);
+    const rebase = deps.exec('git', ['rebase', `origin/${baseBranch}`]);
+    if (rebase.status !== 0) {
+      throw new Error(
+        [
+          `Rebase failed while syncing ${headBranch} with origin/${baseBranch}.`,
+          'Resolve conflicts, then run `git rebase --continue` or `git rebase --abort`.',
+          (rebase.stderr || rebase.stdout || '').trim()
+        ].filter(Boolean).join('\n')
+      );
+    }
+    reporter.ok('release-cycle-sync-rebase', `${headBranch} rebased onto origin/${baseBranch}.`);
+    summary.actionsPerformed.push(`sync base: rebased ${headBranch} onto origin/${baseBranch}`);
+    return {
+      synchronized: true,
+      wasBehind: true
+    };
+  }
+
+  reporter.start('release-cycle-sync-merge', `Merging origin/${baseBranch} into ${headBranch}...`);
+  const merge = deps.exec('git', ['merge', '--no-edit', `origin/${baseBranch}`]);
+  if (merge.status !== 0) {
+    throw new Error(
+      [
+        `Merge failed while syncing ${headBranch} with origin/${baseBranch}.`,
+        'Resolve conflicts and commit merge before rerunning.',
+        (merge.stderr || merge.stdout || '').trim()
+      ].filter(Boolean).join('\n')
+    );
+  }
+  reporter.ok('release-cycle-sync-merge', `Merged origin/${baseBranch} into ${headBranch}.`);
+  summary.actionsPerformed.push(`sync base: merged origin/${baseBranch} into ${headBranch}`);
+  return {
+    synchronized: true,
+    wasBehind: true
+  };
+}
+
+function isHeadIntegratedIntoBase(headRef, baseBranch, deps) {
+  const fetch = deps.exec('git', ['fetch', 'origin', baseBranch]);
+  if (fetch.status !== 0) {
+    return false;
+  }
+  const ancestor = deps.exec('git', ['merge-base', '--is-ancestor', headRef, `origin/${baseBranch}`]);
+  return ancestor.status === 0;
+}
+
 function runLocalCleanup({
   deps,
   originalBranch,
@@ -2679,48 +2792,78 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.promotionPr = 'skipped';
     }
 
-    const openPrResult = await runOpenPrFlow(
-      {
-        ...args,
-        head: args.promoteStable ? DEFAULT_BETA_BRANCH : args.head,
-        base: args.promoteStable ? DEFAULT_BASE_BRANCH : args.base,
-        autoMerge: useAutoMerge,
-        watchChecks: args.watchChecks,
-        checkTimeout: args.checkTimeout,
-        mergeMethod: args.mergeMethod,
-        skipPush: args.promoteStable,
-        printSummary: false
-      },
-      dependencies
-    );
+    const canResumeFromMergedCode = args.resume
+      && !args.promoteStable
+      && gitContext.head !== DEFAULT_BETA_BRANCH
+      && !gitContext.head.startsWith('changeset-release/')
+      && isHeadIntegratedIntoBase('HEAD', DEFAULT_BETA_BRANCH, deps);
 
-    const codePr = openPrResult.pr;
-    summary.prAction = openPrResult.summary.prAction;
-    summary.prUrl = openPrResult.summary.prUrl;
-    summary.branchPushed = openPrResult.summary.branchPushed;
-    summary.autoMerge = openPrResult.summary.autoMerge;
-    summary.checks = openPrResult.summary.checks;
-    summary.actionsPerformed.push(...openPrResult.summary.actionsPerformed);
-    summary.actionsSkipped.push(...openPrResult.summary.actionsSkipped);
-    summary.warnings.push(...openPrResult.summary.warnings);
-
-    if (args.mergeWhenGreen && codePr && !args.dryRun) {
-      reporter.start('release-cycle-merge-code-ready', `Checking merge readiness for code PR #${codePr.number}...`);
-      const codeReadiness = getPrMergeReadiness(gitContext.repo, codePr.number, deps);
-      ensurePrReadyForMergeOrThrow(codeReadiness, `Code PR #${codePr.number}`);
-      await confirmMergeIfNeeded(args, codeReadiness, `Code PR #${codePr.number}`);
-      reporter.ok('release-cycle-merge-code-ready', `Code PR #${codePr.number} is ready for merge.`);
-      reporter.start('release-cycle-code-auto-merge', `Enabling auto-merge for code PR #${codePr.number}...`);
-      enablePrAutoMerge(gitContext.repo, codePr.number, args.mergeMethod, deps);
-      reporter.ok('release-cycle-code-auto-merge', `Auto-merge enabled for code PR #${codePr.number}.`);
-      reporter.start('release-cycle-wait-code-merge', `Waiting for code PR #${codePr.number} merge...`);
-      waitForPrMerged(gitContext.repo, codePr.number, args.releasePrTimeout, deps);
-      reporter.ok('release-cycle-wait-code-merge', `Code PR #${codePr.number} merged.`);
-      summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
-      summary.merge = `code pr merged (#${codePr.number})`;
+    let codePr = null;
+    if (canResumeFromMergedCode) {
+      summary.prAction = 'skipped (resume: code already merged)';
+      summary.prUrl = 'n/a';
+      summary.branchPushed = 'skipped (resume)';
+      summary.autoMerge = 'skipped (resume)';
+      summary.checks = 'skipped (resume)';
+      summary.merge = 'skipped (resume: already merged)';
+      summary.actionsPerformed.push(`resume detected: ${gitContext.head} already integrated into ${DEFAULT_BETA_BRANCH}`);
+      summary.actionsSkipped.push('open/update code pr (resume)');
     } else {
-      summary.merge = args.dryRun ? 'dry-run: would merge code PR' : 'skipped';
-      summary.actionsSkipped.push('merge code pr');
+      if (!args.promoteStable && gitContext.head !== DEFAULT_BETA_BRANCH && !gitContext.head.startsWith('changeset-release/')) {
+        syncBranchWithBase({
+          deps,
+          headBranch: gitContext.head,
+          baseBranch: DEFAULT_BETA_BRANCH,
+          strategy: args.syncBase,
+          reporter,
+          summary,
+          dryRun: args.dryRun
+        });
+      }
+
+      const openPrResult = await runOpenPrFlow(
+        {
+          ...args,
+          head: args.promoteStable ? DEFAULT_BETA_BRANCH : args.head,
+          base: args.promoteStable ? DEFAULT_BASE_BRANCH : args.base,
+          autoMerge: useAutoMerge,
+          watchChecks: args.watchChecks,
+          checkTimeout: args.checkTimeout,
+          mergeMethod: args.mergeMethod,
+          skipPush: args.promoteStable,
+          printSummary: false
+        },
+        dependencies
+      );
+
+      codePr = openPrResult.pr;
+      summary.prAction = openPrResult.summary.prAction;
+      summary.prUrl = openPrResult.summary.prUrl;
+      summary.branchPushed = openPrResult.summary.branchPushed;
+      summary.autoMerge = openPrResult.summary.autoMerge;
+      summary.checks = openPrResult.summary.checks;
+      summary.actionsPerformed.push(...openPrResult.summary.actionsPerformed);
+      summary.actionsSkipped.push(...openPrResult.summary.actionsSkipped);
+      summary.warnings.push(...openPrResult.summary.warnings);
+
+      if (args.mergeWhenGreen && codePr && !args.dryRun) {
+        reporter.start('release-cycle-merge-code-ready', `Checking merge readiness for code PR #${codePr.number}...`);
+        const codeReadiness = getPrMergeReadiness(gitContext.repo, codePr.number, deps);
+        ensurePrReadyForMergeOrThrow(codeReadiness, `Code PR #${codePr.number}`);
+        await confirmMergeIfNeeded(args, codeReadiness, `Code PR #${codePr.number}`);
+        reporter.ok('release-cycle-merge-code-ready', `Code PR #${codePr.number} is ready for merge.`);
+        reporter.start('release-cycle-code-auto-merge', `Enabling auto-merge for code PR #${codePr.number}...`);
+        enablePrAutoMerge(gitContext.repo, codePr.number, args.mergeMethod, deps);
+        reporter.ok('release-cycle-code-auto-merge', `Auto-merge enabled for code PR #${codePr.number}.`);
+        reporter.start('release-cycle-wait-code-merge', `Waiting for code PR #${codePr.number} merge...`);
+        waitForPrMerged(gitContext.repo, codePr.number, args.releasePrTimeout, deps);
+        reporter.ok('release-cycle-wait-code-merge', `Code PR #${codePr.number} merged.`);
+        summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
+        summary.merge = `code pr merged (#${codePr.number})`;
+      } else {
+        summary.merge = args.dryRun ? 'dry-run: would merge code PR' : 'skipped';
+        summary.actionsSkipped.push('merge code pr');
+      }
     }
 
     if (args.phase === 'code') {
