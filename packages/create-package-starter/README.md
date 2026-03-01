@@ -96,6 +96,7 @@ Orchestrate release cycle:
 - `--body-file <path>`
 - `--draft`
 - `--auto-merge` (default behavior: enabled)
+- `--explicit-merge` (disable auto-merge strategy and force explicit merge calls)
 - `--watch-checks` (default behavior: enabled)
 - `--check-timeout <minutes>` (default: `30`)
 - `--merge-when-green` (default behavior: enabled)
@@ -226,16 +227,16 @@ Default mode is `auto`:
 
 For `open-pr` mode:
 - runs open-pr flow
-- can merge code PR when green
+- enables auto-merge for code PR by default
 - can wait for release PR creation (`changeset-release/*`)
-- can watch checks and merge release PR when green
+- enables auto-merge for release PR by default
 - validates npm publish (package + version + expected dist-tag)
 - cleans local branch by default when safety gates are satisfied (`--no-cleanup` to disable)
 
 For `publish` mode:
 - resolves release PR directly
 - watches checks
-- merges when green (policy permitting)
+- enables auto-merge and waits for merge completion (policy permitting)
 
 The command is policy-aware:
 - never bypasses required checks/reviews/rulesets

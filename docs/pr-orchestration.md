@@ -39,10 +39,10 @@ Use `release-cycle` to orchestrate full progression:
 
 1. code PR open/update
 2. checks
-3. merge code PR
+3. enable auto-merge for code PR and wait merge
 4. wait release PR (`changeset-release/*`)
 5. checks
-6. merge release PR
+6. enable auto-merge for release PR and wait merge
 
 Example:
 
@@ -66,6 +66,11 @@ Track behavior:
 
 - branch != `release/beta` -> beta track only
 - stable requires explicit `--promote-stable`
+
+Merge strategy behavior:
+
+- default: auto-merge for both code PR and release PR
+- optional: `--explicit-merge` to force direct merge calls instead of auto-merge
 
 Promotion flow (`--promote-stable`) on protected `release/beta`:
 

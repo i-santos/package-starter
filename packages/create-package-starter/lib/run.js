@@ -45,7 +45,7 @@ function usage() {
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--no-cleanup] [--yes] [--dry-run]',
+    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--explicit-merge] [--watch-checks] [--check-timeout <minutes>] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--no-cleanup] [--yes] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -559,6 +559,7 @@ function parseReleaseCycleArgs(argv) {
     checkTimeout: 30,
     mergeWhenGreen: true,
     mergeMethod: 'squash',
+    explicitMerge: false,
     waitReleasePr: true,
     releasePrTimeout: 30,
     mergeReleasePr: true,
@@ -640,6 +641,11 @@ function parseReleaseCycleArgs(argv) {
     if (token === '--merge-method') {
       args.mergeMethod = parseValueFlag(argv, i, '--merge-method');
       i += 1;
+      continue;
+    }
+
+    if (token === '--explicit-merge') {
+      args.explicitMerge = true;
       continue;
     }
 
@@ -1569,6 +1575,44 @@ function mergePrWhenGreen(repo, prNumber, mergeMethod, deps) {
   }
 }
 
+function getPrMergeState(repo, prNumber, deps) {
+  const view = deps.exec('gh', [
+    'pr',
+    'view',
+    String(prNumber),
+    '--repo',
+    repo,
+    '--json',
+    'state,mergedAt'
+  ]);
+  if (view.status !== 0) {
+    throw new Error(`Failed to read PR #${prNumber} merge state: ${view.stderr || view.stdout}`.trim());
+  }
+
+  const parsed = parseJsonSafely(view.stdout || '{}', {});
+  return {
+    state: String(parsed.state || '').toUpperCase(),
+    mergedAt: parsed.mergedAt || ''
+  };
+}
+
+function waitForPrMerged(repo, prNumber, timeoutMinutes, deps) {
+  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  while (Date.now() <= timeoutAt) {
+    const state = getPrMergeState(repo, prNumber, deps);
+    if (state.state === 'MERGED' || state.mergedAt) {
+      return true;
+    }
+    if (state.state === 'CLOSED') {
+      throw new Error(`PR #${prNumber} was closed without merge.`);
+    }
+
+    sleepMs(5000);
+  }
+
+  throw new Error(`Timed out waiting for PR #${prNumber} merge after ${timeoutMinutes} minutes.`);
+}
+
 function findReleasePrs(repo, deps) {
   const prs = listOpenPullRequests(repo, deps);
   return prs.filter(
@@ -2452,6 +2496,8 @@ async function runReleaseCycle(args, dependencies = {}) {
   const summary = createOrchestrationSummary();
   const reporter = new StepReporter();
   const originalBranch = deps.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
+  const useExplicitMerge = args.explicitMerge;
+  const useAutoMerge = args.autoMerge && !useExplicitMerge;
 
   reporter.start('release-cycle-preflight-gh', 'Validating GitHub CLI and authentication...');
   ensureGhAvailable(deps);
@@ -2556,7 +2602,7 @@ async function runReleaseCycle(args, dependencies = {}) {
         ...args,
         head: args.promoteStable ? DEFAULT_BETA_BRANCH : args.head,
         base: args.promoteStable ? DEFAULT_BASE_BRANCH : args.base,
-        autoMerge: args.autoMerge,
+        autoMerge: useAutoMerge,
         watchChecks: args.watchChecks,
         checkTimeout: args.checkTimeout,
         mergeMethod: args.mergeMethod,
@@ -2577,9 +2623,14 @@ async function runReleaseCycle(args, dependencies = {}) {
     summary.warnings.push(...openPrResult.summary.warnings);
 
     if (args.mergeWhenGreen && codePr && !args.dryRun) {
-      if (args.autoMerge) {
+      if (useAutoMerge) {
         summary.merge = `auto-merge pending/completed (#${codePr.number})`;
         summary.actionsSkipped.push(`explicit merge code pr (#${codePr.number})`);
+        reporter.start('release-cycle-wait-code-merge', `Waiting for code PR #${codePr.number} merge...`);
+        waitForPrMerged(gitContext.repo, codePr.number, args.releasePrTimeout, deps);
+        reporter.ok('release-cycle-wait-code-merge', `Code PR #${codePr.number} merged.`);
+        summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
+        summary.merge = `code pr merged (#${codePr.number})`;
       } else {
         reporter.start('release-cycle-merge-code-pr', `Merging code PR #${codePr.number}...`);
         mergePrWhenGreen(gitContext.repo, codePr.number, args.mergeMethod, deps);
@@ -2610,12 +2661,25 @@ async function runReleaseCycle(args, dependencies = {}) {
         }
 
         if (args.mergeReleasePr) {
-          reporter.start('release-cycle-merge-release-pr', `Merging release PR #${releasePr.number}...`);
-          mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
-          reporter.ok('release-cycle-merge-release-pr', `Release PR #${releasePr.number} merged.`);
-          summary.releasePr = `merged (#${releasePr.number})`;
-          summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
-          mergedReleasePr = releasePr;
+          if (useAutoMerge) {
+            reporter.start('release-cycle-release-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
+            enablePrAutoMerge(gitContext.repo, releasePr.number, args.mergeMethod, deps);
+            reporter.ok('release-cycle-release-auto-merge', `Auto-merge enabled for release PR #${releasePr.number}.`);
+            reporter.start('release-cycle-release-wait-merge', `Waiting for release PR #${releasePr.number} merge...`);
+            waitForPrMerged(gitContext.repo, releasePr.number, args.releasePrTimeout, deps);
+            reporter.ok('release-cycle-release-wait-merge', `Release PR #${releasePr.number} merged.`);
+            summary.releasePr = `merged (#${releasePr.number})`;
+            summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+            summary.autoMerge = 'enabled (code + release)';
+            mergedReleasePr = releasePr;
+          } else {
+            reporter.start('release-cycle-merge-release-pr', `Merging release PR #${releasePr.number}...`);
+            mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
+            reporter.ok('release-cycle-merge-release-pr', `Release PR #${releasePr.number} merged.`);
+            summary.releasePr = `merged (#${releasePr.number})`;
+            summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+            mergedReleasePr = releasePr;
+          }
         } else {
           summary.actionsSkipped.push('merge release pr');
         }
@@ -2716,12 +2780,25 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.merge = `dry-run: would merge release PR #${releasePr.number}`;
       summary.releasePr = `dry-run: would merge (#${releasePr.number})`;
     } else {
-      reporter.start('release-cycle-publish-merge', `Merging release PR #${releasePr.number}...`);
-      mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
-      reporter.ok('release-cycle-publish-merge', `Release PR #${releasePr.number} merged.`);
-      summary.merge = `merged release pr (#${releasePr.number})`;
-      summary.releasePr = `merged (#${releasePr.number})`;
-      summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+      if (useAutoMerge) {
+        reporter.start('release-cycle-publish-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
+        enablePrAutoMerge(gitContext.repo, releasePr.number, args.mergeMethod, deps);
+        reporter.ok('release-cycle-publish-auto-merge', `Auto-merge enabled for release PR #${releasePr.number}.`);
+        reporter.start('release-cycle-publish-wait-merge', `Waiting for release PR #${releasePr.number} merge...`);
+        waitForPrMerged(gitContext.repo, releasePr.number, args.releasePrTimeout, deps);
+        reporter.ok('release-cycle-publish-wait-merge', `Release PR #${releasePr.number} merged.`);
+        summary.merge = `merged release pr (#${releasePr.number})`;
+        summary.releasePr = `merged (#${releasePr.number})`;
+        summary.autoMerge = 'enabled (release)';
+        summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+      } else {
+        reporter.start('release-cycle-publish-merge', `Merging release PR #${releasePr.number}...`);
+        mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
+        reporter.ok('release-cycle-publish-merge', `Release PR #${releasePr.number} merged.`);
+        summary.merge = `merged release pr (#${releasePr.number})`;
+        summary.releasePr = `merged (#${releasePr.number})`;
+        summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+      }
     }
   } else {
     summary.merge = 'skipped';
