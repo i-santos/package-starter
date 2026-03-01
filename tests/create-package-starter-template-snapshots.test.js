@@ -51,6 +51,19 @@ test('template auto-retarget-pr.yml snapshot', () => {
   assert.match(content, /desiredBase = betaBase;/m);
 });
 
+test('template promote-stable.yml snapshot', () => {
+  const content = read('.github/workflows/promote-stable.yml');
+
+  assert.match(content, /^name: Promote Stable/m);
+  assert.match(content, /workflow_dispatch:/m);
+  assert.match(content, /target_beta_branch:/m);
+  assert.match(content, /promotion_branch:/m);
+  assert.match(content, /npm run beta:exit/m);
+  assert.match(content, /"__PACKAGE_NAME__": \$\{\{ github\.event\.inputs\.promote_type \}\}/m);
+  assert.match(content, /base: \$\{\{ github\.event\.inputs\.target_beta_branch \}\}/m);
+  assert.match(content, /gh pr merge .* --squash --auto/m);
+});
+
 test('template changeset config snapshot', () => {
   const config = JSON.parse(read('.changeset/config.json'));
 

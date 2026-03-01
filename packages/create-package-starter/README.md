@@ -86,6 +86,10 @@ Orchestrate release cycle:
 - `release-cycle`
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
 - `--mode <auto|open-pr|publish>` (default: `auto`)
+- `--track <auto|beta|stable>` (default: `auto`)
+- `--promote-stable` (explicitly trigger stable promotion path; only valid from `release/beta`)
+- `--promote-type <patch|minor|major>` (default: `patch`)
+- `--promote-summary <text>`
 - `--head <branch>`
 - `--base <branch>`
 - `--title <text>`
@@ -99,6 +103,8 @@ Orchestrate release cycle:
 - `--wait-release-pr` (default behavior: enabled)
 - `--release-pr-timeout <minutes>` (default: `30`)
 - `--merge-release-pr` (default behavior: enabled)
+- `--verify-npm` (default behavior: enabled)
+- `--no-cleanup` (disable default local cleanup after successful cycle)
 - `--yes`
 - `--dry-run`
 
@@ -127,6 +133,7 @@ The generated and managed baseline includes:
 - `.changeset/README.md`
 - `.github/workflows/ci.yml`
 - `.github/workflows/release.yml`
+- `.github/workflows/promote-stable.yml`
 - `.github/PULL_REQUEST_TEMPLATE.md`
 - `.github/CODEOWNERS`
 - `CONTRIBUTING.md`
@@ -222,6 +229,8 @@ For `open-pr` mode:
 - can merge code PR when green
 - can wait for release PR creation (`changeset-release/*`)
 - can watch checks and merge release PR when green
+- validates npm publish (package + version + expected dist-tag)
+- cleans local branch by default when safety gates are satisfied (`--no-cleanup` to disable)
 
 For `publish` mode:
 - resolves release PR directly
@@ -231,6 +240,17 @@ For `publish` mode:
 The command is policy-aware:
 - never bypasses required checks/reviews/rulesets
 - fails fast with actionable diagnostics when blocked
+
+### Protected `release/beta` stable promotion
+
+When `release/beta` is protected (PR-only), stable promotion in `release-cycle --promote-stable` uses a hybrid flow:
+
+1. dispatch `.github/workflows/promote-stable.yml`
+2. workflow creates `promote/stable-*` branch
+3. workflow opens PR `promote/stable-* -> release/beta` and enables auto-merge
+4. after merge, cycle continues with `release/beta -> main` and release PR progression
+
+No direct push to `release/beta` is used in this path.
 
 `release-auth` modes:
 - `pat` (recommended default): uses `CHANGESETS_GH_TOKEN` fallback to `GITHUB_TOKEN`

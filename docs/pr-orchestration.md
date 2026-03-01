@@ -50,11 +50,42 @@ Example:
 create-package-starter release-cycle --yes
 ```
 
+Stable promotion (protected `release/beta`):
+
+```bash
+create-package-starter release-cycle --promote-stable --promote-type minor --yes
+```
+
 Mode detection (`--mode auto`):
 
 - branch starts with `changeset-release/` -> `publish`
 - exactly one open `changeset-release/*` PR -> `publish`
 - otherwise -> `open-pr`
+
+Track behavior:
+
+- branch != `release/beta` -> beta track only
+- stable requires explicit `--promote-stable`
+
+Promotion flow (`--promote-stable`) on protected `release/beta`:
+
+1. dispatch workflow `.github/workflows/promote-stable.yml`
+2. workflow creates `promote/stable-*` branch
+3. workflow opens PR `promote/stable-* -> release/beta` and enables auto-merge
+4. release-cycle continues with `release/beta -> main` and release PR lifecycle
+
+No direct push to protected `release/beta` is used.
+
+Post-merge checks:
+
+- release-cycle validates npm publish using `npm view`:
+  - expected version
+  - expected dist-tag (`beta` for beta track, `latest` for stable track)
+- cleanup runs by default after success:
+  - checkout base branch
+  - pull latest
+  - delete local feature branch
+  - disable with `--no-cleanup`
 
 ## Team-safe behavior
 
@@ -90,3 +121,16 @@ Typical causes:
 - branch protection constraints
 
 Fix policy blockers and rerun command.
+
+### NPM validation timeout/failure
+
+If npm propagation is delayed, `release-cycle` can fail with validation diagnostics.
+Re-run the command (publish path) after a short delay.
+
+### Cleanup skipped
+
+Cleanup is skipped when safety gates fail, such as:
+
+- working tree not clean
+- branch is protected (`main`, `release/beta`, `changeset-release/*`, `promote/*`)
+- branch name does not match allowed code patterns (`feat/*`, `fix/*`, `chore/*`, etc.)
