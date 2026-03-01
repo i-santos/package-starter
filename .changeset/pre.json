@@ -7,6 +7,7 @@
   },
   "changesets": [
     "clean-cheetahs-judge",
+    "clean-hats-warn",
     "clever-donkeys-sit",
     "eighty-lions-poke",
     "fair-pugs-hammer",
