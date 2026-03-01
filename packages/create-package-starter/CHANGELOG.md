@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.8
+
+### Minor Changes
+
+- a8e3a70: Add Release-Cycle v1.1 with protected `release/beta` stable promotion via GitHub Actions, npm publish verification, and default safe local cleanup.
+
 ## 1.5.0-beta.7
 
 ### Minor Changes
