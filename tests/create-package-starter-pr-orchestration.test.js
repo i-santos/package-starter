@@ -452,9 +452,6 @@ test('release-cycle --phase code stops after code PR merge', async () => {
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
       ? { status: 0, stdout: JSON.stringify([{ number: 505, url: 'https://github.com/i-santos/firestack/pull/505', headRefName: 'feat/phase-code', baseRefName: 'release/beta' }]) }
       : null),
-    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'edit'
-      ? { status: 0, stdout: 'updated' }
-      : null),
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
       ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
       : null),
@@ -465,6 +462,8 @@ test('release-cycle --phase code stops after code PR merge', async () => {
 
   const npmViewCall = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'view');
   assert.equal(npmViewCall, undefined, 'expected no npm validation in code-only mode');
+  const editCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'edit');
+  assert.equal(editCall, undefined, 'expected existing PR to be reused without edit by default');
 });
 
 test('release-cycle fails when release PR needs approval before merge', async () => {
@@ -561,4 +560,39 @@ test('release-cycle resumes from release phase when code branch is already integ
 
   const pushCall = calls.find((call) => call.command === 'git' && call.args[0] === 'push');
   assert.equal(pushCall, undefined, 'expected no feature branch push while resuming');
+});
+
+test('release-cycle updates existing PR description only with --update-pr-description', async () => {
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/update-body\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 0, stdout: 'origin/feat/update-body\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-list' ? { status: 0, stdout: '1\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'updated' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 909, url: 'https://github.com/i-santos/firestack/pull/909', headRefName: 'feat/update-body', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'edit'
+      ? { status: 0, stdout: 'updated' }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto')
+      ? { status: 0, stdout: 'auto' }
+      : null)
+  ]);
+
+  await run([
+    'release-cycle',
+    '--repo', 'i-santos/firestack',
+    '--yes',
+    '--phase', 'code',
+    '--update-pr-description',
+    '--check-timeout', '0.05',
+    '--release-pr-timeout', '0.05'
+  ], { exec: stub.exec });
+
+  const editCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'edit');
+  assert.ok(editCall, 'expected existing PR to be edited when --update-pr-description is provided');
 });

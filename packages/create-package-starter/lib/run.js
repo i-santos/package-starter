@@ -45,7 +45,7 @@ function usage() {
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -446,6 +446,7 @@ function parseOpenPrArgs(argv) {
     autoMerge: false,
     watchChecks: false,
     checkTimeout: 30,
+    updateExistingPr: true,
     yes: false,
     dryRun: false
   };
@@ -498,6 +499,11 @@ function parseOpenPrArgs(argv) {
     if (token === '--check-timeout') {
       args.checkTimeout = Number.parseFloat(parseValueFlag(argv, i, '--check-timeout'));
       i += 1;
+      continue;
+    }
+
+    if (token === '--update-pr-description') {
+      args.updateExistingPr = true;
       continue;
     }
 
@@ -555,6 +561,7 @@ function parseReleaseCycleArgs(argv) {
     base: '',
     title: '',
     bodyFile: '',
+    updatePrDescription: false,
     draft: false,
     autoMerge: true,
     watchChecks: true,
@@ -635,6 +642,11 @@ function parseReleaseCycleArgs(argv) {
     if (token === '--body-file') {
       args.bodyFile = parseValueFlag(argv, i, '--body-file');
       i += 1;
+      continue;
+    }
+
+    if (token === '--update-pr-description') {
+      args.updatePrDescription = true;
       continue;
     }
 
@@ -1519,6 +1531,14 @@ function ensureBranchPushed(repo, head, deps) {
 
 function createOrUpdatePr(context, body, args, deps) {
   const existing = findOpenPrByHeadBase(context.repo, context.head, context.base, deps);
+  if (existing && !args.updateExistingPr) {
+    return {
+      action: 'reused',
+      number: existing.number,
+      url: existing.url
+    };
+  }
+
   const bodyFilePath = path.join(process.cwd(), `.tmp-pr-body-${Date.now()}.md`);
   fs.writeFileSync(bodyFilePath, body);
 
@@ -2799,6 +2819,9 @@ async function runOpenPrFlow(args, dependencies = {}) {
   summary.prAction = `${prResult.action} (#${prResult.number})`;
   summary.prUrl = prResult.url || 'n/a';
   summary.actionsPerformed.push(`pr ${prResult.action}: #${prResult.number}`);
+  if (prResult.action === 'reused') {
+    summary.warnings.push('Existing PR reused without body/title changes. Use --update-pr-description to refresh PR content.');
+  }
 
   if (args.autoMerge) {
     reporter.start('open-pr-auto-merge', `Enabling auto-merge for PR #${prResult.number}...`);
@@ -2992,6 +3015,7 @@ async function runReleaseCycle(args, dependencies = {}) {
           watchChecks: args.watchChecks,
           checkTimeout: args.checkTimeout,
           mergeMethod: args.mergeMethod,
+          updateExistingPr: args.updatePrDescription,
           skipPush: args.promoteStable,
           printSummary: false
         },
