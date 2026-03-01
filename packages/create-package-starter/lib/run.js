@@ -7,6 +7,7 @@ const CHANGESETS_DEP = '@changesets/cli';
 const CHANGESETS_DEP_VERSION = '^2.29.7';
 const DEFAULT_BASE_BRANCH = 'main';
 const DEFAULT_BETA_BRANCH = 'release/beta';
+const DEFAULT_PROMOTE_WORKFLOW = 'promote-stable.yml';
 const DEFAULT_RULESET_NAME = 'Default main branch protection';
 const REQUIRED_CHECK_CONTEXT = 'required-check';
 const DEFAULT_RELEASE_AUTH = 'pat';
@@ -26,6 +27,7 @@ const MANAGED_FILE_SPECS = [
   ['.changeset/README.md', '.changeset/README.md'],
   ['.github/workflows/ci.yml', '.github/workflows/ci.yml'],
   ['.github/workflows/release.yml', '.github/workflows/release.yml'],
+  ['.github/workflows/promote-stable.yml', '.github/workflows/promote-stable.yml'],
   ['.github/workflows/auto-retarget-pr.yml', '.github/workflows/auto-retarget-pr.yml'],
   ['.github/PULL_REQUEST_TEMPLATE.md', '.github/PULL_REQUEST_TEMPLATE.md'],
   ['.github/CODEOWNERS', '.github/CODEOWNERS'],
@@ -43,7 +45,7 @@ function usage() {
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--yes] [--dry-run]',
+    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--no-cleanup] [--yes] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -57,6 +59,7 @@ function usage() {
     '  create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth app',
     '  create-package-starter open-pr --auto-merge --watch-checks',
     '  create-package-starter release-cycle --yes',
+    '  create-package-starter release-cycle --promote-stable --promote-type minor --yes',
     '  create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"',
     '  create-package-starter setup-npm --dir . --publish-first'
   ].join('\n');
@@ -542,6 +545,10 @@ function parseReleaseCycleArgs(argv) {
   const args = {
     repo: '',
     mode: 'auto',
+    track: 'auto',
+    promoteStable: false,
+    promoteType: 'patch',
+    promoteSummary: 'Promote beta track to stable release.',
     head: '',
     base: '',
     title: '',
@@ -555,6 +562,8 @@ function parseReleaseCycleArgs(argv) {
     waitReleasePr: true,
     releasePrTimeout: 30,
     mergeReleasePr: true,
+    verifyNpm: true,
+    noCleanup: false,
     yes: false,
     dryRun: false
   };
@@ -570,6 +579,24 @@ function parseReleaseCycleArgs(argv) {
 
     if (token === '--mode') {
       args.mode = parseValueFlag(argv, i, '--mode');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--track') {
+      args.track = parseValueFlag(argv, i, '--track');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--promote-type') {
+      args.promoteType = parseValueFlag(argv, i, '--promote-type');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--promote-summary') {
+      args.promoteSummary = parseValueFlag(argv, i, '--promote-summary');
       i += 1;
       continue;
     }
@@ -646,6 +673,21 @@ function parseReleaseCycleArgs(argv) {
       continue;
     }
 
+    if (token === '--promote-stable') {
+      args.promoteStable = true;
+      continue;
+    }
+
+    if (token === '--verify-npm') {
+      args.verifyNpm = true;
+      continue;
+    }
+
+    if (token === '--no-cleanup') {
+      args.noCleanup = true;
+      continue;
+    }
+
     if (token === '--yes') {
       args.yes = true;
       continue;
@@ -666,6 +708,14 @@ function parseReleaseCycleArgs(argv) {
 
   if (!['auto', 'open-pr', 'publish'].includes(args.mode)) {
     throw new Error('Invalid --mode value. Expected auto, open-pr, or publish.');
+  }
+
+  if (!['auto', 'beta', 'stable'].includes(args.track)) {
+    throw new Error('Invalid --track value. Expected auto, beta, or stable.');
+  }
+
+  if (!['patch', 'minor', 'major'].includes(args.promoteType)) {
+    throw new Error('Invalid --promote-type value. Expected patch, minor, or major.');
   }
 
   if (!['squash', 'merge', 'rebase'].includes(args.mergeMethod)) {
@@ -1161,6 +1211,11 @@ function createOrchestrationSummary() {
     checks: '',
     merge: '',
     releasePr: '',
+    releaseTrack: '',
+    promotionWorkflow: '',
+    promotionPr: '',
+    npmValidation: '',
+    cleanup: '',
     actionsPerformed: [],
     actionsSkipped: [],
     warnings: [],
@@ -1195,6 +1250,11 @@ function printOrchestrationSummary(title, summary) {
   console.log(`  - checks watched result: ${summary.checks || 'n/a'}`);
   console.log(`  - merge performed/skipped: ${summary.merge || 'n/a'}`);
   console.log(`  - release pr discovered/merged: ${summary.releasePr || 'n/a'}`);
+  console.log(`  - release track: ${summary.releaseTrack || 'n/a'}`);
+  console.log(`  - promotion workflow run: ${summary.promotionWorkflow || 'n/a'}`);
+  console.log(`  - promotion PR: ${summary.promotionPr || 'n/a'}`);
+  console.log(`  - npm validation: ${summary.npmValidation || 'n/a'}`);
+  console.log(`  - cleanup: ${summary.cleanup || 'n/a'}`);
   console.log('actions performed:');
   formatList(summary.actionsPerformed).forEach((line) => console.log(line));
   console.log('actions skipped:');
@@ -1546,6 +1606,206 @@ async function confirmDetectedModeIfNeeded(args, mode, planText) {
       planText
     ].join('\n')
   );
+}
+
+function ghApiJson(deps, method, endpoint, payload) {
+  const result = ghApi(deps, method, endpoint, payload);
+  if (result.status !== 0) {
+    throw new Error(`GitHub API ${method} ${endpoint} failed: ${result.stderr || result.stdout}`.trim());
+  }
+
+  return parseJsonSafely(result.stdout || '{}', {});
+}
+
+function dispatchPromoteStableWorkflow(repo, args, deps) {
+  const endpoint = `/repos/${repo}/actions/workflows/${encodeURIComponent(DEFAULT_PROMOTE_WORKFLOW)}/dispatches`;
+  const payload = {
+    ref: args.head || DEFAULT_BETA_BRANCH,
+    inputs: {
+      promote_type: args.promoteType,
+      summary: args.promoteSummary,
+      target_beta_branch: DEFAULT_BETA_BRANCH
+    }
+  };
+  ghApiJson(deps, 'POST', endpoint, payload);
+}
+
+function findPromotionPrs(repo, deps) {
+  const prs = listOpenPullRequests(repo, deps);
+  return prs.filter(
+    (item) => item.baseRefName === DEFAULT_BETA_BRANCH
+      && typeof item.headRefName === 'string'
+      && item.headRefName.startsWith('promote/stable-')
+  );
+}
+
+function waitForPromotionPr(repo, timeoutMinutes, deps) {
+  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  while (Date.now() <= timeoutAt) {
+    const promotionPrs = findPromotionPrs(repo, deps);
+    if (promotionPrs.length === 1) {
+      return promotionPrs[0];
+    }
+
+    if (promotionPrs.length > 1) {
+      promotionPrs.sort((a, b) => b.number - a.number);
+      return promotionPrs[0];
+    }
+
+    sleepMs(5000);
+  }
+
+  throw new Error(`Timed out waiting for promotion PR after ${timeoutMinutes} minutes.`);
+}
+
+function getRemotePackageVersion(repo, ref, deps) {
+  const endpoint = `/repos/${repo}/contents/package.json?ref=${encodeURIComponent(ref)}`;
+  const contentResponse = ghApiJson(deps, 'GET', endpoint);
+  if (!contentResponse.content) {
+    throw new Error(`Could not read package.json content from ${repo}@${ref}.`);
+  }
+
+  const decoded = Buffer.from(String(contentResponse.content).replace(/\n/g, ''), 'base64').toString('utf8');
+  const parsed = parseJsonSafely(decoded, {});
+  if (!parsed.name || !parsed.version) {
+    throw new Error(`package.json from ${repo}@${ref} must include name and version.`);
+  }
+
+  return {
+    name: parsed.name,
+    version: parsed.version
+  };
+}
+
+function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expectedTag, timeoutMinutes, deps) {
+  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  let lastObservedVersion = '';
+  let lastObservedTagVersion = '';
+
+  while (Date.now() <= timeoutAt) {
+    const versionResult = deps.exec('npm', ['view', packageName, 'version', '--json']);
+    const tagsResult = deps.exec('npm', ['view', packageName, 'dist-tags', '--json']);
+    if (versionResult.status === 0 && tagsResult.status === 0) {
+      const observedVersion = String(parseJsonSafely(versionResult.stdout || '""', '') || '');
+      const tags = parseJsonSafely(tagsResult.stdout || '{}', {});
+      const observedTagVersion = tags && tags[expectedTag] ? String(tags[expectedTag]) : '';
+      lastObservedVersion = observedVersion;
+      lastObservedTagVersion = observedTagVersion;
+
+      if (observedVersion === expectedVersion && observedTagVersion === expectedVersion) {
+        return {
+          status: 'pass',
+          observedVersion,
+          observedTagVersion
+        };
+      }
+    }
+
+    sleepMs(10000);
+  }
+
+  return {
+    status: 'timeout',
+    observedVersion: lastObservedVersion,
+    observedTagVersion: lastObservedTagVersion
+  };
+}
+
+function ensureWorkingTreeClean(deps) {
+  const status = deps.exec('git', ['status', '--porcelain']);
+  if (status.status !== 0) {
+    throw new Error('Failed to inspect working tree status.');
+  }
+
+  return status.stdout.trim() === '';
+}
+
+function isProtectedOrGeneratedBranch(branchName) {
+  if (!branchName) {
+    return true;
+  }
+
+  return branchName === DEFAULT_BASE_BRANCH
+    || branchName === DEFAULT_BETA_BRANCH
+    || branchName.startsWith('changeset-release/')
+    || branchName.startsWith('promote/');
+}
+
+function isCleanupCandidateBranch(branchName) {
+  if (!branchName) {
+    return false;
+  }
+
+  return /^(feat|fix|chore|refactor|test)\//.test(branchName);
+}
+
+function runLocalCleanup({
+  deps,
+  originalBranch,
+  targetBaseBranch,
+  shouldRun,
+  summary,
+  reporter
+}) {
+  if (!shouldRun) {
+    summary.actionsSkipped.push('cleanup');
+    summary.cleanup = 'skipped';
+    summary.warnings.push('Local cleanup skipped by configuration (--no-cleanup).');
+    return;
+  }
+
+  if (!isCleanupCandidateBranch(originalBranch)) {
+    summary.actionsSkipped.push('cleanup');
+    summary.cleanup = 'skipped';
+    summary.warnings.push(`Cleanup skipped: branch "${originalBranch}" is not an allowed code branch pattern.`);
+    return;
+  }
+
+  if (isProtectedOrGeneratedBranch(originalBranch)) {
+    summary.actionsSkipped.push('cleanup');
+    summary.cleanup = 'skipped';
+    summary.warnings.push(`Cleanup skipped: branch "${originalBranch}" is protected or generated.`);
+    return;
+  }
+
+  if (!ensureWorkingTreeClean(deps)) {
+    summary.actionsSkipped.push('cleanup');
+    summary.cleanup = 'skipped';
+    summary.warnings.push('Cleanup skipped: working tree is not clean.');
+    return;
+  }
+
+  reporter.start('release-cycle-cleanup-checkout', `Checking out ${targetBaseBranch}...`);
+  const checkout = deps.exec('git', ['checkout', targetBaseBranch]);
+  if (checkout.status !== 0) {
+    summary.cleanup = 'failed';
+    summary.warnings.push(`Cleanup failed: could not checkout ${targetBaseBranch}: ${(checkout.stderr || checkout.stdout || '').trim()}`);
+    reporter.warn('release-cycle-cleanup-checkout', `Could not checkout ${targetBaseBranch}.`);
+    return;
+  }
+  reporter.ok('release-cycle-cleanup-checkout', `Checked out ${targetBaseBranch}.`);
+
+  reporter.start('release-cycle-cleanup-pull', `Pulling latest ${targetBaseBranch}...`);
+  const pull = deps.exec('git', ['pull']);
+  if (pull.status !== 0) {
+    summary.cleanup = 'failed';
+    summary.warnings.push(`Cleanup warning: could not pull ${targetBaseBranch}: ${(pull.stderr || pull.stdout || '').trim()}`);
+    reporter.warn('release-cycle-cleanup-pull', `Could not pull ${targetBaseBranch}.`);
+  } else {
+    reporter.ok('release-cycle-cleanup-pull', `Pulled ${targetBaseBranch}.`);
+  }
+
+  reporter.start('release-cycle-cleanup-delete', `Deleting local branch ${originalBranch}...`);
+  const deleteResult = deps.exec('git', ['branch', '-d', originalBranch]);
+  if (deleteResult.status !== 0) {
+    summary.cleanup = 'failed';
+    summary.warnings.push(`Cleanup warning: could not delete ${originalBranch}: ${(deleteResult.stderr || deleteResult.stdout || '').trim()}`);
+    reporter.warn('release-cycle-cleanup-delete', `Could not delete ${originalBranch}.`);
+  } else {
+    summary.actionsPerformed.push(`cleanup deleted branch: ${originalBranch}`);
+    summary.cleanup = 'completed';
+    reporter.ok('release-cycle-cleanup-delete', `Deleted ${originalBranch}.`);
+  }
 }
 
 function ensureFileFromTemplate(targetPath, templatePath, options) {
@@ -2126,13 +2386,18 @@ async function runOpenPrFlow(args, dependencies = {}) {
     };
   }
 
-  reporter.start('open-pr-push', `Pushing branch "${context.head}"...`);
-  const pushResult = ensureBranchPushed(context.repo, context.head, deps);
-  reporter.ok('open-pr-push', `Branch "${context.head}" pushed (${pushResult.status}).`);
-  summary.branchPushed = `${context.head} (${pushResult.status})`;
-  summary.actionsPerformed.push(`branch pushed: ${context.head}`);
-  if (pushResult.status === 'up-to-date') {
-    summary.warnings.push(`Branch "${context.head}" had no new commits to push.`);
+  if (args.skipPush) {
+    summary.branchPushed = `skipped (${context.head})`;
+    summary.actionsSkipped.push(`push skipped: ${context.head}`);
+  } else {
+    reporter.start('open-pr-push', `Pushing branch "${context.head}"...`);
+    const pushResult = ensureBranchPushed(context.repo, context.head, deps);
+    reporter.ok('open-pr-push', `Branch "${context.head}" pushed (${pushResult.status}).`);
+    summary.branchPushed = `${context.head} (${pushResult.status})`;
+    summary.actionsPerformed.push(`branch pushed: ${context.head}`);
+    if (pushResult.status === 'up-to-date') {
+      summary.warnings.push(`Branch "${context.head}" had no new commits to push.`);
+    }
   }
 
   reporter.start('open-pr-upsert', 'Creating or updating pull request...');
@@ -2144,7 +2409,7 @@ async function runOpenPrFlow(args, dependencies = {}) {
 
   if (args.autoMerge) {
     reporter.start('open-pr-auto-merge', `Enabling auto-merge for PR #${prResult.number}...`);
-    enablePrAutoMerge(context.repo, prResult.number, 'squash', deps);
+    enablePrAutoMerge(context.repo, prResult.number, args.mergeMethod || 'squash', deps);
     reporter.ok('open-pr-auto-merge', `Auto-merge enabled for PR #${prResult.number}.`);
     summary.autoMerge = 'enabled';
     summary.actionsPerformed.push(`auto-merge enabled for #${prResult.number}`);
@@ -2186,6 +2451,7 @@ async function runReleaseCycle(args, dependencies = {}) {
   };
   const summary = createOrchestrationSummary();
   const reporter = new StepReporter();
+  const originalBranch = deps.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
 
   reporter.start('release-cycle-preflight-gh', 'Validating GitHub CLI and authentication...');
   ensureGhAvailable(deps);
@@ -2193,9 +2459,23 @@ async function runReleaseCycle(args, dependencies = {}) {
 
   const gitContext = resolveGitContext(args, deps);
   summary.repoResolved = gitContext.repo;
+  const requestedTrack = args.track === 'auto' ? (args.promoteStable ? 'stable' : 'beta') : args.track;
+  if (args.promoteStable && gitContext.head !== DEFAULT_BETA_BRANCH) {
+    throw new Error(`--promote-stable is only allowed when running from "${DEFAULT_BETA_BRANCH}".`);
+  }
+  if (requestedTrack === 'stable' && !args.promoteStable) {
+    throw new Error('Stable track requires --promote-stable for explicit promotion.');
+  }
+  if (gitContext.head !== DEFAULT_BETA_BRANCH && requestedTrack === 'stable') {
+    throw new Error(`Stable track is only supported from "${DEFAULT_BETA_BRANCH}".`);
+  }
+  summary.actionsPerformed.push(`release track: ${requestedTrack}`);
+  summary.releaseTrack = requestedTrack;
 
   let detectedMode = args.mode;
-  if (detectedMode === 'auto') {
+  if (args.promoteStable) {
+    detectedMode = 'open-pr';
+  } else if (detectedMode === 'auto') {
     const releasePrs = findReleasePrs(gitContext.repo, deps);
     if (gitContext.head.startsWith('changeset-release/')) {
       detectedMode = 'publish';
@@ -2218,12 +2498,69 @@ async function runReleaseCycle(args, dependencies = {}) {
   );
 
   if (detectedMode === 'open-pr') {
+    if (args.promoteStable) {
+      reporter.start('release-cycle-promote-dispatch', `Dispatching ${DEFAULT_PROMOTE_WORKFLOW}...`);
+      if (args.dryRun) {
+        reporter.warn('release-cycle-promote-dispatch', `Dry-run: would dispatch ${DEFAULT_PROMOTE_WORKFLOW}.`);
+        summary.actionsPerformed.push(`dry-run: dispatch ${DEFAULT_PROMOTE_WORKFLOW}`);
+        summary.promotionWorkflow = `dry-run: ${DEFAULT_PROMOTE_WORKFLOW}`;
+      } else {
+        dispatchPromoteStableWorkflow(gitContext.repo, {
+          ...args,
+          head: DEFAULT_BETA_BRANCH
+        }, deps);
+        reporter.ok('release-cycle-promote-dispatch', `Dispatched ${DEFAULT_PROMOTE_WORKFLOW}.`);
+        summary.actionsPerformed.push(`promotion workflow dispatched: ${DEFAULT_PROMOTE_WORKFLOW}`);
+        summary.promotionWorkflow = `dispatched: ${DEFAULT_PROMOTE_WORKFLOW}`;
+      }
+
+      if (!args.dryRun) {
+        reporter.start('release-cycle-promote-pr', 'Waiting for promotion PR...');
+        const promotionPr = waitForPromotionPr(gitContext.repo, args.releasePrTimeout, deps);
+        reporter.ok('release-cycle-promote-pr', `Promotion PR found: #${promotionPr.number}`);
+        summary.actionsPerformed.push(`promotion pr discovered: #${promotionPr.number}`);
+        summary.promotionPr = `found (#${promotionPr.number})`;
+
+        if (args.watchChecks) {
+          reporter.start('release-cycle-promote-checks', `Watching promotion PR checks #${promotionPr.number}...`);
+          watchPrChecks(gitContext.repo, promotionPr.number, args.checkTimeout, deps);
+          reporter.ok('release-cycle-promote-checks', `Promotion PR checks green (#${promotionPr.number}).`);
+        }
+
+        if (args.mergeWhenGreen) {
+          reporter.start('release-cycle-promote-merge', `Merging promotion PR #${promotionPr.number}...`);
+          mergePrWhenGreen(gitContext.repo, promotionPr.number, args.mergeMethod, deps);
+          reporter.ok('release-cycle-promote-merge', `Promotion PR #${promotionPr.number} merged.`);
+          summary.actionsPerformed.push(`promotion pr merged: #${promotionPr.number}`);
+          summary.promotionPr = `merged (#${promotionPr.number})`;
+        }
+
+        reporter.start('release-cycle-sync-beta', `Syncing local ${DEFAULT_BETA_BRANCH} branch...`);
+        const checkoutBeta = deps.exec('git', ['checkout', DEFAULT_BETA_BRANCH]);
+        if (checkoutBeta.status !== 0) {
+          throw new Error(`Could not checkout ${DEFAULT_BETA_BRANCH}: ${(checkoutBeta.stderr || checkoutBeta.stdout || '').trim()}`);
+        }
+        const pullBeta = deps.exec('git', ['pull']);
+        if (pullBeta.status !== 0) {
+          throw new Error(`Could not pull ${DEFAULT_BETA_BRANCH}: ${(pullBeta.stderr || pullBeta.stdout || '').trim()}`);
+        }
+        reporter.ok('release-cycle-sync-beta', `${DEFAULT_BETA_BRANCH} synced.`);
+      }
+    } else {
+      summary.promotionWorkflow = 'skipped';
+      summary.promotionPr = 'skipped';
+    }
+
     const openPrResult = await runOpenPrFlow(
       {
         ...args,
+        head: args.promoteStable ? DEFAULT_BETA_BRANCH : args.head,
+        base: args.promoteStable ? DEFAULT_BASE_BRANCH : args.base,
         autoMerge: args.autoMerge,
         watchChecks: args.watchChecks,
         checkTimeout: args.checkTimeout,
+        mergeMethod: args.mergeMethod,
+        skipPush: args.promoteStable,
         printSummary: false
       },
       dependencies
@@ -2250,6 +2587,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.actionsSkipped.push('merge code pr');
     }
 
+    let mergedReleasePr = null;
     if (args.waitReleasePr) {
       if (args.dryRun) {
         summary.releasePr = `dry-run: would wait release PR (${args.releasePrTimeout}m)`;
@@ -2272,6 +2610,7 @@ async function runReleaseCycle(args, dependencies = {}) {
           reporter.ok('release-cycle-merge-release-pr', `Release PR #${releasePr.number} merged.`);
           summary.releasePr = `merged (#${releasePr.number})`;
           summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+          mergedReleasePr = releasePr;
         } else {
           summary.actionsSkipped.push('merge release pr');
         }
@@ -2279,6 +2618,55 @@ async function runReleaseCycle(args, dependencies = {}) {
     } else {
       summary.releasePr = 'skipped';
       summary.actionsSkipped.push('wait release pr');
+    }
+
+    if (args.verifyNpm && !args.dryRun && mergedReleasePr) {
+      reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
+      const targetRef = args.promoteStable ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
+      const expectedTag = requestedTrack === 'stable' ? 'latest' : 'beta';
+      const remotePackage = getRemotePackageVersion(gitContext.repo, targetRef, deps);
+      const npmValidation = validateNpmPublishedVersionAndTag(
+        remotePackage.name,
+        remotePackage.version,
+        expectedTag,
+        args.releasePrTimeout,
+        deps
+      );
+      if (npmValidation.status !== 'pass') {
+        summary.npmValidation = `failed (${expectedTag})`;
+        throw new Error(
+          [
+            'npm validation failed after release merge.',
+            `Expected: ${remotePackage.name}@${remotePackage.version} with dist-tag ${expectedTag}`,
+            `Observed version: ${npmValidation.observedVersion || 'n/a'}`,
+            `Observed tag (${expectedTag}): ${npmValidation.observedTagVersion || 'n/a'}`
+          ].join('\n')
+        );
+      }
+      reporter.ok('release-cycle-verify-npm', `${remotePackage.name}@${remotePackage.version} validated on tag ${expectedTag}.`);
+      summary.actionsPerformed.push(`npm validation: ${remotePackage.name}@${remotePackage.version} (${expectedTag})`);
+      summary.npmValidation = `pass (${expectedTag} -> ${remotePackage.version})`;
+    } else if (!args.verifyNpm) {
+      summary.actionsSkipped.push('verify npm');
+      summary.npmValidation = 'skipped';
+    } else if (args.dryRun) {
+      summary.npmValidation = 'skipped (dry-run)';
+    } else if (!mergedReleasePr) {
+      summary.npmValidation = 'skipped (release pr not merged)';
+    }
+
+    if (!args.dryRun) {
+      runLocalCleanup({
+        deps,
+        originalBranch,
+        targetBaseBranch: requestedTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH,
+        shouldRun: !args.noCleanup,
+        summary,
+        reporter
+      });
+    } else {
+      summary.actionsSkipped.push('cleanup (dry-run)');
+      summary.cleanup = 'skipped (dry-run)';
     }
 
     printOrchestrationSummary(`release-cycle completed in ${detectedMode} mode`, summary);
@@ -2334,6 +2722,53 @@ async function runReleaseCycle(args, dependencies = {}) {
     summary.merge = 'skipped';
     summary.releasePr = `discovered (#${releasePr.number})`;
     summary.actionsSkipped.push('merge release pr');
+  }
+
+  if (args.verifyNpm && !args.dryRun && (args.mergeReleasePr || args.mergeWhenGreen)) {
+    reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
+    const targetRef = requestedTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
+    const expectedTag = requestedTrack === 'stable' ? 'latest' : 'beta';
+    const remotePackage = getRemotePackageVersion(gitContext.repo, targetRef, deps);
+    const npmValidation = validateNpmPublishedVersionAndTag(
+      remotePackage.name,
+      remotePackage.version,
+      expectedTag,
+      args.releasePrTimeout,
+      deps
+    );
+    if (npmValidation.status !== 'pass') {
+      summary.npmValidation = `failed (${expectedTag})`;
+      throw new Error(
+        [
+          'npm validation failed after release merge.',
+          `Expected: ${remotePackage.name}@${remotePackage.version} with dist-tag ${expectedTag}`,
+          `Observed version: ${npmValidation.observedVersion || 'n/a'}`,
+          `Observed tag (${expectedTag}): ${npmValidation.observedTagVersion || 'n/a'}`
+        ].join('\n')
+      );
+    }
+    reporter.ok('release-cycle-verify-npm', `${remotePackage.name}@${remotePackage.version} validated on tag ${expectedTag}.`);
+    summary.actionsPerformed.push(`npm validation: ${remotePackage.name}@${remotePackage.version} (${expectedTag})`);
+    summary.npmValidation = `pass (${expectedTag} -> ${remotePackage.version})`;
+  } else if (!args.verifyNpm) {
+    summary.npmValidation = 'skipped';
+  } else if (args.dryRun) {
+    summary.npmValidation = 'skipped (dry-run)';
+  } else {
+    summary.npmValidation = 'skipped (release pr not merged)';
+  }
+
+  if (!args.dryRun) {
+    runLocalCleanup({
+      deps,
+      originalBranch,
+      targetBaseBranch: requestedTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH,
+      shouldRun: !args.noCleanup,
+      summary,
+      reporter
+    });
+  } else {
+    summary.cleanup = 'skipped (dry-run)';
   }
 
   printOrchestrationSummary(`release-cycle completed in ${detectedMode} mode`, summary);

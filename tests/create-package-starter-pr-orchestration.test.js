@@ -145,7 +145,17 @@ test('release-cycle auto mode detects publish on changeset-release branch and me
       : null),
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--delete-branch')
       ? { status: 0, stdout: 'merged' }
-      : null)
+      : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.1.0-beta.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.1.0-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"1.1.0-beta.0"}\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
   await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
@@ -207,4 +217,141 @@ test('deterministic PR body renderer merges template placeholder and changeset m
   assert.match(body, /## Summary/);
   assert.match(body, /@i-santos\/create-package-starter/);
   assert.match(body, /## Checklist/);
+});
+
+test('release-cycle --promote-stable rejects when not on release/beta', async () => {
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/not-beta\n' } : null)
+  ]);
+
+  await assert.rejects(
+    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--promote-stable', '--yes'], { exec: stub.exec }),
+    /only allowed when running from "release\/beta"/
+  );
+});
+
+test('release-cycle --promote-stable dispatches workflow and does not push release/beta', async () => {
+  const calls = [];
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args, options) => {
+      calls.push({ command, args, options });
+      return null;
+    },
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'release/beta\n' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'api' && args[2] === 'POST' && String(args[3]).includes('/actions/workflows/promote-stable.yml/dispatches') ? { status: 0, stdout: '{}' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? {
+        status: 0,
+        stdout: JSON.stringify([
+          {
+            number: 77,
+            url: 'https://github.com/i-santos/firestack/pull/77',
+            headRefName: 'promote/stable-123',
+            baseRefName: 'release/beta'
+          },
+          {
+            number: 88,
+            url: 'https://github.com/i-santos/firestack/pull/88',
+            headRefName: 'release/beta',
+            baseRefName: 'main'
+          },
+          {
+            number: 99,
+            url: 'https://github.com/i-santos/firestack/pull/99',
+            headRefName: 'changeset-release/release/beta',
+            baseRefName: 'main'
+          }
+        ])
+      }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [] }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.2.3"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"latest":"1.2.3"}\n' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=main')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.2.3' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+      return null;
+    },
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run([
+    'release-cycle',
+    '--repo', 'i-santos/firestack',
+    '--promote-stable',
+    '--yes'
+  ], { exec: stub.exec });
+
+  const dispatchCall = calls.find((call) => call.command === 'gh' && call.args[0] === 'api' && call.args[2] === 'POST' && String(call.args[3]).includes('/actions/workflows/promote-stable.yml/dispatches'));
+  assert.ok(dispatchCall, 'expected promote-stable workflow dispatch');
+
+  const pushReleaseBeta = calls.find((call) => call.command === 'git' && call.args[0] === 'push' && call.args.includes('release/beta'));
+  assert.equal(pushReleaseBeta, undefined, 'expected no direct push to release/beta');
+});
+
+test('release-cycle validates npm tag and version for beta track', async () => {
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 101, url: 'https://github.com/i-santos/firestack/pull/101', headRefName: 'changeset-release/release/beta', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [] }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.2.3-beta.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.2.3-beta.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"1.2.3-beta.0"}\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: ' M local-file\n' } : null)
+  ]);
+
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
+});
+
+test('release-cycle skips cleanup with --no-cleanup', async () => {
+  const calls = [];
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args, options) => {
+      calls.push({ command, args, options });
+      return null;
+    },
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 202, url: 'https://github.com/i-santos/firestack/pull/202', headRefName: 'changeset-release/release/beta', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view' ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [] }) } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.0.0-beta.1' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"2.0.0-beta.1"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.0-beta.1"}\n' } : null)
+  ]);
+
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--no-cleanup'], { exec: stub.exec });
+
+  const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
+  assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped');
 });
