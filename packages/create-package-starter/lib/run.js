@@ -1575,6 +1575,67 @@ function mergePrWhenGreen(repo, prNumber, mergeMethod, deps) {
   }
 }
 
+function getPrMergeReadiness(repo, prNumber, deps) {
+  const view = deps.exec('gh', [
+    'pr',
+    'view',
+    String(prNumber),
+    '--repo',
+    repo,
+    '--json',
+    'number,url,reviewDecision,mergeStateStatus,isDraft'
+  ]);
+  if (view.status !== 0) {
+    throw new Error(`Failed to inspect merge readiness for PR #${prNumber}: ${view.stderr || view.stdout}`.trim());
+  }
+
+  const parsed = parseJsonSafely(view.stdout || '{}', {});
+  return {
+    number: parsed.number || prNumber,
+    url: parsed.url || '',
+    reviewDecision: String(parsed.reviewDecision || '').toUpperCase(),
+    mergeStateStatus: String(parsed.mergeStateStatus || '').toUpperCase(),
+    isDraft: Boolean(parsed.isDraft)
+  };
+}
+
+async function confirmExplicitMergeOrThrow(args, readiness, label) {
+  if (readiness.isDraft) {
+    throw new Error(`${label} is still a draft PR. Mark it ready for review before explicit merge.`);
+  }
+
+  if (readiness.reviewDecision === 'REVIEW_REQUIRED' || readiness.reviewDecision === 'CHANGES_REQUESTED') {
+    throw new Error(
+      [
+        `${label} still requires review approval before merge.`,
+        `reviewDecision: ${readiness.reviewDecision}`,
+        readiness.url ? `PR: ${readiness.url}` : ''
+      ].filter(Boolean).join('\n')
+    );
+  }
+
+  if (readiness.mergeStateStatus === 'BLOCKED' || readiness.mergeStateStatus === 'DIRTY' || readiness.mergeStateStatus === 'BEHIND') {
+    throw new Error(
+      [
+        `${label} is not mergeable yet due to branch policy/state.`,
+        `mergeStateStatus: ${readiness.mergeStateStatus}`,
+        readiness.url ? `PR: ${readiness.url}` : ''
+      ].filter(Boolean).join('\n')
+    );
+  }
+
+  if (!args.yes) {
+    await confirmOrThrow(
+      [
+        `${label} is ready for explicit merge.`,
+        `reviewDecision: ${readiness.reviewDecision || 'n/a'}`,
+        `mergeStateStatus: ${readiness.mergeStateStatus || 'n/a'}`,
+        'Proceed with merge now?'
+      ].join('\n')
+    );
+  }
+}
+
 function getPrMergeState(repo, prNumber, deps) {
   const view = deps.exec('gh', [
     'pr',
@@ -2632,6 +2693,10 @@ async function runReleaseCycle(args, dependencies = {}) {
         summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
         summary.merge = `code pr merged (#${codePr.number})`;
       } else {
+        reporter.start('release-cycle-merge-code-ready', `Checking explicit merge readiness for code PR #${codePr.number}...`);
+        const codeReadiness = getPrMergeReadiness(gitContext.repo, codePr.number, deps);
+        await confirmExplicitMergeOrThrow(args, codeReadiness, `Code PR #${codePr.number}`);
+        reporter.ok('release-cycle-merge-code-ready', `Code PR #${codePr.number} is ready for explicit merge.`);
         reporter.start('release-cycle-merge-code-pr', `Merging code PR #${codePr.number}...`);
         mergePrWhenGreen(gitContext.repo, codePr.number, args.mergeMethod, deps);
         reporter.ok('release-cycle-merge-code-pr', `Code PR #${codePr.number} merged.`);
@@ -2673,6 +2738,10 @@ async function runReleaseCycle(args, dependencies = {}) {
             summary.autoMerge = 'enabled (code + release)';
             mergedReleasePr = releasePr;
           } else {
+            reporter.start('release-cycle-merge-release-ready', `Checking explicit merge readiness for release PR #${releasePr.number}...`);
+            const releaseReadiness = getPrMergeReadiness(gitContext.repo, releasePr.number, deps);
+            await confirmExplicitMergeOrThrow(args, releaseReadiness, `Release PR #${releasePr.number}`);
+            reporter.ok('release-cycle-merge-release-ready', `Release PR #${releasePr.number} is ready for explicit merge.`);
             reporter.start('release-cycle-merge-release-pr', `Merging release PR #${releasePr.number}...`);
             mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
             reporter.ok('release-cycle-merge-release-pr', `Release PR #${releasePr.number} merged.`);
@@ -2792,6 +2861,10 @@ async function runReleaseCycle(args, dependencies = {}) {
         summary.autoMerge = 'enabled (release)';
         summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
       } else {
+        reporter.start('release-cycle-publish-merge-ready', `Checking explicit merge readiness for release PR #${releasePr.number}...`);
+        const publishReadiness = getPrMergeReadiness(gitContext.repo, releasePr.number, deps);
+        await confirmExplicitMergeOrThrow(args, publishReadiness, `Release PR #${releasePr.number}`);
+        reporter.ok('release-cycle-publish-merge-ready', `Release PR #${releasePr.number} is ready for explicit merge.`);
         reporter.start('release-cycle-publish-merge', `Merging release PR #${releasePr.number}...`);
         mergePrWhenGreen(gitContext.repo, releasePr.number, args.mergeMethod, deps);
         reporter.ok('release-cycle-publish-merge', `Release PR #${releasePr.number} merged.`);

@@ -466,3 +466,27 @@ test('release-cycle --explicit-merge uses explicit merge for release PR', async 
   const explicitMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--delete-branch'));
   assert.ok(explicitMergeCall, 'expected explicit release PR merge call');
 });
+
+test('release-cycle --explicit-merge fails when release PR needs approval', async () => {
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 606, url: 'https://github.com/i-santos/firestack/pull/606', headRefName: 'changeset-release/release/beta', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args.includes('statusCheckRollup,url,number')) {
+        return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft')) {
+        return { status: 0, stdout: JSON.stringify({ number: 606, url: 'https://github.com/i-santos/firestack/pull/606', reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED', isDraft: false }) };
+      }
+      return null;
+    }
+  ]);
+
+  await assert.rejects(
+    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--explicit-merge'], { exec: stub.exec }),
+    /requires review approval/
+  );
+});

@@ -71,6 +71,9 @@ Merge strategy behavior:
 
 - default: auto-merge for both code PR and release PR
 - optional: `--explicit-merge` to force direct merge calls instead of auto-merge
+- with `--explicit-merge`, after checks are green the CLI verifies review/merge readiness:
+  - if approvals are still required, it stops with actionable guidance
+  - if ready, it asks for confirmation (unless `--yes`)
 
 Promotion flow (`--promote-stable`) on protected `release/beta`:
 
