@@ -1635,10 +1635,11 @@ function getPrMergeReadiness(repo, prNumber, deps) {
   };
 }
 
-function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps) {
+function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps, options = {}) {
   const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
   let lastReadiness = null;
   let lastChecks = null;
+  const allowBehindTransient = Boolean(options.allowBehindTransient);
   while (Date.now() <= timeoutAt) {
     const mergeState = getPrMergeState(repo, prNumber, deps);
     if (mergeState.state === 'MERGED' || mergeState.mergedAt) {
@@ -1674,7 +1675,21 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
       throw new Error(`${label} has failing required checks.`);
     }
 
-    if (readiness.mergeStateStatus === 'DIRTY' || readiness.mergeStateStatus === 'BEHIND') {
+    if (readiness.mergeStateStatus === 'DIRTY') {
+      throw new Error(
+        [
+          `${label} is not mergeable yet due to branch policy/state.`,
+          `mergeStateStatus: ${readiness.mergeStateStatus}`,
+          readiness.url ? `PR: ${readiness.url}` : ''
+        ].filter(Boolean).join('\n')
+      );
+    }
+
+    if (readiness.mergeStateStatus === 'BEHIND') {
+      if (allowBehindTransient) {
+        sleepMs(5000);
+        continue;
+      }
       throw new Error(
         [
           `${label} is not mergeable yet due to branch policy/state.`,
@@ -1701,6 +1716,7 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
       `mergeStateStatus: ${lastReadiness ? (lastReadiness.mergeStateStatus || 'n/a') : 'n/a'}`,
       `reviewDecision: ${lastReadiness ? (lastReadiness.reviewDecision || 'n/a') : 'n/a'}`,
       `pending checks: ${lastChecks ? lastChecks.pending : 'n/a'}`,
+      allowBehindTransient ? 'Hint: release PR can stay BEHIND while changeset workflow updates its branch. Wait for workflow completion and rerun if needed.' : '',
       lastReadiness && lastReadiness.url ? `PR: ${lastReadiness.url}` : ''
     ].filter(Boolean).join('\n')
   );
@@ -2960,7 +2976,8 @@ async function runReleaseCycle(args, dependencies = {}) {
             releasePr.number,
             `Release PR #${releasePr.number}`,
             args.checkTimeout,
-            deps
+            deps,
+            { allowBehindTransient: true }
           );
           await confirmMergeIfNeeded(args, releaseReadiness, `Release PR #${releasePr.number}`);
           reporter.ok('release-cycle-merge-release-ready', `Release PR #${releasePr.number} is ready for merge.`);
@@ -3088,7 +3105,8 @@ async function runReleaseCycle(args, dependencies = {}) {
         releasePr.number,
         `Release PR #${releasePr.number}`,
         args.checkTimeout,
-        deps
+        deps,
+        { allowBehindTransient: true }
       );
       await confirmMergeIfNeeded(args, publishReadiness, `Release PR #${releasePr.number}`);
       reporter.ok('release-cycle-publish-merge-ready', `Release PR #${releasePr.number} is ready for merge.`);
