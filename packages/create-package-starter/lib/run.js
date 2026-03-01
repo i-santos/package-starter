@@ -45,7 +45,7 @@ function usage() {
     '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
     '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -446,6 +446,7 @@ function parseOpenPrArgs(argv) {
     autoMerge: false,
     watchChecks: false,
     checkTimeout: 30,
+    updateExistingPr: true,
     yes: false,
     dryRun: false
   };
@@ -496,8 +497,13 @@ function parseOpenPrArgs(argv) {
     }
 
     if (token === '--check-timeout') {
-      args.checkTimeout = Number.parseInt(parseValueFlag(argv, i, '--check-timeout'), 10);
+      args.checkTimeout = Number.parseFloat(parseValueFlag(argv, i, '--check-timeout'));
       i += 1;
+      continue;
+    }
+
+    if (token === '--update-pr-description') {
+      args.updateExistingPr = true;
       continue;
     }
 
@@ -534,8 +540,8 @@ function parseOpenPrArgs(argv) {
     throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
   }
 
-  if (!Number.isInteger(args.checkTimeout) || args.checkTimeout <= 0) {
-    throw new Error('Invalid --check-timeout value. Expected a positive integer (minutes).');
+  if (!Number.isFinite(args.checkTimeout) || args.checkTimeout <= 0) {
+    throw new Error('Invalid --check-timeout value. Expected a positive number (minutes).');
   }
 
   return args;
@@ -555,6 +561,7 @@ function parseReleaseCycleArgs(argv) {
     base: '',
     title: '',
     bodyFile: '',
+    updatePrDescription: false,
     draft: false,
     autoMerge: true,
     watchChecks: true,
@@ -638,14 +645,19 @@ function parseReleaseCycleArgs(argv) {
       continue;
     }
 
+    if (token === '--update-pr-description') {
+      args.updatePrDescription = true;
+      continue;
+    }
+
     if (token === '--check-timeout') {
-      args.checkTimeout = Number.parseInt(parseValueFlag(argv, i, '--check-timeout'), 10);
+      args.checkTimeout = Number.parseFloat(parseValueFlag(argv, i, '--check-timeout'));
       i += 1;
       continue;
     }
 
     if (token === '--release-pr-timeout') {
-      args.releasePrTimeout = Number.parseInt(parseValueFlag(argv, i, '--release-pr-timeout'), 10);
+      args.releasePrTimeout = Number.parseFloat(parseValueFlag(argv, i, '--release-pr-timeout'));
       i += 1;
       continue;
     }
@@ -764,12 +776,12 @@ function parseReleaseCycleArgs(argv) {
     throw new Error('Invalid --merge-method value. Expected squash, merge, or rebase.');
   }
 
-  if (!Number.isInteger(args.checkTimeout) || args.checkTimeout <= 0) {
-    throw new Error('Invalid --check-timeout value. Expected a positive integer (minutes).');
+  if (!Number.isFinite(args.checkTimeout) || args.checkTimeout <= 0) {
+    throw new Error('Invalid --check-timeout value. Expected a positive number (minutes).');
   }
 
-  if (!Number.isInteger(args.releasePrTimeout) || args.releasePrTimeout <= 0) {
-    throw new Error('Invalid --release-pr-timeout value. Expected a positive integer (minutes).');
+  if (!Number.isFinite(args.releasePrTimeout) || args.releasePrTimeout <= 0) {
+    throw new Error('Invalid --release-pr-timeout value. Expected a positive number (minutes).');
   }
 
   return args;
@@ -1323,6 +1335,29 @@ function sleepMs(milliseconds) {
   Atomics.wait(view, 0, 0, milliseconds);
 }
 
+function nowMs(deps) {
+  if (deps && typeof deps.now === 'function') {
+    return Number(deps.now());
+  }
+
+  return Date.now();
+}
+
+function waitForNextPoll(timeoutAt, defaultIntervalMs, deps) {
+  const remainingMs = Math.max(0, timeoutAt - nowMs(deps));
+  if (remainingMs <= 0) {
+    return;
+  }
+
+  const pollMs = Math.max(100, Math.min(defaultIntervalMs, remainingMs));
+  if (deps && typeof deps.sleep === 'function') {
+    deps.sleep(pollMs);
+    return;
+  }
+
+  sleepMs(pollMs);
+}
+
 function resolveGitContext(args, deps) {
   const insideWorkTree = deps.exec('git', ['rev-parse', '--is-inside-work-tree']);
   if (insideWorkTree.status !== 0 || insideWorkTree.stdout.trim() !== 'true') {
@@ -1496,6 +1531,14 @@ function ensureBranchPushed(repo, head, deps) {
 
 function createOrUpdatePr(context, body, args, deps) {
   const existing = findOpenPrByHeadBase(context.repo, context.head, context.base, deps);
+  if (existing && !args.updateExistingPr) {
+    return {
+      action: 'reused',
+      number: existing.number,
+      url: existing.url
+    };
+  }
+
   const bodyFilePath = path.join(process.cwd(), `.tmp-pr-body-${Date.now()}.md`);
   fs.writeFileSync(bodyFilePath, body);
 
@@ -1582,8 +1625,8 @@ function getPrCheckState(repo, prNumber, deps) {
 }
 
 function watchPrChecks(repo, prNumber, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const state = getPrCheckState(repo, prNumber, deps);
     if (state.failed > 0) {
       throw new Error(`PR #${prNumber} has failing required checks.`);
@@ -1593,7 +1636,7 @@ function watchPrChecks(repo, prNumber, timeoutMinutes, deps) {
       return 'green';
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for checks on PR #${prNumber} after ${timeoutMinutes} minutes.`);
@@ -1619,7 +1662,7 @@ function getPrMergeReadiness(repo, prNumber, deps) {
     '--repo',
     repo,
     '--json',
-    'number,url,reviewDecision,mergeStateStatus,isDraft'
+    'number,url,reviewDecision,mergeStateStatus,isDraft,headRefName'
   ]);
   if (view.status !== 0) {
     throw new Error(`Failed to inspect merge readiness for PR #${prNumber}: ${view.stderr || view.stdout}`.trim());
@@ -1631,15 +1674,47 @@ function getPrMergeReadiness(repo, prNumber, deps) {
     url: parsed.url || '',
     reviewDecision: String(parsed.reviewDecision || '').toUpperCase(),
     mergeStateStatus: String(parsed.mergeStateStatus || '').toUpperCase(),
-    isDraft: Boolean(parsed.isDraft)
+    isDraft: Boolean(parsed.isDraft),
+    headRefName: String(parsed.headRefName || '')
   };
 }
 
-function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+function getLatestWorkflowRunForBranch(repo, branch, deps) {
+  if (!branch) {
+    return null;
+  }
+
+  const runs = deps.exec('gh', [
+    'run',
+    'list',
+    '--repo',
+    repo,
+    '--branch',
+    branch,
+    '--json',
+    'databaseId,workflowName,status,conclusion,url',
+    '--limit',
+    '10'
+  ]);
+  if (runs.status !== 0) {
+    return null;
+  }
+
+  const parsed = parseJsonSafely(runs.stdout || '[]', []);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return null;
+  }
+
+  return parsed[0];
+}
+
+function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps, options = {}) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   let lastReadiness = null;
   let lastChecks = null;
-  while (Date.now() <= timeoutAt) {
+  const allowBehindTransient = Boolean(options.allowBehindTransient);
+  let behindObservedAt = 0;
+  while (nowMs(deps) <= timeoutAt) {
     const mergeState = getPrMergeState(repo, prNumber, deps);
     if (mergeState.state === 'MERGED' || mergeState.mergedAt) {
       return {
@@ -1674,7 +1749,59 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
       throw new Error(`${label} has failing required checks.`);
     }
 
-    if (readiness.mergeStateStatus === 'DIRTY' || readiness.mergeStateStatus === 'BEHIND') {
+    if (readiness.mergeStateStatus === 'DIRTY') {
+      throw new Error(
+        [
+          `${label} is not mergeable yet due to branch policy/state.`,
+          `mergeStateStatus: ${readiness.mergeStateStatus}`,
+          readiness.url ? `PR: ${readiness.url}` : ''
+        ].filter(Boolean).join('\n')
+      );
+    }
+
+    if (readiness.mergeStateStatus === 'BEHIND') {
+      if (allowBehindTransient) {
+        const workflowRun = getLatestWorkflowRunForBranch(repo, readiness.headRefName, deps);
+        const runStatus = String((workflowRun && workflowRun.status) || '').toLowerCase();
+        const runConclusion = String((workflowRun && workflowRun.conclusion) || '').toLowerCase();
+        const runCompleted = runStatus === 'completed';
+        const runFailed = runCompleted && !['success', 'neutral', 'skipped'].includes(runConclusion);
+        const runInProgress = ['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(runStatus);
+
+        if (runFailed) {
+          throw new Error(
+            [
+              `${label} stayed BEHIND because latest workflow run failed.`,
+              `workflow: ${workflowRun.workflowName || 'unknown'}`,
+              `status/conclusion: ${workflowRun.status || 'n/a'}/${workflowRun.conclusion || 'n/a'}`,
+              workflowRun.url ? `run: ${workflowRun.url}` : '',
+              readiness.url ? `PR: ${readiness.url}` : ''
+            ].filter(Boolean).join('\n')
+          );
+        }
+
+        if (!behindObservedAt) {
+          behindObservedAt = nowMs(deps);
+        }
+
+        // Avoid waiting the full global timeout when there is no active workflow progress.
+        const behindElapsedMs = nowMs(deps) - behindObservedAt;
+        const stagnationWindowMs = 10 * 1000;
+        if (!runInProgress && behindElapsedMs >= stagnationWindowMs) {
+          throw new Error(
+            [
+              `${label} remained BEHIND for more than 10s with no active workflow progress.`,
+              runCompleted ? `latest workflow conclusion: ${runConclusion || 'n/a'}` : 'latest workflow status: unavailable',
+              workflowRun && workflowRun.url ? `run: ${workflowRun.url}` : '',
+              readiness.url ? `PR: ${readiness.url}` : '',
+              'If changeset workflow is still updating, rerun release-cycle in a moment.'
+            ].filter(Boolean).join('\n')
+          );
+        }
+
+        waitForNextPoll(timeoutAt, 5000, deps);
+        continue;
+      }
       throw new Error(
         [
           `${label} is not mergeable yet due to branch policy/state.`,
@@ -1692,7 +1819,7 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
       return readiness;
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(
@@ -1701,6 +1828,7 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
       `mergeStateStatus: ${lastReadiness ? (lastReadiness.mergeStateStatus || 'n/a') : 'n/a'}`,
       `reviewDecision: ${lastReadiness ? (lastReadiness.reviewDecision || 'n/a') : 'n/a'}`,
       `pending checks: ${lastChecks ? lastChecks.pending : 'n/a'}`,
+      allowBehindTransient ? 'Hint: release PR can stay BEHIND while changeset workflow updates its branch. Wait for workflow completion and rerun if needed.' : '',
       lastReadiness && lastReadiness.url ? `PR: ${lastReadiness.url}` : ''
     ].filter(Boolean).join('\n')
   );
@@ -1741,8 +1869,8 @@ function getPrMergeState(repo, prNumber, deps) {
 }
 
 function waitForPrMerged(repo, prNumber, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const state = getPrMergeState(repo, prNumber, deps);
     if (state.state === 'MERGED' || state.mergedAt) {
       return true;
@@ -1751,7 +1879,7 @@ function waitForPrMerged(repo, prNumber, timeoutMinutes, deps) {
       throw new Error(`PR #${prNumber} was closed without merge.`);
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for PR #${prNumber} merge after ${timeoutMinutes} minutes.`);
@@ -1767,8 +1895,8 @@ function findReleasePrs(repo, deps) {
 }
 
 function waitForReleasePr(repo, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const releasePrs = findReleasePrs(repo, deps);
     if (releasePrs.length === 1) {
       return releasePrs[0];
@@ -1777,7 +1905,7 @@ function waitForReleasePr(repo, timeoutMinutes, deps) {
       throw new Error(`Multiple release PRs detected: ${releasePrs.map((item) => item.url).join(', ')}`);
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for release PR after ${timeoutMinutes} minutes.`);
@@ -1828,8 +1956,8 @@ function findPromotionPrs(repo, deps) {
 }
 
 function waitForPromotionPr(repo, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const promotionPrs = findPromotionPrs(repo, deps);
     if (promotionPrs.length === 1) {
       return promotionPrs[0];
@@ -1840,7 +1968,7 @@ function waitForPromotionPr(repo, timeoutMinutes, deps) {
       return promotionPrs[0];
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for promotion PR after ${timeoutMinutes} minutes.`);
@@ -1866,11 +1994,11 @@ function getRemotePackageVersion(repo, ref, deps) {
 }
 
 function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expectedTag, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   let lastObservedVersion = '';
   let lastObservedTagVersion = '';
 
-  while (Date.now() <= timeoutAt) {
+  while (nowMs(deps) <= timeoutAt) {
     const versionResult = deps.exec('npm', ['view', packageName, 'version', '--json']);
     const tagsResult = deps.exec('npm', ['view', packageName, 'dist-tags', '--json']);
     if (versionResult.status === 0 && tagsResult.status === 0) {
@@ -1889,7 +2017,7 @@ function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expecte
       }
     }
 
-    sleepMs(10000);
+    waitForNextPoll(timeoutAt, 10000, deps);
   }
 
   return {
@@ -2691,6 +2819,9 @@ async function runOpenPrFlow(args, dependencies = {}) {
   summary.prAction = `${prResult.action} (#${prResult.number})`;
   summary.prUrl = prResult.url || 'n/a';
   summary.actionsPerformed.push(`pr ${prResult.action}: #${prResult.number}`);
+  if (prResult.action === 'reused') {
+    summary.warnings.push('Existing PR reused without body/title changes. Use --update-pr-description to refresh PR content.');
+  }
 
   if (args.autoMerge) {
     reporter.start('open-pr-auto-merge', `Enabling auto-merge for PR #${prResult.number}...`);
@@ -2884,6 +3015,7 @@ async function runReleaseCycle(args, dependencies = {}) {
           watchChecks: args.watchChecks,
           checkTimeout: args.checkTimeout,
           mergeMethod: args.mergeMethod,
+          updateExistingPr: args.updatePrDescription,
           skipPush: args.promoteStable,
           printSummary: false
         },
@@ -2960,7 +3092,8 @@ async function runReleaseCycle(args, dependencies = {}) {
             releasePr.number,
             `Release PR #${releasePr.number}`,
             args.checkTimeout,
-            deps
+            deps,
+            { allowBehindTransient: true }
           );
           await confirmMergeIfNeeded(args, releaseReadiness, `Release PR #${releasePr.number}`);
           reporter.ok('release-cycle-merge-release-ready', `Release PR #${releasePr.number} is ready for merge.`);
@@ -3088,7 +3221,8 @@ async function runReleaseCycle(args, dependencies = {}) {
         releasePr.number,
         `Release PR #${releasePr.number}`,
         args.checkTimeout,
-        deps
+        deps,
+        { allowBehindTransient: true }
       );
       await confirmMergeIfNeeded(args, publishReadiness, `Release PR #${releasePr.number}`);
       reporter.ok('release-cycle-publish-merge-ready', `Release PR #${releasePr.number} is ready for merge.`);
