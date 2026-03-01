@@ -193,7 +193,7 @@ test('release-cycle with auto-merge does not explicitly merge code PR', async ()
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const codePrExplicitMerge = calls.find((call) => call.command === 'gh'
     && call.args[0] === 'pr'
@@ -243,7 +243,7 @@ test('release-cycle auto mode detects publish on changeset-release branch and en
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const mergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--auto'));
   assert.ok(mergeCall, 'expected release PR auto-merge enable');
@@ -265,7 +265,7 @@ test('release-cycle auto mode fails on ambiguous release PR candidates', async (
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec }),
+    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
     /Multiple candidate release PRs detected/
   );
 });
@@ -311,7 +311,7 @@ test('release-cycle --promote-stable rejects when not on release/beta', async ()
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--promote-stable', '--yes'], { exec: stub.exec }),
+    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--promote-stable', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
     /only allowed when running from "release\/beta"/
   );
 });
@@ -374,7 +374,9 @@ test('release-cycle --promote-stable dispatches workflow and does not push relea
     'release-cycle',
     '--repo', 'i-santos/firestack',
     '--promote-stable',
-    '--yes'
+    '--yes',
+    '--check-timeout', '0.05',
+    '--release-pr-timeout', '0.05'
   ], { exec: stub.exec });
 
   const dispatchCall = calls.find((call) => call.command === 'gh' && call.args[0] === 'api' && call.args[2] === 'POST' && String(call.args[3]).includes('/actions/workflows/promote-stable.yml/dispatches'));
@@ -407,7 +409,7 @@ test('release-cycle validates npm tag and version for beta track', async () => {
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: ' M local-file\n' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 });
 
 test('release-cycle skips cleanup with --no-cleanup', async () => {
@@ -435,7 +437,7 @@ test('release-cycle skips cleanup with --no-cleanup', async () => {
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.0-beta.1"}\n' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--no-cleanup'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--no-cleanup', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
   assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped');
@@ -459,7 +461,7 @@ test('release-cycle --phase code stops after code PR merge', async () => {
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const npmViewCall = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'view');
   assert.equal(npmViewCall, undefined, 'expected no npm validation in code-only mode');
@@ -494,7 +496,7 @@ test('release-cycle fails when release PR needs approval before merge', async ()
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec }),
+    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
     /requires review approval/
   );
 });
@@ -517,7 +519,7 @@ test('release-cycle auto syncs feature branch with release/beta when behind', as
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const rebaseCall = stub.calls.find((call) => call.command === 'git' && call.args[0] === 'rebase');
   assert.ok(rebaseCall, 'expected rebase while syncing branch with base');
@@ -555,7 +557,7 @@ test('release-cycle resumes from release phase when code branch is already integ
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes'], { exec: stub.exec });
+  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const pushCall = calls.find((call) => call.command === 'git' && call.args[0] === 'push');
   assert.equal(pushCall, undefined, 'expected no feature branch push while resuming');

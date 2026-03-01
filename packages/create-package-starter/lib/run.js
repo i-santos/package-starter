@@ -496,7 +496,7 @@ function parseOpenPrArgs(argv) {
     }
 
     if (token === '--check-timeout') {
-      args.checkTimeout = Number.parseInt(parseValueFlag(argv, i, '--check-timeout'), 10);
+      args.checkTimeout = Number.parseFloat(parseValueFlag(argv, i, '--check-timeout'));
       i += 1;
       continue;
     }
@@ -534,8 +534,8 @@ function parseOpenPrArgs(argv) {
     throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
   }
 
-  if (!Number.isInteger(args.checkTimeout) || args.checkTimeout <= 0) {
-    throw new Error('Invalid --check-timeout value. Expected a positive integer (minutes).');
+  if (!Number.isFinite(args.checkTimeout) || args.checkTimeout <= 0) {
+    throw new Error('Invalid --check-timeout value. Expected a positive number (minutes).');
   }
 
   return args;
@@ -639,13 +639,13 @@ function parseReleaseCycleArgs(argv) {
     }
 
     if (token === '--check-timeout') {
-      args.checkTimeout = Number.parseInt(parseValueFlag(argv, i, '--check-timeout'), 10);
+      args.checkTimeout = Number.parseFloat(parseValueFlag(argv, i, '--check-timeout'));
       i += 1;
       continue;
     }
 
     if (token === '--release-pr-timeout') {
-      args.releasePrTimeout = Number.parseInt(parseValueFlag(argv, i, '--release-pr-timeout'), 10);
+      args.releasePrTimeout = Number.parseFloat(parseValueFlag(argv, i, '--release-pr-timeout'));
       i += 1;
       continue;
     }
@@ -764,12 +764,12 @@ function parseReleaseCycleArgs(argv) {
     throw new Error('Invalid --merge-method value. Expected squash, merge, or rebase.');
   }
 
-  if (!Number.isInteger(args.checkTimeout) || args.checkTimeout <= 0) {
-    throw new Error('Invalid --check-timeout value. Expected a positive integer (minutes).');
+  if (!Number.isFinite(args.checkTimeout) || args.checkTimeout <= 0) {
+    throw new Error('Invalid --check-timeout value. Expected a positive number (minutes).');
   }
 
-  if (!Number.isInteger(args.releasePrTimeout) || args.releasePrTimeout <= 0) {
-    throw new Error('Invalid --release-pr-timeout value. Expected a positive integer (minutes).');
+  if (!Number.isFinite(args.releasePrTimeout) || args.releasePrTimeout <= 0) {
+    throw new Error('Invalid --release-pr-timeout value. Expected a positive number (minutes).');
   }
 
   return args;
@@ -1323,6 +1323,29 @@ function sleepMs(milliseconds) {
   Atomics.wait(view, 0, 0, milliseconds);
 }
 
+function nowMs(deps) {
+  if (deps && typeof deps.now === 'function') {
+    return Number(deps.now());
+  }
+
+  return Date.now();
+}
+
+function waitForNextPoll(timeoutAt, defaultIntervalMs, deps) {
+  const remainingMs = Math.max(0, timeoutAt - nowMs(deps));
+  if (remainingMs <= 0) {
+    return;
+  }
+
+  const pollMs = Math.max(100, Math.min(defaultIntervalMs, remainingMs));
+  if (deps && typeof deps.sleep === 'function') {
+    deps.sleep(pollMs);
+    return;
+  }
+
+  sleepMs(pollMs);
+}
+
 function resolveGitContext(args, deps) {
   const insideWorkTree = deps.exec('git', ['rev-parse', '--is-inside-work-tree']);
   if (insideWorkTree.status !== 0 || insideWorkTree.stdout.trim() !== 'true') {
@@ -1582,8 +1605,8 @@ function getPrCheckState(repo, prNumber, deps) {
 }
 
 function watchPrChecks(repo, prNumber, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const state = getPrCheckState(repo, prNumber, deps);
     if (state.failed > 0) {
       throw new Error(`PR #${prNumber} has failing required checks.`);
@@ -1593,7 +1616,7 @@ function watchPrChecks(repo, prNumber, timeoutMinutes, deps) {
       return 'green';
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for checks on PR #${prNumber} after ${timeoutMinutes} minutes.`);
@@ -1666,12 +1689,12 @@ function getLatestWorkflowRunForBranch(repo, branch, deps) {
 }
 
 function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps, options = {}) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   let lastReadiness = null;
   let lastChecks = null;
   const allowBehindTransient = Boolean(options.allowBehindTransient);
   let behindObservedAt = 0;
-  while (Date.now() <= timeoutAt) {
+  while (nowMs(deps) <= timeoutAt) {
     const mergeState = getPrMergeState(repo, prNumber, deps);
     if (mergeState.state === 'MERGED' || mergeState.mergedAt) {
       return {
@@ -1738,11 +1761,11 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
         }
 
         if (!behindObservedAt) {
-          behindObservedAt = Date.now();
+          behindObservedAt = nowMs(deps);
         }
 
         // Avoid waiting the full global timeout when there is no active workflow progress.
-        const behindElapsedMs = Date.now() - behindObservedAt;
+        const behindElapsedMs = nowMs(deps) - behindObservedAt;
         const stagnationWindowMs = 10 * 1000;
         if (!runInProgress && behindElapsedMs >= stagnationWindowMs) {
           throw new Error(
@@ -1756,7 +1779,7 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
           );
         }
 
-        sleepMs(5000);
+        waitForNextPoll(timeoutAt, 5000, deps);
         continue;
       }
       throw new Error(
@@ -1776,7 +1799,7 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
       return readiness;
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(
@@ -1826,8 +1849,8 @@ function getPrMergeState(repo, prNumber, deps) {
 }
 
 function waitForPrMerged(repo, prNumber, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const state = getPrMergeState(repo, prNumber, deps);
     if (state.state === 'MERGED' || state.mergedAt) {
       return true;
@@ -1836,7 +1859,7 @@ function waitForPrMerged(repo, prNumber, timeoutMinutes, deps) {
       throw new Error(`PR #${prNumber} was closed without merge.`);
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for PR #${prNumber} merge after ${timeoutMinutes} minutes.`);
@@ -1852,8 +1875,8 @@ function findReleasePrs(repo, deps) {
 }
 
 function waitForReleasePr(repo, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const releasePrs = findReleasePrs(repo, deps);
     if (releasePrs.length === 1) {
       return releasePrs[0];
@@ -1862,7 +1885,7 @@ function waitForReleasePr(repo, timeoutMinutes, deps) {
       throw new Error(`Multiple release PRs detected: ${releasePrs.map((item) => item.url).join(', ')}`);
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for release PR after ${timeoutMinutes} minutes.`);
@@ -1913,8 +1936,8 @@ function findPromotionPrs(repo, deps) {
 }
 
 function waitForPromotionPr(repo, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
-  while (Date.now() <= timeoutAt) {
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
+  while (nowMs(deps) <= timeoutAt) {
     const promotionPrs = findPromotionPrs(repo, deps);
     if (promotionPrs.length === 1) {
       return promotionPrs[0];
@@ -1925,7 +1948,7 @@ function waitForPromotionPr(repo, timeoutMinutes, deps) {
       return promotionPrs[0];
     }
 
-    sleepMs(5000);
+    waitForNextPoll(timeoutAt, 5000, deps);
   }
 
   throw new Error(`Timed out waiting for promotion PR after ${timeoutMinutes} minutes.`);
@@ -1951,11 +1974,11 @@ function getRemotePackageVersion(repo, ref, deps) {
 }
 
 function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expectedTag, timeoutMinutes, deps) {
-  const timeoutAt = Date.now() + timeoutMinutes * 60 * 1000;
+  const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   let lastObservedVersion = '';
   let lastObservedTagVersion = '';
 
-  while (Date.now() <= timeoutAt) {
+  while (nowMs(deps) <= timeoutAt) {
     const versionResult = deps.exec('npm', ['view', packageName, 'version', '--json']);
     const tagsResult = deps.exec('npm', ['view', packageName, 'dist-tags', '--json']);
     if (versionResult.status === 0 && tagsResult.status === 0) {
@@ -1974,7 +1997,7 @@ function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expecte
       }
     }
 
-    sleepMs(10000);
+    waitForNextPoll(timeoutAt, 10000, deps);
   }
 
   return {
