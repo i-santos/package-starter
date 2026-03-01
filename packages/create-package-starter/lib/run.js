@@ -1885,19 +1885,27 @@ function waitForPrMerged(repo, prNumber, timeoutMinutes, deps) {
   throw new Error(`Timed out waiting for PR #${prNumber} merge after ${timeoutMinutes} minutes.`);
 }
 
-function findReleasePrs(repo, deps) {
+function releaseBaseBranchForTrack(track) {
+  return track === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
+}
+
+function findReleasePrs(repo, deps, options = {}) {
+  const expectedBase = options.expectedBase || '';
   const prs = listOpenPullRequests(repo, deps);
   return prs.filter(
     (item) => item.headRefName
       && item.headRefName.startsWith('changeset-release/')
-      && (item.baseRefName === DEFAULT_BASE_BRANCH || item.baseRefName === DEFAULT_BETA_BRANCH)
+      && (expectedBase
+        ? item.baseRefName === expectedBase
+        : (item.baseRefName === DEFAULT_BASE_BRANCH || item.baseRefName === DEFAULT_BETA_BRANCH))
   );
 }
 
-function waitForReleasePr(repo, timeoutMinutes, deps) {
+function waitForReleasePr(repo, timeoutMinutes, deps, options = {}) {
+  const expectedBase = options.expectedBase || '';
   const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   while (nowMs(deps) <= timeoutAt) {
-    const releasePrs = findReleasePrs(repo, deps);
+    const releasePrs = findReleasePrs(repo, deps, { expectedBase });
     if (releasePrs.length === 1) {
       return releasePrs[0];
     }
@@ -1908,7 +1916,8 @@ function waitForReleasePr(repo, timeoutMinutes, deps) {
     waitForNextPoll(timeoutAt, 5000, deps);
   }
 
-  throw new Error(`Timed out waiting for release PR after ${timeoutMinutes} minutes.`);
+  const baseHint = expectedBase ? ` targeting ${expectedBase}` : '';
+  throw new Error(`Timed out waiting for release PR${baseHint} after ${timeoutMinutes} minutes.`);
 }
 
 async function confirmDetectedModeIfNeeded(args, mode, planText) {
@@ -2893,7 +2902,9 @@ async function runReleaseCycle(args, dependencies = {}) {
   if (args.promoteStable) {
     detectedMode = 'open-pr';
   } else if (detectedMode === 'auto') {
-    const releasePrs = findReleasePrs(gitContext.repo, deps);
+    const releasePrs = findReleasePrs(gitContext.repo, deps, {
+      expectedBase: releaseBaseBranchForTrack(requestedTrack)
+    });
     if (gitContext.head.startsWith('changeset-release/')) {
       detectedMode = 'publish';
     } else if (gitContext.head !== DEFAULT_BETA_BRANCH) {
@@ -3067,7 +3078,9 @@ async function runReleaseCycle(args, dependencies = {}) {
         summary.releasePr = `dry-run: would wait release PR (${args.releasePrTimeout}m)`;
       } else {
         reporter.start('release-cycle-wait-release-pr', 'Waiting for release PR (changeset-release/*)...');
-        const releasePr = waitForReleasePr(gitContext.repo, args.releasePrTimeout, deps);
+        const releasePr = waitForReleasePr(gitContext.repo, args.releasePrTimeout, deps, {
+          expectedBase: releaseBaseBranchForTrack(requestedTrack)
+        });
         reporter.ok('release-cycle-wait-release-pr', `Release PR found: #${releasePr.number}`);
         summary.releasePr = `found (#${releasePr.number})`;
         summary.actionsPerformed.push(`release pr discovered: #${releasePr.number}`);
@@ -3170,7 +3183,9 @@ async function runReleaseCycle(args, dependencies = {}) {
     return;
   }
 
-  const releasePrCandidates = findReleasePrs(gitContext.repo, deps);
+  const releasePrCandidates = findReleasePrs(gitContext.repo, deps, {
+    expectedBase: args.track === 'auto' ? '' : releaseBaseBranchForTrack(requestedTrack)
+  });
   const explicitHeadCandidates = args.head
     ? releasePrCandidates.filter((item) => item.headRefName === args.head)
     : releasePrCandidates;
@@ -3183,6 +3198,8 @@ async function runReleaseCycle(args, dependencies = {}) {
   }
 
   const releasePr = explicitHeadCandidates[0];
+  const effectivePublishTrack = releasePr.baseRefName === DEFAULT_BASE_BRANCH ? 'stable' : 'beta';
+  summary.releaseTrack = effectivePublishTrack;
   summary.prAction = `selected release pr (#${releasePr.number})`;
   summary.prUrl = releasePr.url;
   summary.branchPushed = 'skipped';
@@ -3239,8 +3256,8 @@ async function runReleaseCycle(args, dependencies = {}) {
   let npmValidationPassed = false;
   if (args.verifyNpm && !args.dryRun && (args.mergeReleasePr || args.mergeWhenGreen)) {
     reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
-    const targetRef = requestedTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
-    const expectedTag = requestedTrack === 'stable' ? 'latest' : 'beta';
+    const targetRef = effectivePublishTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
+    const expectedTag = effectivePublishTrack === 'stable' ? 'latest' : 'beta';
     const remotePackage = getRemotePackageVersion(gitContext.repo, targetRef, deps);
     const npmValidation = validateNpmPublishedVersionAndTag(
       remotePackage.name,
@@ -3276,14 +3293,14 @@ async function runReleaseCycle(args, dependencies = {}) {
     if (args.confirmCleanup && !args.yes) {
       await confirmOrThrow('Release completed and npm validation passed.\nProceed with local cleanup now?');
     }
-    runLocalCleanup({
-      deps,
-      originalBranch,
-      targetBaseBranch: requestedTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH,
-      shouldRun: !args.noCleanup,
-      summary,
-      reporter
-    });
+      runLocalCleanup({
+        deps,
+        originalBranch,
+        targetBaseBranch: effectivePublishTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH,
+        shouldRun: !args.noCleanup,
+        summary,
+        reporter
+      });
   } else if (!args.dryRun && !npmValidationPassed) {
     summary.actionsSkipped.push('cleanup (npm validation did not pass)');
     summary.cleanup = 'skipped (requires npm validation pass)';
