@@ -2006,6 +2006,7 @@ function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expecte
   const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   let lastObservedVersion = '';
   let lastObservedTagVersion = '';
+  const isStableTrack = expectedTag === 'latest';
 
   while (nowMs(deps) <= timeoutAt) {
     const versionResult = deps.exec('npm', ['view', packageName, 'version', '--json']);
@@ -2017,7 +2018,10 @@ function validateNpmPublishedVersionAndTag(packageName, expectedVersion, expecte
       lastObservedVersion = observedVersion;
       lastObservedTagVersion = observedTagVersion;
 
-      if (observedVersion === expectedVersion && observedTagVersion === expectedVersion) {
+      // npm "version" reflects the default dist-tag (usually latest), so beta verification
+      // must rely on the expected dist-tag value instead of global version.
+      const versionMatches = isStableTrack ? observedVersion === expectedVersion : true;
+      if (versionMatches && observedTagVersion === expectedVersion) {
         return {
           status: 'pass',
           observedVersion,
