@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.10
+
+### Patch Changes
+
+- 1fc50e8: Fix `release-cycle` release PR selection to respect the active release track. Beta flows now wait/merge only `changeset-release/* -> release/beta`, while stable flows target `main`, preventing wrong-track merges and npm validation mismatches.
+
 ## 1.5.0-beta.9
 
 ### Minor Changes
