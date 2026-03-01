@@ -517,7 +517,7 @@ function buildReleaseAuthVariables(releaseAuthMode) {
         '        id: app-token',
         '        uses: actions/create-github-app-token@v1',
         '        with:',
-        '          app-id: ${{ secrets.GH_APP_ID }}',
+        '          app-id: ${{ secrets.GH_APP_ID || secrets.GH_APP_CLIENT_ID }}',
         '          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}',
         ''
       ].join('\n'),
@@ -541,7 +541,7 @@ function appendReleaseAuthWarnings(summary, releaseAuthMode) {
   }
 
   if (releaseAuthMode === 'app') {
-    summary.warnings.push('release-auth app mode selected: ensure GH_APP_ID and GH_APP_PRIVATE_KEY repository secrets are configured.');
+    summary.warnings.push('release-auth app mode selected: ensure GH_APP_ID (or GH_APP_CLIENT_ID) and GH_APP_PRIVATE_KEY repository secrets are configured.');
     return;
   }
 

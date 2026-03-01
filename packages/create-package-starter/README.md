@@ -149,7 +149,7 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 
 `release-auth` modes:
 - `pat` (recommended default): uses `CHANGESETS_GH_TOKEN` fallback to `GITHUB_TOKEN`
-- `app`: generates token via GitHub App (`GH_APP_ID`, `GH_APP_PRIVATE_KEY`)
+- `app`: generates token via GitHub App (`GH_APP_ID` or `GH_APP_CLIENT_ID`, plus `GH_APP_PRIVATE_KEY`)
 - `github-token`: uses built-in `GITHUB_TOKEN` only
 - `manual-trigger`: uses built-in token and expects manual retrigger (empty commit) if release PR checks stay pending
 

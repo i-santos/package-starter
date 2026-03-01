@@ -79,6 +79,7 @@ test('create-package-starter supports release auth mode app in release workflow'
   const createdDir = path.join(outDir, 'auth-app-package');
   const release = fs.readFileSync(path.join(createdDir, '.github', 'workflows', 'release.yml'), 'utf8');
   assert.match(release, /Generate GitHub App token/);
+  assert.match(release, /app-id: \$\{\{ secrets\.GH_APP_ID \|\| secrets\.GH_APP_CLIENT_ID \}\}/);
   assert.match(release, /token: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
   assert.match(release, /GITHUB_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}/);
 });
