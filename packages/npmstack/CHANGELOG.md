@@ -1,5 +1,11 @@
 # @i-santos/npmstack
 
+## 2.0.0-beta.17
+
+### Patch Changes
+
+- 1e3b0fc: Add `--version` and `-v` flags to print the installed npmstack CLI version.
+
 ## 2.0.0-beta.16
 
 ### Patch Changes
