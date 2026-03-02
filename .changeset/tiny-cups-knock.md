@@ -1,5 +1,5 @@
 ---
-"@i-santos/create-package-starter": minor
+"@i-santos/npmstack": minor
 ---
 
 Add beta release setup and stable promotion commands.

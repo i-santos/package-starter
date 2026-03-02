@@ -1,5 +1,5 @@
 ---
-"@i-santos/create-package-starter": minor
+"@i-santos/npmstack": minor
 ---
 
 Add release auth strategy support for generated and managed release workflows via `--release-auth` (`pat`, `app`, `github-token`, `manual-trigger`) across create/init/setup-beta.

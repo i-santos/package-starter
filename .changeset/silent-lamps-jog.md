@@ -1,5 +1,5 @@
 ---
-"@i-santos/create-package-starter": minor
+"@i-santos/npmstack": minor
 ---
 
 Improve release-auth setup DX with explicit interactive auth-mode selection, consolidated safety confirmations, app-secret preflight warnings, and clearer summary output sections.

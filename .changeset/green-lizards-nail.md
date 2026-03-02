@@ -1,5 +1,5 @@
 ---
-"@i-santos/create-package-starter": patch
+"@i-santos/npmstack": patch
 ---
 
 Adjust `setup-npm` first publish flow to use standard interactive npm publish behavior.
