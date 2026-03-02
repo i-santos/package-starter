@@ -128,7 +128,7 @@ test('open-pr updates existing PR when head/base already has one', async () => {
   assert.equal(createCall, undefined);
 });
 
-test('release-cycle with auto-merge does not explicitly merge code PR', async () => {
+test('release with auto-merge does not explicitly merge code PR', async () => {
   const calls = [];
   let listCall = 0;
   const stub = createExecStub([
@@ -193,7 +193,7 @@ test('release-cycle with auto-merge does not explicitly merge code PR', async ()
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const codePrExplicitMerge = calls.find((call) => call.command === 'gh'
     && call.args[0] === 'pr'
@@ -210,7 +210,7 @@ test('release-cycle with auto-merge does not explicitly merge code PR', async ()
   assert.ok(codePrAutoMergeEnable, 'expected auto-merge enable call for code PR');
 });
 
-test('release-cycle full uses release PR matching beta track base branch', async () => {
+test('release full uses release PR matching beta track base branch', async () => {
   const calls = [];
   let listCall = 0;
   const stub = createExecStub([
@@ -283,7 +283,7 @@ test('release-cycle full uses release PR matching beta track base branch', async
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'full', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'full', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const mergedReleasePr = calls.find((call) => call.command === 'gh'
     && call.args[0] === 'pr'
@@ -292,7 +292,7 @@ test('release-cycle full uses release PR matching beta track base branch', async
   assert.ok(mergedReleasePr, 'expected beta-track release PR to be selected and merged');
 });
 
-test('release-cycle auto mode detects publish on changeset-release branch and enables auto-merge', async () => {
+test('release auto mode detects publish on changeset-release branch and enables auto-merge', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
@@ -325,13 +325,13 @@ test('release-cycle auto mode detects publish on changeset-release branch and en
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const mergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--auto'));
   assert.ok(mergeCall, 'expected release PR auto-merge enable');
 });
 
-test('release-cycle auto mode fails on ambiguous release PR candidates', async () => {
+test('release auto mode fails on ambiguous release PR candidates', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'release/beta\n' } : null),
@@ -347,7 +347,7 @@ test('release-cycle auto mode fails on ambiguous release PR candidates', async (
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
     /Multiple candidate release PRs detected/
   );
 });
@@ -386,19 +386,19 @@ test('deterministic PR body renderer merges template placeholder and changeset m
   assert.match(body, /## Checklist/);
 });
 
-test('release-cycle --promote-stable rejects when not on release/beta', async () => {
+test('release --promote-stable rejects when not on release/beta', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/not-beta\n' } : null)
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--promote-stable', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => run(['release', '--repo', 'i-santos/firestack', '--promote-stable', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
     /only allowed when running from "release\/beta"/
   );
 });
 
-test('release-cycle --promote-stable dispatches workflow and does not push release/beta', async () => {
+test('release --promote-stable dispatches workflow and does not push release/beta', async () => {
   const calls = [];
   const stub = createExecStub([
     ...baseHandlers(),
@@ -453,7 +453,7 @@ test('release-cycle --promote-stable dispatches workflow and does not push relea
   ]);
 
   await run([
-    'release-cycle',
+    'release',
     '--repo', 'i-santos/firestack',
     '--promote-stable',
     '--yes',
@@ -468,7 +468,7 @@ test('release-cycle --promote-stable dispatches workflow and does not push relea
   assert.equal(pushReleaseBeta, undefined, 'expected no direct push to release/beta');
 });
 
-test('release-cycle validates npm tag and version for beta track', async () => {
+test('release validates npm tag and version for beta track', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
@@ -491,10 +491,10 @@ test('release-cycle validates npm tag and version for beta track', async () => {
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: ' M local-file\n' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 });
 
-test('release-cycle accepts beta propagation when prerelease is visible before beta tag is set', async () => {
+test('release accepts beta propagation when prerelease is visible before beta tag is set', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
@@ -517,10 +517,10 @@ test('release-cycle accepts beta propagation when prerelease is visible before b
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 });
 
-test('release-cycle fails fast when release workflow has failed before npm propagation', async () => {
+test('release fails fast when release workflow has failed before npm propagation', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
@@ -561,12 +561,12 @@ test('release-cycle fails fast when release workflow has failed before npm propa
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
     /Release workflow failed before npm propagation could complete\./
   );
 });
 
-test('release-cycle resolves npm target package from release PR files in monorepo', async () => {
+test('release resolves npm target package from release PR files in monorepo', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
@@ -625,7 +625,7 @@ test('release-cycle resolves npm target package from release PR files in monorep
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const npmCalls = stub.calls
     .filter((call) => call.command === 'npm' && call.args[0] === 'view')
@@ -636,7 +636,7 @@ test('release-cycle resolves npm target package from release PR files in monorep
   assert.equal(npmCalls.some((entry) => entry.startsWith('hello-package:')), false, 'expected private example package not to be validated');
 });
 
-test('release-cycle skips cleanup with --no-cleanup', async () => {
+test('release skips cleanup with --no-cleanup', async () => {
   const calls = [];
   const stub = createExecStub([
     ...baseHandlers(),
@@ -661,13 +661,13 @@ test('release-cycle skips cleanup with --no-cleanup', async () => {
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.0-beta.1"}\n' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--no-cleanup', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--no-cleanup', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
   assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped');
 });
 
-test('release-cycle --phase code stops after code PR merge', async () => {
+test('release --phase code stops after code PR merge', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/phase-code\n' } : null),
@@ -682,7 +682,7 @@ test('release-cycle --phase code stops after code PR merge', async () => {
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const npmViewCall = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'view');
   assert.equal(npmViewCall, undefined, 'expected no npm validation in code-only mode');
@@ -690,7 +690,7 @@ test('release-cycle --phase code stops after code PR merge', async () => {
   assert.equal(editCall, undefined, 'expected existing PR to be reused without edit by default');
 });
 
-test('release-cycle fails when release PR needs approval before merge', async () => {
+test('release fails when release PR needs approval before merge', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
@@ -719,12 +719,12 @@ test('release-cycle fails when release PR needs approval before merge', async ()
   ]);
 
   await assert.rejects(
-    () => run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
     /requires review approval/
   );
 });
 
-test('release-cycle auto syncs feature branch with release/beta when behind', async () => {
+test('release auto syncs feature branch with release/beta when behind', async () => {
   const stub = createExecStub([
     (command, args) => (command === 'git' && args[0] === 'rev-list' && args[1] === '--left-right' ? { status: 0, stdout: '1 2\n' } : null),
     ...baseHandlers(),
@@ -742,13 +742,13 @@ test('release-cycle auto syncs feature branch with release/beta when behind', as
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const rebaseCall = stub.calls.find((call) => call.command === 'git' && call.args[0] === 'rebase');
   assert.ok(rebaseCall, 'expected rebase while syncing branch with base');
 });
 
-test('release-cycle resumes from release phase when code branch is already integrated', async () => {
+test('release resumes from release phase when code branch is already integrated', async () => {
   const calls = [];
   const stub = createExecStub([
     (command, args, options) => {
@@ -780,13 +780,13 @@ test('release-cycle resumes from release phase when code branch is already integ
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release-cycle', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
   const pushCall = calls.find((call) => call.command === 'git' && call.args[0] === 'push');
   assert.equal(pushCall, undefined, 'expected no feature branch push while resuming');
 });
 
-test('release-cycle updates existing PR description only with --update-pr-description', async () => {
+test('release updates existing PR description only with --update-pr-description', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/update-body\n' } : null),
@@ -808,7 +808,7 @@ test('release-cycle updates existing PR description only with --update-pr-descri
   ]);
 
   await run([
-    'release-cycle',
+    'release',
     '--repo', 'i-santos/firestack',
     '--yes',
     '--phase', 'code',
@@ -821,7 +821,7 @@ test('release-cycle updates existing PR description only with --update-pr-descri
   assert.ok(editCall, 'expected existing PR to be edited when --update-pr-description is provided');
 });
 
-test('release-cycle handles direct publish path when no release PR is created', async () => {
+test('release handles direct publish path when no release PR is created', async () => {
   let listCall = 0;
   const stub = createExecStub([
     ...baseHandlers(),
@@ -896,7 +896,7 @@ test('release-cycle handles direct publish path when no release PR is created', 
   ]);
 
   await run([
-    'release-cycle',
+    'release',
     '--repo', 'i-santos/firestack',
     '--yes',
     '--phase', 'full',

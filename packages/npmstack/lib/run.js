@@ -45,7 +45,7 @@ function usage() {
     '  npmstack init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
     '  npmstack setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  npmstack setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
-    '  npmstack ship <open-pr|release-cycle> [...args]',
+    '  npmstack ship <open-pr|release> [...args]',
     '  npmstack promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  npmstack setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -58,8 +58,8 @@ function usage() {
     '  npmstack init --dir . --with-github --with-beta --with-npm --yes',
     '  npmstack setup-beta --dir . --beta-branch release/beta --release-auth app',
     '  npmstack ship open-pr --auto-merge --watch-checks',
-    '  npmstack ship release-cycle --yes',
-    '  npmstack ship release-cycle --promote-stable --promote-type minor --yes',
+    '  npmstack ship release --yes',
+    '  npmstack ship release --promote-stable --promote-type minor --yes',
     '  npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"',
     '  npmstack setup-npm --dir . --publish-first'
   ].join('\n');
@@ -1803,7 +1803,7 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
               runCompleted ? `latest workflow conclusion: ${runConclusion || 'n/a'}` : 'latest workflow status: unavailable',
               workflowRun && workflowRun.url ? `run: ${workflowRun.url}` : '',
               readiness.url ? `PR: ${readiness.url}` : '',
-              'If changeset workflow is still updating, rerun release-cycle in a moment.'
+              'If changeset workflow is still updating, rerun release in a moment.'
             ].filter(Boolean).join('\n')
           );
         }
@@ -1969,7 +1969,7 @@ async function confirmDetectedModeIfNeeded(args, mode, planText) {
 
   await confirmOrThrow(
     [
-      `release-cycle detected mode: ${mode}`,
+      `release detected mode: ${mode}`,
       planText
     ].join('\n')
   );
@@ -2309,12 +2309,12 @@ function syncBranchWithBase({
     };
   }
 
-  reporter.start('release-cycle-sync-fetch', `Fetching origin/${baseBranch}...`);
+  reporter.start('release-sync-fetch', `Fetching origin/${baseBranch}...`);
   const fetch = deps.exec('git', ['fetch', 'origin', baseBranch]);
   if (fetch.status !== 0) {
     throw new Error(`Failed to fetch origin/${baseBranch}: ${(fetch.stderr || fetch.stdout || '').trim()}`);
   }
-  reporter.ok('release-cycle-sync-fetch', `Fetched origin/${baseBranch}.`);
+  reporter.ok('release-sync-fetch', `Fetched origin/${baseBranch}.`);
 
   const behindCheck = deps.exec('git', ['rev-list', '--left-right', '--count', `${headBranch}...origin/${baseBranch}`]);
   if (behindCheck.status !== 0) {
@@ -2342,7 +2342,7 @@ function syncBranchWithBase({
   }
 
   if (effectiveStrategy === 'rebase') {
-    reporter.start('release-cycle-sync-rebase', `Rebasing ${headBranch} onto origin/${baseBranch}...`);
+    reporter.start('release-sync-rebase', `Rebasing ${headBranch} onto origin/${baseBranch}...`);
     const rebase = deps.exec('git', ['rebase', `origin/${baseBranch}`]);
     if (rebase.status !== 0) {
       throw new Error(
@@ -2353,7 +2353,7 @@ function syncBranchWithBase({
         ].filter(Boolean).join('\n')
       );
     }
-    reporter.ok('release-cycle-sync-rebase', `${headBranch} rebased onto origin/${baseBranch}.`);
+    reporter.ok('release-sync-rebase', `${headBranch} rebased onto origin/${baseBranch}.`);
     summary.actionsPerformed.push(`sync base: rebased ${headBranch} onto origin/${baseBranch}`);
     return {
       synchronized: true,
@@ -2361,7 +2361,7 @@ function syncBranchWithBase({
     };
   }
 
-  reporter.start('release-cycle-sync-merge', `Merging origin/${baseBranch} into ${headBranch}...`);
+  reporter.start('release-sync-merge', `Merging origin/${baseBranch} into ${headBranch}...`);
   const merge = deps.exec('git', ['merge', '--no-edit', `origin/${baseBranch}`]);
   if (merge.status !== 0) {
     throw new Error(
@@ -2372,7 +2372,7 @@ function syncBranchWithBase({
       ].filter(Boolean).join('\n')
     );
   }
-  reporter.ok('release-cycle-sync-merge', `Merged origin/${baseBranch} into ${headBranch}.`);
+  reporter.ok('release-sync-merge', `Merged origin/${baseBranch} into ${headBranch}.`);
   summary.actionsPerformed.push(`sync base: merged origin/${baseBranch} into ${headBranch}`);
   return {
     synchronized: true,
@@ -2425,36 +2425,36 @@ function runLocalCleanup({
     return;
   }
 
-  reporter.start('release-cycle-cleanup-checkout', `Checking out ${targetBaseBranch}...`);
+  reporter.start('release-cleanup-checkout', `Checking out ${targetBaseBranch}...`);
   const checkout = deps.exec('git', ['checkout', targetBaseBranch]);
   if (checkout.status !== 0) {
     summary.cleanup = 'failed';
     summary.warnings.push(`Cleanup failed: could not checkout ${targetBaseBranch}: ${(checkout.stderr || checkout.stdout || '').trim()}`);
-    reporter.warn('release-cycle-cleanup-checkout', `Could not checkout ${targetBaseBranch}.`);
+    reporter.warn('release-cleanup-checkout', `Could not checkout ${targetBaseBranch}.`);
     return;
   }
-  reporter.ok('release-cycle-cleanup-checkout', `Checked out ${targetBaseBranch}.`);
+  reporter.ok('release-cleanup-checkout', `Checked out ${targetBaseBranch}.`);
 
-  reporter.start('release-cycle-cleanup-pull', `Pulling latest ${targetBaseBranch}...`);
+  reporter.start('release-cleanup-pull', `Pulling latest ${targetBaseBranch}...`);
   const pull = deps.exec('git', ['pull']);
   if (pull.status !== 0) {
     summary.cleanup = 'failed';
     summary.warnings.push(`Cleanup warning: could not pull ${targetBaseBranch}: ${(pull.stderr || pull.stdout || '').trim()}`);
-    reporter.warn('release-cycle-cleanup-pull', `Could not pull ${targetBaseBranch}.`);
+    reporter.warn('release-cleanup-pull', `Could not pull ${targetBaseBranch}.`);
   } else {
-    reporter.ok('release-cycle-cleanup-pull', `Pulled ${targetBaseBranch}.`);
+    reporter.ok('release-cleanup-pull', `Pulled ${targetBaseBranch}.`);
   }
 
-  reporter.start('release-cycle-cleanup-delete', `Deleting local branch ${originalBranch}...`);
+  reporter.start('release-cleanup-delete', `Deleting local branch ${originalBranch}...`);
   const deleteResult = deps.exec('git', ['branch', '-d', originalBranch]);
   if (deleteResult.status !== 0) {
     summary.cleanup = 'failed';
     summary.warnings.push(`Cleanup warning: could not delete ${originalBranch}: ${(deleteResult.stderr || deleteResult.stdout || '').trim()}`);
-    reporter.warn('release-cycle-cleanup-delete', `Could not delete ${originalBranch}.`);
+    reporter.warn('release-cleanup-delete', `Could not delete ${originalBranch}.`);
   } else {
     summary.actionsPerformed.push(`cleanup deleted branch: ${originalBranch}`);
     summary.cleanup = 'completed';
-    reporter.ok('release-cycle-cleanup-delete', `Deleted ${originalBranch}.`);
+    reporter.ok('release-cleanup-delete', `Deleted ${originalBranch}.`);
   }
 }
 
@@ -3107,9 +3107,9 @@ async function runReleaseCycle(args, dependencies = {}) {
   const originalBranch = deps.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   const useAutoMerge = args.autoMerge;
 
-  reporter.start('release-cycle-preflight-gh', 'Validating GitHub CLI and authentication...');
+  reporter.start('release-preflight-gh', 'Validating GitHub CLI and authentication...');
   ensureGhAvailable(deps);
-  reporter.ok('release-cycle-preflight-gh', 'GitHub CLI available and authenticated.');
+  reporter.ok('release-preflight-gh', 'GitHub CLI available and authenticated.');
 
   const gitContext = resolveGitContext(args, deps);
   summary.repoResolved = gitContext.repo;
@@ -3157,9 +3157,9 @@ async function runReleaseCycle(args, dependencies = {}) {
 
   if (detectedMode === 'open-pr') {
     if (args.promoteStable) {
-      reporter.start('release-cycle-promote-dispatch', `Dispatching ${DEFAULT_PROMOTE_WORKFLOW}...`);
+      reporter.start('release-promote-dispatch', `Dispatching ${DEFAULT_PROMOTE_WORKFLOW}...`);
       if (args.dryRun) {
-        reporter.warn('release-cycle-promote-dispatch', `Dry-run: would dispatch ${DEFAULT_PROMOTE_WORKFLOW}.`);
+        reporter.warn('release-promote-dispatch', `Dry-run: would dispatch ${DEFAULT_PROMOTE_WORKFLOW}.`);
         summary.actionsPerformed.push(`dry-run: dispatch ${DEFAULT_PROMOTE_WORKFLOW}`);
         summary.promotionWorkflow = `dry-run: ${DEFAULT_PROMOTE_WORKFLOW}`;
       } else {
@@ -3167,33 +3167,33 @@ async function runReleaseCycle(args, dependencies = {}) {
           ...args,
           head: DEFAULT_BETA_BRANCH
         }, deps);
-        reporter.ok('release-cycle-promote-dispatch', `Dispatched ${DEFAULT_PROMOTE_WORKFLOW}.`);
+        reporter.ok('release-promote-dispatch', `Dispatched ${DEFAULT_PROMOTE_WORKFLOW}.`);
         summary.actionsPerformed.push(`promotion workflow dispatched: ${DEFAULT_PROMOTE_WORKFLOW}`);
         summary.promotionWorkflow = `dispatched: ${DEFAULT_PROMOTE_WORKFLOW}`;
       }
 
       if (!args.dryRun) {
-        reporter.start('release-cycle-promote-pr', 'Waiting for promotion PR...');
+        reporter.start('release-promote-pr', 'Waiting for promotion PR...');
         const promotionPr = waitForPromotionPr(gitContext.repo, args.releasePrTimeout, deps);
-        reporter.ok('release-cycle-promote-pr', `Promotion PR found: #${promotionPr.number}`);
+        reporter.ok('release-promote-pr', `Promotion PR found: #${promotionPr.number}`);
         summary.actionsPerformed.push(`promotion pr discovered: #${promotionPr.number}`);
         summary.promotionPr = `found (#${promotionPr.number})`;
 
         if (args.watchChecks) {
-          reporter.start('release-cycle-promote-checks', `Watching promotion PR checks #${promotionPr.number}...`);
+          reporter.start('release-promote-checks', `Watching promotion PR checks #${promotionPr.number}...`);
           watchPrChecks(gitContext.repo, promotionPr.number, args.checkTimeout, deps);
-          reporter.ok('release-cycle-promote-checks', `Promotion PR checks green (#${promotionPr.number}).`);
+          reporter.ok('release-promote-checks', `Promotion PR checks green (#${promotionPr.number}).`);
         }
 
         if (args.mergeWhenGreen) {
-          reporter.start('release-cycle-promote-merge', `Merging promotion PR #${promotionPr.number}...`);
+          reporter.start('release-promote-merge', `Merging promotion PR #${promotionPr.number}...`);
           mergePrWhenGreen(gitContext.repo, promotionPr.number, args.mergeMethod, deps);
-          reporter.ok('release-cycle-promote-merge', `Promotion PR #${promotionPr.number} merged.`);
+          reporter.ok('release-promote-merge', `Promotion PR #${promotionPr.number} merged.`);
           summary.actionsPerformed.push(`promotion pr merged: #${promotionPr.number}`);
           summary.promotionPr = `merged (#${promotionPr.number})`;
         }
 
-        reporter.start('release-cycle-sync-beta', `Syncing local ${DEFAULT_BETA_BRANCH} branch...`);
+        reporter.start('release-sync-beta', `Syncing local ${DEFAULT_BETA_BRANCH} branch...`);
         const checkoutBeta = deps.exec('git', ['checkout', DEFAULT_BETA_BRANCH]);
         if (checkoutBeta.status !== 0) {
           throw new Error(`Could not checkout ${DEFAULT_BETA_BRANCH}: ${(checkoutBeta.stderr || checkoutBeta.stdout || '').trim()}`);
@@ -3202,7 +3202,7 @@ async function runReleaseCycle(args, dependencies = {}) {
         if (pullBeta.status !== 0) {
           throw new Error(`Could not pull ${DEFAULT_BETA_BRANCH}: ${(pullBeta.stderr || pullBeta.stdout || '').trim()}`);
         }
-        reporter.ok('release-cycle-sync-beta', `${DEFAULT_BETA_BRANCH} synced.`);
+        reporter.ok('release-sync-beta', `${DEFAULT_BETA_BRANCH} synced.`);
       }
     } else {
       summary.promotionWorkflow = 'skipped';
@@ -3265,7 +3265,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.warnings.push(...openPrResult.summary.warnings);
 
       if (args.mergeWhenGreen && codePr && !args.dryRun) {
-        reporter.start('release-cycle-merge-code-ready', `Checking merge readiness for code PR #${codePr.number}...`);
+        reporter.start('release-merge-code-ready', `Checking merge readiness for code PR #${codePr.number}...`);
         const codeReadiness = waitForPrMergeReadinessOrThrow(
           gitContext.repo,
           codePr.number,
@@ -3274,13 +3274,13 @@ async function runReleaseCycle(args, dependencies = {}) {
           deps
         );
         await confirmMergeIfNeeded(args, codeReadiness, `Code PR #${codePr.number}`);
-        reporter.ok('release-cycle-merge-code-ready', `Code PR #${codePr.number} is ready for merge.`);
-        reporter.start('release-cycle-code-auto-merge', `Enabling auto-merge for code PR #${codePr.number}...`);
+        reporter.ok('release-merge-code-ready', `Code PR #${codePr.number} is ready for merge.`);
+        reporter.start('release-code-auto-merge', `Enabling auto-merge for code PR #${codePr.number}...`);
         enablePrAutoMerge(gitContext.repo, codePr.number, args.mergeMethod, deps);
-        reporter.ok('release-cycle-code-auto-merge', `Auto-merge enabled for code PR #${codePr.number}.`);
-        reporter.start('release-cycle-wait-code-merge', `Waiting for code PR #${codePr.number} merge...`);
+        reporter.ok('release-code-auto-merge', `Auto-merge enabled for code PR #${codePr.number}.`);
+        reporter.start('release-wait-code-merge', `Waiting for code PR #${codePr.number} merge...`);
         waitForPrMerged(gitContext.repo, codePr.number, args.releasePrTimeout, deps);
-        reporter.ok('release-cycle-wait-code-merge', `Code PR #${codePr.number} merged.`);
+        reporter.ok('release-wait-code-merge', `Code PR #${codePr.number} merged.`);
         summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
         summary.merge = `code pr merged (#${codePr.number})`;
       } else {
@@ -3296,7 +3296,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.actionsSkipped.push('wait release pr (phase=code)');
       summary.actionsSkipped.push('verify npm (phase=code)');
       summary.actionsSkipped.push('cleanup (phase=code)');
-      printOrchestrationSummary(`release-cycle completed in ${detectedMode} mode`, summary);
+      printOrchestrationSummary(`release completed in ${detectedMode} mode`, summary);
       return;
     }
 
@@ -3305,7 +3305,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       if (args.dryRun) {
         summary.releasePr = `dry-run: would wait release PR (${args.releasePrTimeout}m)`;
       } else {
-        reporter.start('release-cycle-wait-release-pr', 'Waiting for release PR (changeset-release/*)...');
+        reporter.start('release-wait-release-pr', 'Waiting for release PR (changeset-release/*)...');
         const releaseOutcome = waitForReleasePr(gitContext.repo, args.releasePrTimeout, deps, {
           expectedBase: releaseBaseBranchForTrack(requestedTrack),
           allowDirectPublish: true,
@@ -3323,18 +3323,18 @@ async function runReleaseCycle(args, dependencies = {}) {
         });
         if (releaseOutcome.type === 'release_pr') {
           const releasePr = releaseOutcome.releasePr;
-          reporter.ok('release-cycle-wait-release-pr', `Release PR found: #${releasePr.number}`);
+          reporter.ok('release-wait-release-pr', `Release PR found: #${releasePr.number}`);
           summary.releasePr = `found (#${releasePr.number})`;
           summary.actionsPerformed.push(`release pr discovered: #${releasePr.number}`);
 
           if (args.watchChecks) {
-            reporter.start('release-cycle-watch-release-checks', `Watching release PR checks #${releasePr.number}...`);
+            reporter.start('release-watch-release-checks', `Watching release PR checks #${releasePr.number}...`);
             watchPrChecks(gitContext.repo, releasePr.number, args.checkTimeout, deps);
-            reporter.ok('release-cycle-watch-release-checks', `Release PR checks green (#${releasePr.number}).`);
+            reporter.ok('release-watch-release-checks', `Release PR checks green (#${releasePr.number}).`);
           }
 
           if (args.mergeReleasePr) {
-            reporter.start('release-cycle-merge-release-ready', `Checking merge readiness for release PR #${releasePr.number}...`);
+            reporter.start('release-merge-release-ready', `Checking merge readiness for release PR #${releasePr.number}...`);
             const releaseReadiness = waitForPrMergeReadinessOrThrow(
               gitContext.repo,
               releasePr.number,
@@ -3344,13 +3344,13 @@ async function runReleaseCycle(args, dependencies = {}) {
               { allowBehindTransient: true }
             );
             await confirmMergeIfNeeded(args, releaseReadiness, `Release PR #${releasePr.number}`);
-            reporter.ok('release-cycle-merge-release-ready', `Release PR #${releasePr.number} is ready for merge.`);
-            reporter.start('release-cycle-release-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
+            reporter.ok('release-merge-release-ready', `Release PR #${releasePr.number} is ready for merge.`);
+            reporter.start('release-release-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
             enablePrAutoMerge(gitContext.repo, releasePr.number, args.mergeMethod, deps);
-            reporter.ok('release-cycle-release-auto-merge', `Auto-merge enabled for release PR #${releasePr.number}.`);
-            reporter.start('release-cycle-release-wait-merge', `Waiting for release PR #${releasePr.number} merge...`);
+            reporter.ok('release-release-auto-merge', `Auto-merge enabled for release PR #${releasePr.number}.`);
+            reporter.start('release-release-wait-merge', `Waiting for release PR #${releasePr.number} merge...`);
             waitForPrMerged(gitContext.repo, releasePr.number, args.releasePrTimeout, deps);
-            reporter.ok('release-cycle-release-wait-merge', `Release PR #${releasePr.number} merged.`);
+            reporter.ok('release-release-wait-merge', `Release PR #${releasePr.number} merged.`);
             summary.releasePr = `merged (#${releasePr.number})`;
             summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
             summary.autoMerge = 'enabled (code + release)';
@@ -3359,7 +3359,7 @@ async function runReleaseCycle(args, dependencies = {}) {
             summary.actionsSkipped.push('merge release pr');
           }
         } else {
-          reporter.ok('release-cycle-wait-release-pr', 'No release PR created; detected successful direct publish workflow on release/beta.');
+          reporter.ok('release-wait-release-pr', 'No release PR created; detected successful direct publish workflow on release/beta.');
           summary.releasePr = 'skipped (direct publish)';
           summary.actionsPerformed.push('direct publish detected: no release PR required');
           mergedReleasePr = {
@@ -3376,7 +3376,7 @@ async function runReleaseCycle(args, dependencies = {}) {
 
     let npmValidationPassed = false;
     if (args.verifyNpm && !args.dryRun && mergedReleasePr) {
-      reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
+      reporter.start('release-verify-npm', 'Validating npm publish and dist-tag...');
       const targetRef = args.promoteStable ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
       const expectedTag = requestedTrack === 'stable' ? 'latest' : 'beta';
       const targetPackages = resolveExpectedNpmPackages(
@@ -3415,7 +3415,7 @@ async function runReleaseCycle(args, dependencies = {}) {
           ].join('\n')
         );
       }
-      reporter.ok('release-cycle-verify-npm', `${targetPackages.length} package(s) validated on tag ${expectedTag}.`);
+      reporter.ok('release-verify-npm', `${targetPackages.length} package(s) validated on tag ${expectedTag}.`);
       summary.actionsPerformed.push(`npm validation: ${targetPackages.map((pkg) => `${pkg.name}@${pkg.version}`).join(', ')} (${expectedTag})`);
       summary.npmValidation = `pass (${expectedTag} -> ${targetPackages.map((pkg) => pkg.version).join(', ')})`;
       npmValidationPassed = true;
@@ -3448,7 +3448,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.cleanup = 'skipped (dry-run)';
     }
 
-    printOrchestrationSummary(`release-cycle completed in ${detectedMode} mode`, summary);
+    printOrchestrationSummary(`release completed in ${detectedMode} mode`, summary);
     return;
   }
 
@@ -3478,9 +3478,9 @@ async function runReleaseCycle(args, dependencies = {}) {
     if (args.dryRun) {
       summary.checks = `dry-run: would watch checks (${args.checkTimeout}m)`;
     } else {
-      reporter.start('release-cycle-publish-checks', `Watching release PR checks #${releasePr.number}...`);
+      reporter.start('release-publish-checks', `Watching release PR checks #${releasePr.number}...`);
       watchPrChecks(gitContext.repo, releasePr.number, args.checkTimeout, deps);
-      reporter.ok('release-cycle-publish-checks', `Release PR checks green (#${releasePr.number}).`);
+      reporter.ok('release-publish-checks', `Release PR checks green (#${releasePr.number}).`);
       summary.checks = 'green';
       summary.actionsPerformed.push(`release checks watched: #${releasePr.number}`);
     }
@@ -3494,7 +3494,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       summary.merge = `dry-run: would merge release PR #${releasePr.number}`;
       summary.releasePr = `dry-run: would merge (#${releasePr.number})`;
     } else {
-      reporter.start('release-cycle-publish-merge-ready', `Checking merge readiness for release PR #${releasePr.number}...`);
+      reporter.start('release-publish-merge-ready', `Checking merge readiness for release PR #${releasePr.number}...`);
       const publishReadiness = waitForPrMergeReadinessOrThrow(
         gitContext.repo,
         releasePr.number,
@@ -3504,13 +3504,13 @@ async function runReleaseCycle(args, dependencies = {}) {
         { allowBehindTransient: true }
       );
       await confirmMergeIfNeeded(args, publishReadiness, `Release PR #${releasePr.number}`);
-      reporter.ok('release-cycle-publish-merge-ready', `Release PR #${releasePr.number} is ready for merge.`);
-      reporter.start('release-cycle-publish-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
+      reporter.ok('release-publish-merge-ready', `Release PR #${releasePr.number} is ready for merge.`);
+      reporter.start('release-publish-auto-merge', `Enabling auto-merge for release PR #${releasePr.number}...`);
       enablePrAutoMerge(gitContext.repo, releasePr.number, args.mergeMethod, deps);
-      reporter.ok('release-cycle-publish-auto-merge', `Auto-merge enabled for release PR #${releasePr.number}.`);
-      reporter.start('release-cycle-publish-wait-merge', `Waiting for release PR #${releasePr.number} merge...`);
+      reporter.ok('release-publish-auto-merge', `Auto-merge enabled for release PR #${releasePr.number}.`);
+      reporter.start('release-publish-wait-merge', `Waiting for release PR #${releasePr.number} merge...`);
       waitForPrMerged(gitContext.repo, releasePr.number, args.releasePrTimeout, deps);
-      reporter.ok('release-cycle-publish-wait-merge', `Release PR #${releasePr.number} merged.`);
+      reporter.ok('release-publish-wait-merge', `Release PR #${releasePr.number} merged.`);
       summary.merge = `merged release pr (#${releasePr.number})`;
       summary.releasePr = `merged (#${releasePr.number})`;
       summary.autoMerge = 'enabled (release)';
@@ -3524,7 +3524,7 @@ async function runReleaseCycle(args, dependencies = {}) {
 
   let npmValidationPassed = false;
   if (args.verifyNpm && !args.dryRun && (args.mergeReleasePr || args.mergeWhenGreen)) {
-    reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
+    reporter.start('release-verify-npm', 'Validating npm publish and dist-tag...');
     const targetRef = effectivePublishTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
     const expectedTag = effectivePublishTrack === 'stable' ? 'latest' : 'beta';
     const targetPackages = resolveExpectedNpmPackages(
@@ -3563,7 +3563,7 @@ async function runReleaseCycle(args, dependencies = {}) {
         ].join('\n')
       );
     }
-    reporter.ok('release-cycle-verify-npm', `${targetPackages.length} package(s) validated on tag ${expectedTag}.`);
+    reporter.ok('release-verify-npm', `${targetPackages.length} package(s) validated on tag ${expectedTag}.`);
     summary.actionsPerformed.push(`npm validation: ${targetPackages.map((pkg) => `${pkg.name}@${pkg.version}`).join(', ')} (${expectedTag})`);
     summary.npmValidation = `pass (${expectedTag} -> ${targetPackages.map((pkg) => pkg.version).join(', ')})`;
     npmValidationPassed = true;
@@ -3594,7 +3594,7 @@ async function runReleaseCycle(args, dependencies = {}) {
     summary.cleanup = 'skipped (dry-run)';
   }
 
-  printOrchestrationSummary(`release-cycle completed in ${detectedMode} mode`, summary);
+  printOrchestrationSummary(`release completed in ${detectedMode} mode`, summary);
 }
 
 function parseRepoFromRemote(remoteUrl) {

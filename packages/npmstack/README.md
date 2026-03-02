@@ -12,7 +12,7 @@ npx @i-santos/npmstack init --dir . --with-github --with-beta --with-npm --relea
 npx @i-santos/npmstack setup-github --repo i-santos/firestack --dry-run
 npx @i-santos/npmstack setup-beta --dir . --beta-branch release/beta --release-auth pat
 npx @i-santos/npmstack ship open-pr --auto-merge --watch-checks
-npx @i-santos/npmstack ship release-cycle --yes
+npx @i-santos/npmstack ship release --yes
 npx @i-santos/npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"
 npx @i-santos/npmstack setup-npm --dir ./existing-package --publish-first
 ```
@@ -90,7 +90,7 @@ Create/update pull requests (via `ship` subcommand):
 
 Orchestrate release cycle (via `ship` subcommand):
 
-- `ship release-cycle`
+- `ship release`
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
 - `--mode <auto|open-pr|publish>` (default: `auto`)
 - `--track <auto|beta|stable>` (default: `auto`)
@@ -227,9 +227,9 @@ Body source priority:
 3. `--template` (or `.github/PULL_REQUEST_TEMPLATE.md`)
 4. deterministic generated body
 
-## release-cycle Behavior
+## release Behavior
 
-`release-cycle` orchestrates code PR and release PR progression end-to-end.
+`release` orchestrates code PR and release PR progression end-to-end.
 
 Default mode is `auto`:
 - if current branch starts with `changeset-release/` => `publish`
@@ -260,7 +260,7 @@ The command is policy-aware:
 
 ### Protected `release/beta` stable promotion
 
-When `release/beta` is protected (PR-only), stable promotion in `release-cycle --promote-stable` uses a hybrid flow:
+When `release/beta` is protected (PR-only), stable promotion in `release --promote-stable` uses a hybrid flow:
 
 1. dispatch `.github/workflows/promote-stable.yml`
 2. workflow creates `promote/stable-*` branch
