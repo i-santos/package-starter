@@ -3,41 +3,7 @@
   "tag": "beta",
   "initialVersions": {
     "hello-package": "0.1.2",
-    "@i-santos/npmstack": "1.4.1-beta.0",
     "@i-santos/ship": "0.1.0-beta.0"
   },
-  "changesets": [
-    "bright-geckos-reply",
-    "clean-cheetahs-judge",
-    "clean-hats-warn",
-    "clever-donkeys-sit",
-    "cool-flowers-nod",
-    "eighty-lions-poke",
-    "fair-pugs-hammer",
-    "five-cougars-smash",
-    "four-rivers-share",
-    "funny-pugs-knock",
-    "green-kings-glow",
-    "green-kiwis-crash",
-    "green-lizards-nail",
-    "khaki-apes-share",
-    "late-books-help",
-    "mighty-hats-push",
-    "neat-lemons-train",
-    "npmstack-major-rename",
-    "odd-lions-clean",
-    "olive-cycles-open",
-    "red-seas-shave",
-    "short-cars-taste",
-    "silent-lamps-jog",
-    "silly-pigs-laugh",
-    "six-drinks-share",
-    "sixty-coins-play",
-    "small-trainers-hunt",
-    "sweet-pots-turn",
-    "tiny-cups-knock",
-    "tough-bears-remember",
-    "weak-clouds-share",
-    "young-pigs-arrive"
-  ]
+  "changesets": []
 }
