@@ -1,9 +1,9 @@
-# PR Orchestration (`open-pr` and `release-cycle`)
+# PR Orchestration (`open-pr` and `release`)
 
 This guide explains how to automate pull request creation and release progression with:
 
 - `npmstack ship open-pr`
-- `npmstack ship release-cycle`
+- `npmstack ship release`
 
 ## Goals
 
@@ -28,14 +28,14 @@ Default branch mapping:
 
 Body source priority:
 
-1. `--body`
-2. `--body-file`
+1. `--pr-description` (alias: `--body`)
+2. `--pr-description-file` (alias: `--body-file`)
 3. `--template` (or `.github/PULL_REQUEST_TEMPLATE.md`)
 4. deterministic generated markdown (summary/changes/release impact/checklist)
 
-## `release-cycle`
+## `release`
 
-Use `release-cycle` to orchestrate full progression:
+Use `release` to orchestrate full progression:
 
 1. code PR open/update
 2. checks
@@ -47,13 +47,13 @@ Use `release-cycle` to orchestrate full progression:
 Example:
 
 ```bash
-npmstack ship release-cycle --yes
+npmstack ship release --yes
 ```
 
 Stable promotion (protected `release/beta`):
 
 ```bash
-npmstack ship release-cycle --promote-stable --promote-type minor --yes
+npmstack ship release --promote-stable --promote-type minor --yes
 ```
 
 Mode detection (`--mode auto`):
@@ -87,13 +87,13 @@ Promotion flow (`--promote-stable`) on protected `release/beta`:
 1. dispatch workflow `.github/workflows/promote-stable.yml`
 2. workflow creates `promote/stable-*` branch
 3. workflow opens PR `promote/stable-* -> release/beta` and enables auto-merge
-4. release-cycle continues with `release/beta -> main` and release PR lifecycle
+4. release continues with `release/beta -> main` and release PR lifecycle
 
 No direct push to protected `release/beta` is used.
 
 Post-merge checks:
 
-- release-cycle validates npm publish using `npm view`:
+- release validates npm publish using `npm view`:
   - expected version
   - expected dist-tag (`beta` for beta track, `latest` for stable track)
 - cleanup runs by default after success:
@@ -121,16 +121,16 @@ The flow is policy-aware:
 
 ### Ambiguous release PR
 
-If multiple `changeset-release/*` PRs are open, `release-cycle` fails intentionally.  
+If multiple `changeset-release/*` PRs are open, `release` fails intentionally.  
 Close outdated PRs or run with explicit selection:
 
 ```bash
-npmstack ship release-cycle --mode publish --head changeset-release/release/beta
+npmstack ship release --mode publish --head changeset-release/release/beta
 ```
 
 ### Merge blocked by policy
 
-`release-cycle` reports why merge was blocked.  
+`release` reports why merge was blocked.  
 Typical causes:
 
 - missing approvals
@@ -141,7 +141,7 @@ Fix policy blockers and rerun command.
 
 ### NPM validation timeout/failure
 
-If npm propagation is delayed, `release-cycle` can fail with validation diagnostics.
+If npm propagation is delayed, `release` can fail with validation diagnostics.
 Re-run the command (publish path) after a short delay.
 
 ### Cleanup skipped

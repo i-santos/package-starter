@@ -11,7 +11,7 @@ npx @i-santos/ship setup-github --repo owner/repo
 npx @i-santos/ship setup-beta --dir .
 npx @i-santos/ship setup-npm --dir . --publish-first
 npx @i-santos/ship open-pr --auto-merge --watch-checks
-npx @i-santos/ship release-cycle --yes
+npx @i-santos/ship release --yes
 ```
 
 ## Config
@@ -44,7 +44,7 @@ Capabilities:
 - GitHub setup commands (`setup-github`, `setup-beta`)
 - npm setup command (`setup-npm`)
 - PR orchestration (`open-pr`)
-- release orchestration (`release-cycle`)
+- release orchestration (`release`)
 - stable promotion (`promote-stable`)
 
 ## Adapter Extensibility
@@ -63,5 +63,5 @@ Capabilities:
 - `ship setup-beta ...`
 - `ship setup-npm ...`
 - `ship open-pr ...`
-- `ship release-cycle ...`
+- `ship release ...`
 - `ship promote-stable ...`

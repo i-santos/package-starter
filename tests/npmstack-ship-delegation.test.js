@@ -9,10 +9,10 @@ test('npmstack delegates ship subcommand to @i-santos/ship runner', async () => 
     calls.push({ argv, dependencies });
   };
 
-  await run(['ship', 'release-cycle', '--yes'], { runShip });
+  await run(['ship', 'release', '--yes'], { runShip });
 
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].argv, ['release-cycle', '--yes']);
+  assert.deepEqual(calls[0].argv, ['release', '--yes']);
 });
 
 test('npmstack no longer accepts legacy release-cycle command directly', async () => {
@@ -21,4 +21,3 @@ test('npmstack no longer accepts legacy release-cycle command directly', async (
     /Invalid argument: release-cycle/
   );
 });
-
