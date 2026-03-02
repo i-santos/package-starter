@@ -1,6 +1,6 @@
 # hello-package
 
-Package created by `npmstack`.
+Package created by `ship`.
 
 ## Scripts
 
