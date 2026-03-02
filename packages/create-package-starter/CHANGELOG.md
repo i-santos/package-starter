@@ -1,5 +1,11 @@
 # @i-santos/npmstack
 
+## 2.0.0-beta.15
+
+### Major Changes
+
+- a20656d: Rename the CLI package from `@i-santos/npmstack` to `@i-santos/npmstack` and switch command usage to `npmstack` across docs, templates, and generated scripts. This is a breaking change in command and package identity.
+
 ## 1.5.0-beta.14
 
 ### Patch Changes
