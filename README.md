@@ -6,6 +6,12 @@
 
 Starter workspace to standardize npm package creation and migration with Changesets.
 
+## Documentation
+
+- Complete API and usage guide: [docs/ship-api.md](./docs/ship-api.md)
+- PR orchestration deep dive: [docs/pr-orchestration.md](./docs/pr-orchestration.md)
+- Release auth (GitHub App): [docs/release-auth-github-app.md](./docs/release-auth-github-app.md)
+
 ## What This Solves
 
 - Standardized npm package DX with one scaffold/migration command.
