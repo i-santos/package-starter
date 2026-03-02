@@ -45,8 +45,7 @@ function usage() {
     '  npmstack init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
     '  npmstack setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
     '  npmstack setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
-    '  npmstack open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  npmstack release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  npmstack ship <open-pr|release-cycle> [...args]',
     '  npmstack promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  npmstack setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -58,9 +57,9 @@ function usage() {
     '  npmstack setup-github --repo i-santos/firestack --dry-run',
     '  npmstack init --dir . --with-github --with-beta --with-npm --yes',
     '  npmstack setup-beta --dir . --beta-branch release/beta --release-auth app',
-    '  npmstack open-pr --auto-merge --watch-checks',
-    '  npmstack release-cycle --yes',
-    '  npmstack release-cycle --promote-stable --promote-type minor --yes',
+    '  npmstack ship open-pr --auto-merge --watch-checks',
+    '  npmstack ship release-cycle --yes',
+    '  npmstack ship release-cycle --promote-stable --promote-type minor --yes',
     '  npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"',
     '  npmstack setup-npm --dir . --publish-first'
   ].join('\n');
@@ -848,17 +847,12 @@ function parseArgs(argv) {
     };
   }
 
-  if (argv[0] === 'open-pr') {
+  if (argv[0] === 'ship') {
     return {
-      mode: 'open-pr',
-      args: parseOpenPrArgs(argv.slice(1))
-    };
-  }
-
-  if (argv[0] === 'release-cycle') {
-    return {
-      mode: 'release-cycle',
-      args: parseReleaseCycleArgs(argv.slice(1))
+      mode: 'ship',
+      args: {
+        rawArgs: argv.slice(1)
+      }
     };
   }
 
@@ -4764,13 +4758,18 @@ async function run(argv, dependencies = {}) {
     return;
   }
 
-  if (parsed.mode === 'open-pr') {
-    await runOpenPrFlow(parsed.args, dependencies);
-    return;
-  }
-
-  if (parsed.mode === 'release-cycle') {
-    await runReleaseCycle(parsed.args, dependencies);
+  if (parsed.mode === 'ship') {
+    const runShip = dependencies.runShip || (() => {
+      try {
+        return require('@i-santos/ship').run;
+      } catch (error) {
+        if (error && error.code === 'MODULE_NOT_FOUND') {
+          return require('../../ship/lib/run').run;
+        }
+        throw error;
+      }
+    })();
+    await runShip(parsed.args.rawArgs, dependencies);
     return;
   }
 
