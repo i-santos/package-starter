@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - __DEFAULT_BRANCH__
+      - __BETA_BRANCH__
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+__RELEASE_AUTH_APP_STEP__
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: __RELEASE_AUTH_CHECKOUT_TOKEN__
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Setup npm (latest)
+        run: npm install -g npm@latest
+
+      - name: Install
+        run: npm ci
+
+      - name: Check
+        run: npm run check
+
+      - name: Create Release PR or Publish
+        uses: changesets/action@v1
+        with:
+          version: npm run version-packages
+          publish: npm run release
+          title: "chore: release packages"
+          commit: "chore: release packages"
+        env:
+          GITHUB_TOKEN: __RELEASE_AUTH_GITHUB_TOKEN__
+          NODE_AUTH_TOKEN: ""

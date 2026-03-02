@@ -42,13 +42,24 @@ function usage() {
   return [
     'Usage:',
     '  ship --version',
+    '  ship --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
+    '  ship init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
+    '  ship setup-github [--dir <directory>] [--repo <owner/repo>] [--default-branch <branch>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  ship open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
     '  ship release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  ship promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
+    '  ship setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
     'Examples:',
+    '  ship --name hello-package',
+    '  ship init --dir .',
+    '  ship init --dir . --with-github --with-beta --with-npm --yes',
     '  ship open-pr --auto-merge --watch-checks',
     '  ship release-cycle --yes',
-    '  ship release-cycle --promote-stable --promote-type minor --yes'
+    '  ship release-cycle --promote-stable --promote-type minor --yes',
+    '  ship promote-stable --dir . --type patch --summary "Promote beta to stable"',
+    '  ship setup-npm --dir . --publish-first',
+    '  ship setup-github --dir . --beta-branch release/beta --release-auth app'
   ].join('\n');
 }
 
@@ -120,9 +131,9 @@ function parseInitArgs(argv) {
     ruleset: '',
     releaseAuth: DEFAULT_RELEASE_AUTH,
     releaseAuthProvided: false,
-    withGithub: false,
-    withNpm: false,
-    withBeta: false,
+    withGithub: true,
+    withNpm: true,
+    withBeta: true,
     dryRun: false,
     yes: false
   };
@@ -221,12 +232,24 @@ function parseInitArgs(argv) {
 
 function parseSetupGithubArgs(argv) {
   const args = {
+    dir: process.cwd(),
+    betaBranch: DEFAULT_BETA_BRANCH,
     defaultBranch: DEFAULT_BASE_BRANCH,
+    releaseAuth: DEFAULT_RELEASE_AUTH,
+    releaseAuthProvided: false,
+    force: false,
+    yes: false,
     dryRun: false
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
+
+    if (token === '--dir') {
+      args.dir = parseValueFlag(argv, i, '--dir');
+      i += 1;
+      continue;
+    }
 
     if (token === '--repo') {
       args.repo = parseValueFlag(argv, i, '--repo');
@@ -240,9 +263,32 @@ function parseSetupGithubArgs(argv) {
       continue;
     }
 
+    if (token === '--beta-branch') {
+      args.betaBranch = parseValueFlag(argv, i, '--beta-branch');
+      i += 1;
+      continue;
+    }
+
     if (token === '--ruleset') {
       args.ruleset = parseValueFlag(argv, i, '--ruleset');
       i += 1;
+      continue;
+    }
+
+    if (token === '--release-auth') {
+      args.releaseAuth = parseValueFlag(argv, i, '--release-auth');
+      args.releaseAuthProvided = true;
+      i += 1;
+      continue;
+    }
+
+    if (token === '--force') {
+      args.force = true;
+      continue;
+    }
+
+    if (token === '--yes') {
+      args.yes = true;
       continue;
     }
 
@@ -804,6 +850,47 @@ function parseArgs(argv) {
     };
   }
 
+  if (argv[0] === 'init') {
+    const args = parseInitArgs(argv.slice(1));
+    validateReleaseAuthMode(args.releaseAuth);
+    return {
+      mode: 'init',
+      args
+    };
+  }
+
+  if (argv[0] === 'setup-github') {
+    const args = parseSetupGithubArgs(argv.slice(1));
+    validateReleaseAuthMode(args.releaseAuth);
+    return {
+      mode: 'setup-github',
+      args
+    };
+  }
+
+  if (argv[0] === 'setup-npm') {
+    return {
+      mode: 'setup-npm',
+      args: parseSetupNpmArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'setup-beta') {
+    const args = parseSetupGithubArgs(argv.slice(1));
+    validateReleaseAuthMode(args.releaseAuth);
+    return {
+      mode: 'setup-github',
+      args
+    };
+  }
+
+  if (argv[0] === 'promote-stable') {
+    return {
+      mode: 'promote-stable',
+      args: parsePromoteStableArgs(argv.slice(1))
+    };
+  }
+
   if (argv[0] === 'open-pr') {
     return {
       mode: 'open-pr',
@@ -818,12 +905,18 @@ function parseArgs(argv) {
     };
   }
 
-  throw new Error(`Invalid argument: ${argv[0] || '(empty)'}\n\n${usage()}`);
+  const args = parseCreateArgs(argv);
+  validateReleaseAuthMode(args.releaseAuth);
+  return {
+    mode: 'create',
+    args
+  };
 }
 
 function loadShipConfig(cwd = process.cwd()) {
   const defaultConfig = {
-    adapter: 'npm'
+    adapter: 'npm',
+    adapterModule: ''
   };
   const configPath = path.join(cwd, '.ship.json');
   if (!fs.existsSync(configPath)) {
@@ -837,9 +930,30 @@ function loadShipConfig(cwd = process.cwd()) {
   };
 }
 
-function resolveAdapter(name) {
+function resolveAdapter(name, options = {}) {
   if (name === 'npm') {
     return npmAdapter;
+  }
+
+  if (typeof options.resolveAdapter === 'function') {
+    const external = options.resolveAdapter(name, options);
+    if (external) {
+      return external;
+    }
+  }
+
+  if (options.adapterModule) {
+    const loaded = require(path.resolve(options.cwd || process.cwd(), options.adapterModule));
+    const candidate = loaded && loaded.default ? loaded.default : loaded;
+    if (candidate && candidate.name === name) {
+      return candidate;
+    }
+    if (candidate && typeof candidate.resolveAdapter === 'function') {
+      const resolved = candidate.resolveAdapter(name, options);
+      if (resolved) {
+        return resolved;
+      }
+    }
   }
 
   throw new Error(`Unsupported adapter "${name}".`);
@@ -2807,7 +2921,7 @@ function configureExistingPackage(packageDir, templateDir, options) {
     'beta:exit': 'changeset pre exit',
     'beta:version': 'changeset version',
     'beta:publish': 'changeset publish',
-    'beta:promote': 'npmstack promote-stable --dir .'
+    'beta:promote': 'ship promote-stable --dir .'
   };
 
   let packageJsonChanged = false;
@@ -4296,7 +4410,7 @@ function runNpmSetup(args, dependencies = {}, options = {}) {
   }
 
   if (!existsOnNpm && !shouldPublishFirst) {
-    summary.warnings.push(`package "${packageJson.name}" was not found on npm. Run "npmstack setup-npm --dir ${targetDir} --publish-first" to perform first publish.`);
+    summary.warnings.push(`package "${packageJson.name}" was not found on npm. Run "ship setup-npm --dir ${targetDir} --publish-first" to perform first publish.`);
   }
 
   if (!existsOnNpm && shouldPublishFirst) {
@@ -4404,7 +4518,7 @@ async function setupBeta(args, dependencies = {}) {
     'beta:exit': 'changeset pre exit',
     'beta:version': 'changeset version',
     'beta:publish': 'changeset publish',
-    'beta:promote': 'npmstack promote-stable --dir .'
+    'beta:promote': 'ship promote-stable --dir .'
   };
 
   let packageJsonChanged = false;
@@ -4771,6 +4885,79 @@ function applyGithubBetaSetup(args, dependencies, summary, reporter, repo) {
   reporter.ok('github-beta-ruleset', `Beta ruleset ${upsertResult}.`);
 }
 
+function applyLocalBetaSetup(args, summary, reporter) {
+  const targetDir = path.resolve(args.dir);
+  if (!fs.existsSync(targetDir)) {
+    throw new Error(`Directory not found: ${targetDir}`);
+  }
+
+  const packageJsonPath = path.join(targetDir, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) {
+    throw new Error(`package.json not found in ${targetDir}`);
+  }
+
+  const packageRoot = path.resolve(__dirname, '..');
+  const templateDir = path.join(packageRoot, 'template');
+  if (!fs.existsSync(templateDir)) {
+    throw new Error(`Template not found in ${templateDir}`);
+  }
+
+  const packageJson = readJsonFile(packageJsonPath);
+  packageJson.scripts = packageJson.scripts || {};
+  const desiredScripts = {
+    'beta:enter': 'changeset pre enter beta',
+    'beta:exit': 'changeset pre exit',
+    'beta:version': 'changeset version',
+    'beta:publish': 'changeset publish',
+    'beta:promote': 'ship promote-stable --dir .'
+  };
+
+  let packageJsonChanged = false;
+  for (const [key, value] of Object.entries(desiredScripts)) {
+    const exists = Object.prototype.hasOwnProperty.call(packageJson.scripts, key);
+    if (!exists || args.force) {
+      if (!exists || packageJson.scripts[key] !== value) {
+        packageJson.scripts[key] = value;
+        packageJsonChanged = true;
+      }
+      summary.updatedScriptKeys.push(key);
+    } else {
+      summary.skippedScriptKeys.push(key);
+    }
+  }
+
+  ensureBetaWorkflowTriggers(
+    targetDir,
+    templateDir,
+    {
+      force: args.force,
+      dryRun: args.dryRun,
+      defaultBranch: args.defaultBranch,
+      betaBranch: args.betaBranch,
+      packageName: packageJson.name || packageDirFromName(path.basename(targetDir)),
+      scope: deriveScope('', packageJson.name || ''),
+      releaseAuth: args.releaseAuth
+    },
+    summary,
+    reporter
+  );
+
+  if (args.dryRun) {
+    if (packageJsonChanged) {
+      summary.warnings.push('dry-run: would update package.json beta scripts');
+    }
+    return;
+  }
+
+  if (packageJsonChanged) {
+    reporter.start('local-beta-scripts', 'Updating package.json beta scripts...');
+    writeJsonFile(packageJsonPath, packageJson);
+    reporter.ok('local-beta-scripts', 'package.json beta scripts updated.');
+  } else {
+    reporter.warn('local-beta-scripts', 'package.json beta scripts already present; no changes needed.');
+  }
+}
+
 function setupGithub(args, dependencies = {}) {
   const summary = createSummary();
   const deps = {
@@ -4780,7 +4967,12 @@ function setupGithub(args, dependencies = {}) {
 
   const reporter = new StepReporter();
   const { repo } = applyGithubMainSetup(args, dependencies, summary, reporter);
-  printSummary(args.dryRun ? `GitHub settings dry-run for ${repo}` : `GitHub settings applied to ${repo}`, summary);
+  applyGithubBetaSetup(args, dependencies, summary, reporter, repo);
+  applyLocalBetaSetup(args, summary, reporter);
+  appendReleaseAuthWarnings(summary, args.releaseAuth);
+  summary.warnings.push(`Trusted Publisher supports a single workflow file per package. Keep publishing on .github/workflows/release.yml for both stable and beta.`);
+  summary.warnings.push(`Next step: run "npm run beta:enter" once on "${args.betaBranch}", commit .changeset/pre.json, and push.`);
+  printSummary(args.dryRun ? `GitHub+beta setup dry-run for ${repo}` : `GitHub+beta setup applied to ${repo}`, summary);
 }
 
 async function run(argv, dependencies = {}) {
@@ -4799,7 +4991,36 @@ async function run(argv, dependencies = {}) {
   }
 
   const config = loadShipConfig(process.cwd());
-  const adapter = resolveAdapter(String(config.adapter || 'npm'));
+  const adapter = resolveAdapter(String(config.adapter || 'npm'), {
+    cwd: process.cwd(),
+    adapterModule: config.adapterModule,
+    resolveAdapter: dependencies.resolveAdapter
+  });
+
+  if (parsed.mode === 'init') {
+    await initExistingPackage(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'setup-github') {
+    setupGithub(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'setup-beta') {
+    setupBeta(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'promote-stable') {
+    promoteStable(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'setup-npm') {
+    setupNpm(parsed.args, dependencies);
+    return;
+  }
 
   if (parsed.mode === 'open-pr') {
     if (adapter.name !== 'npm') {
@@ -4812,6 +5033,10 @@ async function run(argv, dependencies = {}) {
   if (parsed.mode === 'release-cycle') {
     await runReleaseCycleCore(parsed.args, adapter, dependencies, config);
     return;
+  }
+
+  if (parsed.mode === 'create') {
+    createNewPackage(parsed.args);
   }
 }
 
