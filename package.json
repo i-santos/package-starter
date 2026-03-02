@@ -1,5 +1,5 @@
 {
-  "name": "npmstack",
+  "name": "ship",
   "private": true,
   "version": "1.0.0",
   "workspaces": [
@@ -17,7 +17,7 @@
     "beta:exit": "changeset pre exit",
     "beta:version": "changeset version",
     "beta:publish": "changeset publish",
-    "beta:promote": "npmstack promote-stable --dir ."
+    "beta:promote": "ship promote-stable --dir ."
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7"

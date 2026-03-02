@@ -1,6 +1,6 @@
 # __PACKAGE_NAME__
 
-Package created by `npmstack`.
+Package created by `ship`.
 
 ## Scripts
 

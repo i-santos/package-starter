@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { run } = require('../packages/npmstack/lib/run');
+const { run } = require('../packages/ship/lib/run');
 
 function createExecStub(handlers) {
   const calls = [];
@@ -88,7 +88,7 @@ test('setup-beta updates release workflow and scripts plus github branch/ruleset
 
   const pkg = JSON.parse(fs.readFileSync(path.join(workDir, 'package.json'), 'utf8'));
   assert.equal(pkg.scripts['beta:enter'], 'changeset pre enter beta');
-  assert.equal(pkg.scripts['beta:promote'], 'npmstack promote-stable --dir .');
+  assert.equal(pkg.scripts['beta:promote'], 'ship promote-stable --dir .');
 
   const workflowPath = path.join(workDir, '.github', 'workflows', 'release.yml');
   assert.equal(fs.existsSync(workflowPath), true);

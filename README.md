@@ -1,7 +1,7 @@
-# npmstack
+# ship
 
-[![CI](https://github.com/i-santos/npmstack/actions/workflows/ci.yml/badge.svg)](https://github.com/i-santos/npmstack/actions/workflows/ci.yml)
-[![npm npmstack](https://img.shields.io/npm/v/@i-santos/npmstack)](https://www.npmjs.com/package/@i-santos/npmstack)
+[![CI](https://github.com/i-santos/ship/actions/workflows/ci.yml/badge.svg)](https://github.com/i-santos/ship/actions/workflows/ci.yml)
+[![npm ship](https://img.shields.io/npm/v/@i-santos/ship)](https://www.npmjs.com/package/@i-santos/ship)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Starter workspace to standardize npm package creation and migration with Changesets.
@@ -15,8 +15,7 @@ Starter workspace to standardize npm package creation and migration with Changes
 
 ## Architecture
 
-- `packages/npmstack`: published CLI package.
-- `packages/ship`: reusable release-cycle orchestration engine used by npmstack.
+- `packages/ship`: published CLI package and reusable release orchestration engine.
 - `templates/npm-package`: workspace-local template used by `npm run create:package`.
 - `examples/hello-package`: generated reference package.
 
@@ -33,13 +32,13 @@ npm run changeset
 Published CLI:
 
 ```bash
-npx @i-santos/npmstack --name @i-santos/swarm
-npx @i-santos/npmstack init --dir ./existing-package
-npx @i-santos/npmstack init --dir . --with-github --with-beta --with-npm --release-auth pat --yes
-npx @i-santos/npmstack setup-github --repo i-santos/swarm --dry-run
-npx @i-santos/npmstack setup-beta --dir . --beta-branch release/beta --release-auth pat
-npx @i-santos/npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"
-npx @i-santos/npmstack setup-npm --dir ./existing-package --publish-first
+npx @i-santos/ship --name @i-santos/swarm
+npx @i-santos/ship init --dir ./existing-package
+npx @i-santos/ship init --dir . --with-github --with-beta --with-npm --release-auth pat --yes
+npx @i-santos/ship setup-github --repo i-santos/swarm --dry-run
+npx @i-santos/ship setup-beta --dir . --beta-branch release/beta --release-auth pat
+npx @i-santos/ship promote-stable --dir . --type patch --summary "Promote beta to stable"
+npx @i-santos/ship setup-npm --dir ./existing-package --publish-first
 ```
 
 ## Default Release Model
@@ -71,7 +70,7 @@ After this, future releases should happen via Changesets release PR workflow.
 One command:
 
 ```bash
-npx @i-santos/npmstack init --dir .
+npx @i-santos/ship init --dir .
 ```
 
 Useful flags:
@@ -87,7 +86,7 @@ Useful flags:
 Optional command:
 
 ```bash
-npx @i-santos/npmstack setup-github --repo i-santos/firestack
+npx @i-santos/ship setup-github --repo i-santos/firestack
 ```
 
 Applies baseline repository settings and creates/updates a main branch ruleset. Use `--dry-run` to preview changes.
@@ -99,7 +98,7 @@ Use a dedicated prerelease branch (for example `release/beta`) instead of `main`
 Bootstrap beta flow:
 
 ```bash
-npx @i-santos/npmstack setup-beta --dir . --beta-branch release/beta
+npx @i-santos/ship setup-beta --dir . --beta-branch release/beta
 ```
 
 By default the command asks for confirmation before mutating GitHub settings/rulesets.
@@ -108,7 +107,7 @@ Use `--yes` only for non-interactive/automation runs.
 Promote beta to stable:
 
 ```bash
-npx @i-santos/npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"
+npx @i-santos/ship promote-stable --dir . --type patch --summary "Promote beta to stable"
 ```
 
 This exits prerelease mode and creates an explicit promotion changeset before opening PR from beta branch to `main`.
@@ -122,13 +121,13 @@ Keep npm Trusted Publisher configured for `release.yml` (single workflow), and r
 Optional command:
 
 ```bash
-npx @i-santos/npmstack setup-npm --dir .
+npx @i-santos/ship setup-npm --dir .
 ```
 
 `setup-npm` checks npm auth and package existence, and can run first publish when needed:
 
 ```bash
-npx @i-santos/npmstack setup-npm --dir . --publish-first
+npx @i-santos/ship setup-npm --dir . --publish-first
 ```
 
 Trusted Publisher setup on npm remains a manual step after first publish.

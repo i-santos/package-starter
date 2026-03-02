@@ -2,8 +2,8 @@
 
 This guide explains how to automate pull request creation and release progression with:
 
-- `npmstack ship open-pr`
-- `npmstack ship release`
+- `ship open-pr`
+- `ship release`
 
 ## Goals
 
@@ -18,7 +18,7 @@ Use `open-pr` to push and create/update a PR in one command.
 Example:
 
 ```bash
-npmstack ship open-pr --auto-merge --watch-checks
+ship open-pr --auto-merge --watch-checks
 ```
 
 Default branch mapping:
@@ -47,13 +47,13 @@ Use `release` to orchestrate full progression:
 Example:
 
 ```bash
-npmstack ship release --yes
+ship release --yes
 ```
 
 Stable promotion (protected `release/beta`):
 
 ```bash
-npmstack ship release --promote-stable --promote-type minor --yes
+ship release --promote-stable --promote-type minor --yes
 ```
 
 Mode detection (`--mode auto`):
@@ -125,7 +125,7 @@ If multiple `changeset-release/*` PRs are open, `release` fails intentionally.
 Close outdated PRs or run with explicit selection:
 
 ```bash
-npmstack ship release --mode publish --head changeset-release/release/beta
+ship release --mode publish --head changeset-release/release/beta
 ```
 
 ### Merge blocked by policy

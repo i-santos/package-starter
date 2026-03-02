@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const templateRoot = path.resolve(__dirname, '..', 'packages', 'npmstack', 'template');
+const templateRoot = path.resolve(__dirname, '..', 'packages', 'ship', 'template');
 
 function read(relativePath) {
   return fs.readFileSync(path.join(templateRoot, relativePath), 'utf8');
@@ -83,7 +83,7 @@ test('template package.json snapshot', () => {
   assert.equal(pkg.scripts['beta:exit'], 'changeset pre exit');
   assert.equal(pkg.scripts['beta:version'], 'changeset version');
   assert.equal(pkg.scripts['beta:publish'], 'changeset publish');
-  assert.equal(pkg.scripts['beta:promote'], 'npmstack promote-stable --dir .');
+  assert.equal(pkg.scripts['beta:promote'], 'ship promote-stable --dir .');
   assert.equal(pkg.scripts['release:beta'], undefined);
   assert.equal(pkg.devDependencies['@changesets/cli'], '^2.29.7');
 });

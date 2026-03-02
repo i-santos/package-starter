@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { run } = require('../packages/npmstack/lib/run');
+const { run } = require('../packages/ship/lib/run');
 
 function createExecStub(handlers) {
   const calls = [];
@@ -43,7 +43,7 @@ test('setup-github dry-run prints planned operations', async () => {
     console.log = originalLog;
   }
 
-  assert.match(outputs.join('\n'), /GitHub settings dry-run for i-santos\/firestack/);
+  assert.match(outputs.join('\n'), /GitHub\+beta setup dry-run for i-santos\/firestack/);
   assert.match(outputs.join('\n'), /would update repository settings/);
   assert.equal(stub.calls.some((call) => call.args[0] === 'api'), false);
 });
