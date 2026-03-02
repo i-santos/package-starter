@@ -5,6 +5,7 @@
     "@i-santos/ship": "0.1.0-beta.0"
   },
   "changesets": [
+    "flat-roots-smile",
     "metal-gifts-breathe"
   ]
 }
