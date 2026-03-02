@@ -1,20 +1,27 @@
-# @i-santos/create-package-starter
+# @i-santos/npmstack
 
 Scaffold and standardize npm packages with a Changesets-first release workflow.
 
 ## Install / Run
 
 ```bash
-npx @i-santos/create-package-starter --name hello-package
-npx @i-santos/create-package-starter --name @i-santos/swarm --default-branch main --release-auth pat
-npx @i-santos/create-package-starter init --dir ./existing-package
-npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --release-auth app --yes
-npx @i-santos/create-package-starter setup-github --repo i-santos/firestack --dry-run
-npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth pat
-npx @i-santos/create-package-starter open-pr --auto-merge --watch-checks
-npx @i-santos/create-package-starter release-cycle --yes
-npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
-npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
+npx @i-santos/npmstack --name hello-package
+npx @i-santos/npmstack --name @i-santos/swarm --default-branch main --release-auth pat
+npx @i-santos/npmstack init --dir ./existing-package
+npx @i-santos/npmstack init --dir . --with-github --with-beta --with-npm --release-auth app --yes
+npx @i-santos/npmstack setup-github --repo i-santos/firestack --dry-run
+npx @i-santos/npmstack setup-beta --dir . --beta-branch release/beta --release-auth pat
+npx @i-santos/npmstack open-pr --auto-merge --watch-checks
+npx @i-santos/npmstack release-cycle --yes
+npx @i-santos/npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"
+npx @i-santos/npmstack setup-npm --dir ./existing-package --publish-first
+```
+
+If installed as a project dependency, use the short local binary:
+
+```bash
+npm i -D @i-santos/npmstack
+npm exec npmstack -- init --dir .
 ```
 
 ## Commands
@@ -287,8 +294,8 @@ GitHub App docs:
 - Create app: https://docs.github.com/apps/creating-github-apps/registering-a-github-app/registering-a-github-app
 - Install app: https://docs.github.com/apps/using-github-apps/installing-your-own-github-app
 - Manage secrets: https://docs.github.com/actions/security-guides/using-secrets-in-github-actions
-- Project guide: https://github.com/i-santos/package-starter/blob/main/docs/release-auth-github-app.md
-- PR orchestration guide: https://github.com/i-santos/package-starter/blob/main/docs/pr-orchestration.md
+- Project guide: https://github.com/i-santos/npmstack/blob/main/docs/release-auth-github-app.md
+- PR orchestration guide: https://github.com/i-santos/npmstack/blob/main/docs/pr-orchestration.md
 
 ## promote-stable Behavior
 

@@ -1,6 +1,6 @@
 # __PACKAGE_NAME__
 
-Package created by `package-starter`.
+Package created by `npmstack`.
 
 ## Scripts
 

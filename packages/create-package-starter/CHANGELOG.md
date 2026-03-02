@@ -1,4 +1,4 @@
-# @i-santos/create-package-starter
+# @i-santos/npmstack
 
 ## 1.5.0-beta.14
 
@@ -154,7 +154,7 @@
 
 ### Minor Changes
 
-- 6179480: Expand package-starter to be the single source of truth for npm package DX.
+- 6179480: Expand npmstack to be the single source of truth for npm package DX.
 
   - Extend `create` and `init` to manage standardized release/CI/docs repository baselines.
   - Add `setup-github` command to apply repository defaults and branch ruleset via `gh`.

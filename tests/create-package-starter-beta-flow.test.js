@@ -88,7 +88,7 @@ test('setup-beta updates release workflow and scripts plus github branch/ruleset
 
   const pkg = JSON.parse(fs.readFileSync(path.join(workDir, 'package.json'), 'utf8'));
   assert.equal(pkg.scripts['beta:enter'], 'changeset pre enter beta');
-  assert.equal(pkg.scripts['beta:promote'], 'create-package-starter promote-stable --dir .');
+  assert.equal(pkg.scripts['beta:promote'], 'npmstack promote-stable --dir .');
 
   const workflowPath = path.join(workDir, '.github', 'workflows', 'release.yml');
   assert.equal(fs.existsSync(workflowPath), true);

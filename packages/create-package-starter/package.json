@@ -1,17 +1,17 @@
 {
-  "name": "@i-santos/create-package-starter",
+  "name": "@i-santos/npmstack",
   "version": "1.5.0-beta.14",
   "description": "Scaffold new npm packages with a standardized Changesets release workflow",
   "license": "MIT",
   "author": "Igor Santos",
-  "homepage": "https://github.com/i-santos/package-starter#readme",
+  "homepage": "https://github.com/i-santos/npmstack#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/i-santos/package-starter.git",
+    "url": "git+https://github.com/i-santos/npmstack.git",
     "directory": "packages/create-package-starter"
   },
   "bugs": {
-    "url": "https://github.com/i-santos/package-starter/issues"
+    "url": "https://github.com/i-santos/npmstack/issues"
   },
   "keywords": [
     "scaffold",
@@ -27,7 +27,7 @@
     "access": "public"
   },
   "bin": {
-    "create-package-starter": "bin/create-package-starter.js"
+    "npmstack": "bin/create-package-starter.js"
   },
   "files": [
     "bin",

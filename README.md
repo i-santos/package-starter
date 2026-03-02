@@ -1,7 +1,7 @@
-# package-starter
+# npmstack
 
-[![CI](https://github.com/i-santos/package-starter/actions/workflows/ci.yml/badge.svg)](https://github.com/i-santos/package-starter/actions/workflows/ci.yml)
-[![npm create-package-starter](https://img.shields.io/npm/v/@i-santos/create-package-starter)](https://www.npmjs.com/package/@i-santos/create-package-starter)
+[![CI](https://github.com/i-santos/npmstack/actions/workflows/ci.yml/badge.svg)](https://github.com/i-santos/npmstack/actions/workflows/ci.yml)
+[![npm npmstack](https://img.shields.io/npm/v/@i-santos/npmstack)](https://www.npmjs.com/package/@i-santos/npmstack)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
 Starter workspace to standardize npm package creation and migration with Changesets.
@@ -32,13 +32,13 @@ npm run changeset
 Published CLI:
 
 ```bash
-npx @i-santos/create-package-starter --name @i-santos/swarm
-npx @i-santos/create-package-starter init --dir ./existing-package
-npx @i-santos/create-package-starter init --dir . --with-github --with-beta --with-npm --release-auth pat --yes
-npx @i-santos/create-package-starter setup-github --repo i-santos/swarm --dry-run
-npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth pat
-npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
-npx @i-santos/create-package-starter setup-npm --dir ./existing-package --publish-first
+npx @i-santos/npmstack --name @i-santos/swarm
+npx @i-santos/npmstack init --dir ./existing-package
+npx @i-santos/npmstack init --dir . --with-github --with-beta --with-npm --release-auth pat --yes
+npx @i-santos/npmstack setup-github --repo i-santos/swarm --dry-run
+npx @i-santos/npmstack setup-beta --dir . --beta-branch release/beta --release-auth pat
+npx @i-santos/npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"
+npx @i-santos/npmstack setup-npm --dir ./existing-package --publish-first
 ```
 
 ## Default Release Model
@@ -70,7 +70,7 @@ After this, future releases should happen via Changesets release PR workflow.
 One command:
 
 ```bash
-npx @i-santos/create-package-starter init --dir .
+npx @i-santos/npmstack init --dir .
 ```
 
 Useful flags:
@@ -86,7 +86,7 @@ Useful flags:
 Optional command:
 
 ```bash
-npx @i-santos/create-package-starter setup-github --repo i-santos/firestack
+npx @i-santos/npmstack setup-github --repo i-santos/firestack
 ```
 
 Applies baseline repository settings and creates/updates a main branch ruleset. Use `--dry-run` to preview changes.
@@ -98,7 +98,7 @@ Use a dedicated prerelease branch (for example `release/beta`) instead of `main`
 Bootstrap beta flow:
 
 ```bash
-npx @i-santos/create-package-starter setup-beta --dir . --beta-branch release/beta
+npx @i-santos/npmstack setup-beta --dir . --beta-branch release/beta
 ```
 
 By default the command asks for confirmation before mutating GitHub settings/rulesets.
@@ -107,7 +107,7 @@ Use `--yes` only for non-interactive/automation runs.
 Promote beta to stable:
 
 ```bash
-npx @i-santos/create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"
+npx @i-santos/npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"
 ```
 
 This exits prerelease mode and creates an explicit promotion changeset before opening PR from beta branch to `main`.
@@ -121,13 +121,13 @@ Keep npm Trusted Publisher configured for `release.yml` (single workflow), and r
 Optional command:
 
 ```bash
-npx @i-santos/create-package-starter setup-npm --dir .
+npx @i-santos/npmstack setup-npm --dir .
 ```
 
 `setup-npm` checks npm auth and package existence, and can run first publish when needed:
 
 ```bash
-npx @i-santos/create-package-starter setup-npm --dir . --publish-first
+npx @i-santos/npmstack setup-npm --dir . --publish-first
 ```
 
 Trusted Publisher setup on npm remains a manual step after first publish.

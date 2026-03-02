@@ -2,7 +2,7 @@
   "name": "hello-package",
   "version": "0.1.2",
   "private": true,
-  "description": "Pacote gerado pelo package-starter",
+  "description": "Pacote gerado pelo npmstack",
   "scripts": {
     "check": "node scripts/check.js",
     "changeset": "changeset",
@@ -12,7 +12,7 @@
     "beta:exit": "changeset pre exit",
     "beta:version": "changeset version",
     "beta:publish": "changeset publish",
-    "beta:promote": "create-package-starter promote-stable --dir ."
+    "beta:promote": "npmstack promote-stable --dir ."
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7"
