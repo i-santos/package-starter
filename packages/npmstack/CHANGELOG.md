@@ -1,5 +1,21 @@
 # @i-santos/npmstack
 
+## 2.0.0-beta.19
+
+### Major Changes
+
+- 271f131: Rename the ship orchestration command from `release-cycle` to `release` and update npmstack ship passthrough/docs/tests accordingly.
+
+  Migration:
+
+  - Replace `ship release-cycle ...` with `ship release ...`
+  - Replace `npmstack ship release-cycle ...` with `npmstack ship release ...`
+
+### Patch Changes
+
+- Updated dependencies [271f131]
+  - @i-santos/ship@1.0.0-beta.4
+
 ## 2.0.0-beta.18
 
 ### Major Changes
