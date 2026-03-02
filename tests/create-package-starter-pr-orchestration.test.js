@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { run, renderPrBodyDeterministic } = require('../packages/npmstack/lib/run');
+const { run, renderPrBodyDeterministic } = require('../packages/ship/lib/run');
 
 function createExecStub(handlers) {
   const calls = [];
