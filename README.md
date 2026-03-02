@@ -22,6 +22,7 @@ Starter workspace to standardize npm package creation and migration with Changes
 ## Architecture
 
 - Root package `@i-santos/ship`: published CLI and reusable release orchestration engine.
+- Adapter model: `open-pr` and `release` run on adapter capabilities (`npm` built-in, external via `.ship.json` + `adapterModule`).
 - `template/`: managed scaffold baseline used by the CLI.
 
 ## Quickstart
