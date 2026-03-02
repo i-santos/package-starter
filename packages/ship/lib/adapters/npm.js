@@ -16,6 +16,16 @@
  * }} */
 const npmAdapter = {
   name: 'npm',
+  capabilities: {
+    create: true,
+    init: true,
+    setupGithub: true,
+    setupBeta: true,
+    setupNpm: true,
+    openPr: true,
+    releaseCycle: true,
+    promoteStable: true
+  },
   detectMode(context) {
     const requestedMode = context && context.args && typeof context.args.mode === 'string'
       ? context.args.mode

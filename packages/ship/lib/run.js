@@ -42,13 +42,24 @@ function usage() {
   return [
     'Usage:',
     '  ship --version',
+    '  ship --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
+    '  ship init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
+    '  ship setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
+    '  ship setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
     '  ship open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
     '  ship release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  ship promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
+    '  ship setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
     'Examples:',
+    '  ship --name hello-package',
+    '  ship init --dir .',
+    '  ship init --dir . --with-github --with-beta --with-npm --yes',
     '  ship open-pr --auto-merge --watch-checks',
     '  ship release-cycle --yes',
-    '  ship release-cycle --promote-stable --promote-type minor --yes'
+    '  ship release-cycle --promote-stable --promote-type minor --yes',
+    '  ship promote-stable --dir . --type patch --summary "Promote beta to stable"',
+    '  ship setup-npm --dir . --publish-first'
   ].join('\n');
 }
 
@@ -120,9 +131,9 @@ function parseInitArgs(argv) {
     ruleset: '',
     releaseAuth: DEFAULT_RELEASE_AUTH,
     releaseAuthProvided: false,
-    withGithub: false,
-    withNpm: false,
-    withBeta: false,
+    withGithub: true,
+    withNpm: true,
+    withBeta: true,
     dryRun: false,
     yes: false
   };
@@ -804,6 +815,45 @@ function parseArgs(argv) {
     };
   }
 
+  if (argv[0] === 'init') {
+    const args = parseInitArgs(argv.slice(1));
+    validateReleaseAuthMode(args.releaseAuth);
+    return {
+      mode: 'init',
+      args
+    };
+  }
+
+  if (argv[0] === 'setup-github') {
+    return {
+      mode: 'setup-github',
+      args: parseSetupGithubArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'setup-npm') {
+    return {
+      mode: 'setup-npm',
+      args: parseSetupNpmArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'setup-beta') {
+    const args = parseSetupBetaArgs(argv.slice(1));
+    validateReleaseAuthMode(args.releaseAuth);
+    return {
+      mode: 'setup-beta',
+      args
+    };
+  }
+
+  if (argv[0] === 'promote-stable') {
+    return {
+      mode: 'promote-stable',
+      args: parsePromoteStableArgs(argv.slice(1))
+    };
+  }
+
   if (argv[0] === 'open-pr') {
     return {
       mode: 'open-pr',
@@ -818,12 +868,18 @@ function parseArgs(argv) {
     };
   }
 
-  throw new Error(`Invalid argument: ${argv[0] || '(empty)'}\n\n${usage()}`);
+  const args = parseCreateArgs(argv);
+  validateReleaseAuthMode(args.releaseAuth);
+  return {
+    mode: 'create',
+    args
+  };
 }
 
 function loadShipConfig(cwd = process.cwd()) {
   const defaultConfig = {
-    adapter: 'npm'
+    adapter: 'npm',
+    adapterModule: ''
   };
   const configPath = path.join(cwd, '.ship.json');
   if (!fs.existsSync(configPath)) {
@@ -837,9 +893,30 @@ function loadShipConfig(cwd = process.cwd()) {
   };
 }
 
-function resolveAdapter(name) {
+function resolveAdapter(name, options = {}) {
   if (name === 'npm') {
     return npmAdapter;
+  }
+
+  if (typeof options.resolveAdapter === 'function') {
+    const external = options.resolveAdapter(name, options);
+    if (external) {
+      return external;
+    }
+  }
+
+  if (options.adapterModule) {
+    const loaded = require(path.resolve(options.cwd || process.cwd(), options.adapterModule));
+    const candidate = loaded && loaded.default ? loaded.default : loaded;
+    if (candidate && candidate.name === name) {
+      return candidate;
+    }
+    if (candidate && typeof candidate.resolveAdapter === 'function') {
+      const resolved = candidate.resolveAdapter(name, options);
+      if (resolved) {
+        return resolved;
+      }
+    }
   }
 
   throw new Error(`Unsupported adapter "${name}".`);
@@ -2807,7 +2884,7 @@ function configureExistingPackage(packageDir, templateDir, options) {
     'beta:exit': 'changeset pre exit',
     'beta:version': 'changeset version',
     'beta:publish': 'changeset publish',
-    'beta:promote': 'npmstack promote-stable --dir .'
+    'beta:promote': 'ship promote-stable --dir .'
   };
 
   let packageJsonChanged = false;
@@ -4296,7 +4373,7 @@ function runNpmSetup(args, dependencies = {}, options = {}) {
   }
 
   if (!existsOnNpm && !shouldPublishFirst) {
-    summary.warnings.push(`package "${packageJson.name}" was not found on npm. Run "npmstack setup-npm --dir ${targetDir} --publish-first" to perform first publish.`);
+    summary.warnings.push(`package "${packageJson.name}" was not found on npm. Run "ship setup-npm --dir ${targetDir} --publish-first" to perform first publish.`);
   }
 
   if (!existsOnNpm && shouldPublishFirst) {
@@ -4404,7 +4481,7 @@ async function setupBeta(args, dependencies = {}) {
     'beta:exit': 'changeset pre exit',
     'beta:version': 'changeset version',
     'beta:publish': 'changeset publish',
-    'beta:promote': 'npmstack promote-stable --dir .'
+    'beta:promote': 'ship promote-stable --dir .'
   };
 
   let packageJsonChanged = false;
@@ -4799,7 +4876,36 @@ async function run(argv, dependencies = {}) {
   }
 
   const config = loadShipConfig(process.cwd());
-  const adapter = resolveAdapter(String(config.adapter || 'npm'));
+  const adapter = resolveAdapter(String(config.adapter || 'npm'), {
+    cwd: process.cwd(),
+    adapterModule: config.adapterModule,
+    resolveAdapter: dependencies.resolveAdapter
+  });
+
+  if (parsed.mode === 'init') {
+    await initExistingPackage(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'setup-github') {
+    setupGithub(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'setup-beta') {
+    setupBeta(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'promote-stable') {
+    promoteStable(parsed.args, dependencies);
+    return;
+  }
+
+  if (parsed.mode === 'setup-npm') {
+    setupNpm(parsed.args, dependencies);
+    return;
+  }
 
   if (parsed.mode === 'open-pr') {
     if (adapter.name !== 'npm') {
@@ -4812,6 +4918,10 @@ async function run(argv, dependencies = {}) {
   if (parsed.mode === 'release-cycle') {
     await runReleaseCycleCore(parsed.args, adapter, dependencies, config);
     return;
+  }
+
+  if (parsed.mode === 'create') {
+    createNewPackage(parsed.args);
   }
 }
 
