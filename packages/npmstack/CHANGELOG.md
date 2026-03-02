@@ -1,5 +1,11 @@
 # @i-santos/npmstack
 
+## 2.0.0-beta.16
+
+### Patch Changes
+
+- 1307f28: Fix release-cycle npm propagation validation for beta releases when npm reports the new prerelease version before `dist-tags.beta` is visible.
+
 ## 2.0.0-beta.15
 
 ### Major Changes
