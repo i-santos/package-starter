@@ -120,7 +120,7 @@ test('open-pr updates existing PR when head/base already has one', async () => {
       : null)
   ]);
 
-  await run(['open-pr', '--repo', 'i-santos/firestack', '--body', 'custom body', '--yes'], { exec: stub.exec });
+  await run(['open-pr', '--repo', 'i-santos/firestack', '--pr-description', 'custom body', '--yes'], { exec: stub.exec });
 
   const editCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'edit');
   assert.ok(editCall, 'expected gh pr edit');
@@ -787,6 +787,10 @@ test('release resumes from release phase when code branch is already integrated'
 });
 
 test('release updates existing PR description only with --update-pr-description', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-pr-description-'));
+  const prDescriptionFile = path.join(tempDir, 'pr-description.md');
+  fs.writeFileSync(prDescriptionFile, 'Updated PR description from file alias.\n');
+
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/update-body\n' } : null),
@@ -812,6 +816,7 @@ test('release updates existing PR description only with --update-pr-description'
     '--repo', 'i-santos/firestack',
     '--yes',
     '--phase', 'code',
+    '--pr-description-file', prDescriptionFile,
     '--update-pr-description',
     '--check-timeout', '0.05',
     '--release-pr-timeout', '0.05'

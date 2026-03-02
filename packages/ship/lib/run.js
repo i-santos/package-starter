@@ -45,8 +45,8 @@ function usage() {
     '  ship --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
     '  ship init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
     '  ship setup-github [--dir <directory>] [--repo <owner/repo>] [--default-branch <branch>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
-    '  ship open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  ship release [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  ship open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--pr-description <text>|--body <text>] [--pr-description-file <path>|--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
+    '  ship release [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--pr-description <text>|--body <text>] [--pr-description-file <path>|--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
     '  ship promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
     '  ship setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
@@ -511,14 +511,14 @@ function parseOpenPrArgs(argv) {
       continue;
     }
 
-    if (token === '--body') {
-      args.body = parseValueFlag(argv, i, '--body');
+    if (token === '--body' || token === '--pr-description') {
+      args.body = parseValueFlag(argv, i, token);
       i += 1;
       continue;
     }
 
-    if (token === '--body-file') {
-      args.bodyFile = parseValueFlag(argv, i, '--body-file');
+    if (token === '--body-file' || token === '--pr-description-file') {
+      args.bodyFile = parseValueFlag(argv, i, token);
       i += 1;
       continue;
     }
@@ -593,6 +593,7 @@ function parseReleaseCycleArgs(argv) {
     head: '',
     base: '',
     title: '',
+    body: '',
     bodyFile: '',
     npmPackages: [],
     updatePrDescription: false,
@@ -673,8 +674,14 @@ function parseReleaseCycleArgs(argv) {
       continue;
     }
 
-    if (token === '--body-file') {
-      args.bodyFile = parseValueFlag(argv, i, '--body-file');
+    if (token === '--body' || token === '--pr-description') {
+      args.body = parseValueFlag(argv, i, token);
+      i += 1;
+      continue;
+    }
+
+    if (token === '--body-file' || token === '--pr-description-file') {
+      args.bodyFile = parseValueFlag(argv, i, token);
       i += 1;
       continue;
     }
