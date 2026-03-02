@@ -1,5 +1,15 @@
 # @i-santos/ship
 
+## 1.0.0-beta.5
+
+### Major Changes
+
+- 033a5b8: Complete migration to `ship` as the only CLI/package in the workspace.
+
+  - remove legacy `npmstack` package from monorepo
+  - migrate docs, workflows, scripts, examples, and templates to `ship`
+  - update tests and internal references to use `packages/ship`
+
 ## 1.0.0-beta.4
 
 ### Major Changes
