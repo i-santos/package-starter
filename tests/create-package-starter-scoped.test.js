@@ -5,9 +5,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-test('npmstack accepts scoped package names and includes required standards files', () => {
+test('ship accepts scoped package names and includes required standards files', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-scoped-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'npmstack', 'bin', 'npmstack.js');
+  const binPath = path.resolve(__dirname, '..', 'packages', 'ship', 'bin', 'ship.js');
 
   const result = spawnSync('node', [binPath, '--name', '@i-santos/swarm', '--out', outDir], {
     encoding: 'utf8'
@@ -29,7 +29,7 @@ test('npmstack accepts scoped package names and includes required standards file
   assert.equal(packageJson.scripts['beta:exit'], 'changeset pre exit');
   assert.equal(packageJson.scripts['beta:version'], 'changeset version');
   assert.equal(packageJson.scripts['beta:publish'], 'changeset publish');
-  assert.equal(packageJson.scripts['beta:promote'], 'npmstack promote-stable --dir .');
+  assert.equal(packageJson.scripts['beta:promote'], 'ship promote-stable --dir .');
   assert.equal(packageJson.scripts['release:beta'], undefined);
   assert.equal(packageJson.scripts['release:stable'], undefined);
   assert.equal(packageJson.scripts['release:publish'], undefined);
@@ -48,9 +48,9 @@ test('npmstack accepts scoped package names and includes required standards file
   assert.equal(fs.existsSync(path.join(createdDir, 'CONTRIBUTING.md')), true);
 });
 
-test('npmstack supports custom default branch flag', () => {
+test('ship supports custom default branch flag', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-custom-branch-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'npmstack', 'bin', 'npmstack.js');
+  const binPath = path.resolve(__dirname, '..', 'packages', 'ship', 'bin', 'ship.js');
 
   const result = spawnSync('node', [binPath, '--name', 'branchy-package', '--out', outDir, '--default-branch', 'develop'], {
     encoding: 'utf8'
@@ -66,9 +66,9 @@ test('npmstack supports custom default branch flag', () => {
   assert.match(release, /- develop/);
 });
 
-test('npmstack supports release auth mode app in release workflow', () => {
+test('ship supports release auth mode app in release workflow', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-release-auth-app-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'npmstack', 'bin', 'npmstack.js');
+  const binPath = path.resolve(__dirname, '..', 'packages', 'ship', 'bin', 'ship.js');
 
   const result = spawnSync('node', [binPath, '--name', 'auth-app-package', '--out', outDir, '--release-auth', 'app'], {
     encoding: 'utf8'

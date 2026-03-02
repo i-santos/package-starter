@@ -20,7 +20,7 @@ const RELEASE_AUTH_DOC_LINKS = {
   create: 'https://docs.github.com/apps/creating-github-apps/registering-a-github-app/registering-a-github-app',
   install: 'https://docs.github.com/apps/using-github-apps/installing-your-own-github-app',
   secrets: 'https://docs.github.com/actions/security-guides/using-secrets-in-github-actions',
-  internal: 'https://github.com/i-santos/npmstack/blob/main/docs/release-auth-github-app.md'
+  internal: 'https://github.com/i-santos/ship/blob/main/docs/release-auth-github-app.md'
 };
 
 const MANAGED_FILE_SPECS = [

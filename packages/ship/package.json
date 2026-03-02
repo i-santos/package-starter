@@ -4,14 +4,14 @@
   "description": "Reusable release orchestration engine for PR/release flows",
   "license": "MIT",
   "author": "Igor Santos",
-  "homepage": "https://github.com/i-santos/npmstack#readme",
+  "homepage": "https://github.com/i-santos/ship#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/i-santos/npmstack.git",
+    "url": "git+https://github.com/i-santos/ship.git",
     "directory": "packages/ship"
   },
   "bugs": {
-    "url": "https://github.com/i-santos/npmstack/issues"
+    "url": "https://github.com/i-santos/ship/issues"
   },
   "keywords": [
     "release",
