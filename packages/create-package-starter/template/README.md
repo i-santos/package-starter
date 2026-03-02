@@ -1,6 +1,6 @@
 # __PACKAGE_NAME__
 
-Package created by `@i-santos/create-package-starter`.
+Package created by `@i-santos/npmstack`.
 
 ## Scripts
 

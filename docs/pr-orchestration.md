@@ -2,8 +2,8 @@
 
 This guide explains how to automate pull request creation and release progression with:
 
-- `create-package-starter open-pr`
-- `create-package-starter release-cycle`
+- `npmstack open-pr`
+- `npmstack release-cycle`
 
 ## Goals
 
@@ -18,7 +18,7 @@ Use `open-pr` to push and create/update a PR in one command.
 Example:
 
 ```bash
-create-package-starter open-pr --auto-merge --watch-checks
+npmstack open-pr --auto-merge --watch-checks
 ```
 
 Default branch mapping:
@@ -47,13 +47,13 @@ Use `release-cycle` to orchestrate full progression:
 Example:
 
 ```bash
-create-package-starter release-cycle --yes
+npmstack release-cycle --yes
 ```
 
 Stable promotion (protected `release/beta`):
 
 ```bash
-create-package-starter release-cycle --promote-stable --promote-type minor --yes
+npmstack release-cycle --promote-stable --promote-type minor --yes
 ```
 
 Mode detection (`--mode auto`):
@@ -125,7 +125,7 @@ If multiple `changeset-release/*` PRs are open, `release-cycle` fails intentiona
 Close outdated PRs or run with explicit selection:
 
 ```bash
-create-package-starter release-cycle --mode publish --head changeset-release/release/beta
+npmstack release-cycle --mode publish --head changeset-release/release/beta
 ```
 
 ### Merge blocked by policy

@@ -23,7 +23,7 @@ The release workflow accepts either `GH_APP_CLIENT_ID` or `GH_APP_ID`.
 2. Install the app on the target repository.
 3. Grant app permissions required for release automation (contents + pull requests).
 4. Store app credentials as repository secrets.
-5. Run package-starter setup with `--release-auth app`.
+5. Run npmstack setup with `--release-auth app`.
 
 ## Official GitHub docs
 
@@ -35,4 +35,4 @@ The release workflow accepts either `GH_APP_CLIENT_ID` or `GH_APP_ID`.
 ## Notes
 
 - GitHub App creation and installation remain manual admin steps.
-- If app secrets are missing, package-starter will warn in summary output.
+- If app secrets are missing, npmstack will warn in summary output.
