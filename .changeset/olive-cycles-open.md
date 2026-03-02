@@ -1,5 +1,5 @@
 ---
-"@i-santos/create-package-starter": minor
+"@i-santos/npmstack": minor
 ---
 
 Add new `open-pr` and `release-cycle` commands to automate PR creation, checks watching, merge progression, and release PR handling for Changesets workflows.

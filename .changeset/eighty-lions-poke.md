@@ -1,5 +1,5 @@
 ---
-"@i-santos/create-package-starter": minor
+"@i-santos/npmstack": minor
 ---
 
 Add orchestrated `init` mode with optional integrated GitHub and npm setup (`--with-github`, `--with-beta`, `--with-npm`) including preflight validation, interactive confirmations, and step-by-step progress reporting.

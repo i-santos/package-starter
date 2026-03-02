@@ -512,13 +512,19 @@ test('release-cycle resolves npm target package from release PR files in monorep
         return {
           status: 0,
           stdout: JSON.stringify([
-            { filename: 'packages/create-package-starter/package.json', status: 'modified' }
+            { filename: 'packages/create-package-starter/package.json', status: 'modified' },
+            { filename: 'examples/hello-package/package.json', status: 'modified' }
           ])
         };
       }
 
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/packages/create-package-starter/package.json?ref=release%2Fbeta')) {
         const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '1.5.0-beta.11' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/examples/hello-package/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: 'hello-package', version: '1.0.4', private: true }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
 
@@ -555,6 +561,7 @@ test('release-cycle resolves npm target package from release PR files in monorep
 
   assert.ok(npmCalls.includes('@i-santos/npmstack:dist-tags'), 'expected validation on workspace package');
   assert.equal(npmCalls.some((entry) => entry.startsWith('npmstack:')), false, 'expected root package not to be validated');
+  assert.equal(npmCalls.some((entry) => entry.startsWith('hello-package:')), false, 'expected private example package not to be validated');
 });
 
 test('release-cycle skips cleanup with --no-cleanup', async () => {

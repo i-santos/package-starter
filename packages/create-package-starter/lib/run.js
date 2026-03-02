@@ -2048,6 +2048,7 @@ function getRemotePackageVersionFromPath(repo, ref, packageJsonPath, deps) {
   return {
     name: parsed.name,
     version: parsed.version,
+    private: parsed.private === true,
     packageJsonPath
   };
 }
@@ -2116,7 +2117,7 @@ function resolveExpectedNpmPackagesFromRef(repo, targetRef, args, deps) {
     }
   }
 
-  const publishable = resolved.filter((pkg) => pkg && pkg.name && pkg.version);
+  const publishable = resolved.filter((pkg) => pkg && pkg.name && pkg.version && pkg.private !== true);
   const byName = new Map(publishable.map((pkg) => [pkg.name, pkg]));
 
   if (explicitPackages.length > 0) {
@@ -2158,7 +2159,7 @@ function resolveExpectedNpmPackages(repo, releasePrNumber, targetRef, expectedTa
   const fallbackPaths = packageJsonPaths.length > 0 ? packageJsonPaths : ['package.json'];
   const resolved = fallbackPaths
     .map((filePath) => getRemotePackageVersionFromPath(repo, targetRef, filePath, deps))
-    .filter((pkg) => pkg && pkg.name && pkg.version);
+    .filter((pkg) => pkg && pkg.name && pkg.version && pkg.private !== true);
 
   const byName = new Map();
   for (const pkg of resolved) {
