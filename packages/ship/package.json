@@ -1,6 +1,6 @@
 {
   "name": "@i-santos/ship",
-  "version": "0.1.0-beta.0",
+  "version": "0.1.0-beta.1",
   "description": "Reusable release-cycle orchestration engine for PR/release flows",
   "license": "MIT",
   "author": "Igor Santos",

@@ -1,5 +1,22 @@
 # @i-santos/npmstack
 
+## 2.0.0-beta.18
+
+### Major Changes
+
+- b17cedd: Breaking change: release orchestration moved behind the `ship` namespace.
+
+  - removed direct `npmstack release-cycle ...`
+  - added `npmstack ship release-cycle ...`
+  - added `npmstack ship open-pr ...`
+
+  `npmstack` remains responsible for scaffolding/setup flows.
+
+### Patch Changes
+
+- Updated dependencies [b17cedd]
+  - @i-santos/ship@0.1.0-beta.1
+
 ## 2.0.0-beta.17
 
 ### Patch Changes

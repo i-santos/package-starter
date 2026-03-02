@@ -3,7 +3,8 @@
   "tag": "beta",
   "initialVersions": {
     "hello-package": "0.1.2",
-    "@i-santos/npmstack": "1.4.1-beta.0"
+    "@i-santos/npmstack": "1.4.1-beta.0",
+    "@i-santos/ship": "0.1.0-beta.0"
   },
   "changesets": [
     "bright-geckos-reply",
@@ -17,6 +18,7 @@
     "four-rivers-share",
     "funny-pugs-knock",
     "green-kings-glow",
+    "green-kiwis-crash",
     "green-lizards-nail",
     "khaki-apes-share",
     "late-books-help",
@@ -25,6 +27,7 @@
     "odd-lions-clean",
     "olive-cycles-open",
     "red-seas-shave",
+    "short-cars-taste",
     "silent-lamps-jog",
     "silly-pigs-laugh",
     "six-drinks-share",
