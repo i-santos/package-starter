@@ -28,8 +28,8 @@ Default branch mapping:
 
 Body source priority:
 
-1. `--body`
-2. `--body-file`
+1. `--pr-description` (alias: `--body`)
+2. `--pr-description-file` (alias: `--body-file`)
 3. `--template` (or `.github/PULL_REQUEST_TEMPLATE.md`)
 4. deterministic generated markdown (summary/changes/release impact/checklist)
 

@@ -78,8 +78,8 @@ Create/update pull requests (via `ship` subcommand):
 - `--base <branch>` (default: `release/beta`, or `main` when head is `release/beta`)
 - `--head <branch>` (default: current branch)
 - `--title <text>` (default: latest commit subject)
-- `--body <text>` (highest priority body source)
-- `--body-file <path>`
+- `--pr-description <text>` (alias: `--body`, highest priority body source)
+- `--pr-description-file <path>` (alias: `--body-file`)
 - `--template <path>` (default fallback `.github/PULL_REQUEST_TEMPLATE.md`)
 - `--draft`
 - `--auto-merge`
@@ -100,7 +100,8 @@ Orchestrate release cycle (via `ship` subcommand):
 - `--head <branch>`
 - `--base <branch>`
 - `--title <text>`
-- `--body-file <path>`
+- `--pr-description <text>` (alias: `--body`)
+- `--pr-description-file <path>` (alias: `--body-file`)
 - `--draft`
 - `--phase <code|full>` (default: `full`)
 - `--auto-merge` (default behavior: enabled)
@@ -222,8 +223,8 @@ If `gh` is missing or unauthenticated, command exits non-zero with actionable gu
 - optionally watches checks until green/fail/timeout
 
 Body source priority:
-1. `--body`
-2. `--body-file`
+1. `--pr-description` (alias: `--body`)
+2. `--pr-description-file` (alias: `--body-file`)
 3. `--template` (or `.github/PULL_REQUEST_TEMPLATE.md`)
 4. deterministic generated body
 
