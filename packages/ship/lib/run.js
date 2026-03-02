@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const readline = require('readline/promises');
+const { npmAdapter } = require('./adapters/npm');
 
 const CHANGESETS_DEP = '@changesets/cli';
 const CHANGESETS_DEP_VERSION = '^2.29.7';
@@ -40,28 +41,14 @@ const INIT_CREATE_ONLY_FILES = new Set(['README.md', 'CONTRIBUTING.md']);
 function usage() {
   return [
     'Usage:',
-    '  npmstack --version',
-    '  npmstack --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
-    '  npmstack init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
-    '  npmstack setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
-    '  npmstack setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
-    '  npmstack ship <open-pr|release-cycle> [...args]',
-    '  npmstack promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
-    '  npmstack setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
+    '  ship --version',
+    '  ship open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
+    '  ship release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
     '',
     'Examples:',
-    '  npmstack --name hello-package',
-    '  npmstack --name @i-santos/swarm --out ./packages --release-auth pat',
-    '  npmstack init --dir ./my-package',
-    '  npmstack init --cleanup-legacy-release',
-    '  npmstack setup-github --repo i-santos/firestack --dry-run',
-    '  npmstack init --dir . --with-github --with-beta --with-npm --yes',
-    '  npmstack setup-beta --dir . --beta-branch release/beta --release-auth app',
-    '  npmstack ship open-pr --auto-merge --watch-checks',
-    '  npmstack ship release-cycle --yes',
-    '  npmstack ship release-cycle --promote-stable --promote-type minor --yes',
-    '  npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"',
-    '  npmstack setup-npm --dir . --publish-first'
+    '  ship open-pr --auto-merge --watch-checks',
+    '  ship release-cycle --yes',
+    '  ship release-cycle --promote-stable --promote-type minor --yes'
   ].join('\n');
 }
 
@@ -801,6 +788,15 @@ function validateReleaseAuthMode(mode, flagName = '--release-auth') {
 }
 
 function parseArgs(argv) {
+  if (!argv[0] || argv[0] === '--help' || argv[0] === '-h') {
+    return {
+      mode: 'help',
+      args: {
+        help: true
+      }
+    };
+  }
+
   if (argv[0] === '--version' || argv[0] === '-v') {
     return {
       mode: 'version',
@@ -808,60 +804,68 @@ function parseArgs(argv) {
     };
   }
 
-  if (argv[0] === 'init') {
-    const args = parseInitArgs(argv.slice(1));
-    validateReleaseAuthMode(args.releaseAuth);
+  if (argv[0] === 'open-pr') {
     return {
-      mode: 'init',
-      args
+      mode: 'open-pr',
+      args: parseOpenPrArgs(argv.slice(1))
     };
   }
 
-  if (argv[0] === 'setup-github') {
+  if (argv[0] === 'release-cycle') {
     return {
-      mode: 'setup-github',
-      args: parseSetupGithubArgs(argv.slice(1))
+      mode: 'release-cycle',
+      args: parseReleaseCycleArgs(argv.slice(1))
     };
   }
 
-  if (argv[0] === 'setup-npm') {
-    return {
-      mode: 'setup-npm',
-      args: parseSetupNpmArgs(argv.slice(1))
-    };
-  }
+  throw new Error(`Invalid argument: ${argv[0] || '(empty)'}\n\n${usage()}`);
+}
 
-  if (argv[0] === 'setup-beta') {
-    const args = parseSetupBetaArgs(argv.slice(1));
-    validateReleaseAuthMode(args.releaseAuth);
-    return {
-      mode: 'setup-beta',
-      args
-    };
-  }
-
-  if (argv[0] === 'promote-stable') {
-    return {
-      mode: 'promote-stable',
-      args: parsePromoteStableArgs(argv.slice(1))
-    };
-  }
-
-  if (argv[0] === 'ship') {
-    return {
-      mode: 'ship',
-      args: {
-        rawArgs: argv.slice(1)
-      }
-    };
-  }
-
-  const args = parseCreateArgs(argv);
-  validateReleaseAuthMode(args.releaseAuth);
-  return {
-    mode: 'create',
-    args
+function loadShipConfig(cwd = process.cwd()) {
+  const defaultConfig = {
+    adapter: 'npm'
   };
+  const configPath = path.join(cwd, '.ship.json');
+  if (!fs.existsSync(configPath)) {
+    return defaultConfig;
+  }
+
+  const parsed = readJsonFile(configPath);
+  return {
+    ...defaultConfig,
+    ...parsed
+  };
+}
+
+function resolveAdapter(name) {
+  if (name === 'npm') {
+    return npmAdapter;
+  }
+
+  throw new Error(`Unsupported adapter "${name}".`);
+}
+
+function runOpenPrCore(args, dependencies = {}) {
+  return runOpenPrFlow(args, dependencies);
+}
+
+function withShipConfigDefaults(args, config = {}) {
+  const next = { ...args };
+  if (config.baseBranch && (!next.base || next.base === DEFAULT_BETA_BRANCH)) {
+    next.base = config.baseBranch;
+  }
+  if (config.betaBranch && (!next.base || next.base === DEFAULT_BETA_BRANCH)) {
+    next.base = config.betaBranch;
+  }
+  return next;
+}
+
+function runReleaseCycleCore(args, adapter, dependencies = {}, config = {}) {
+  if (!adapter || adapter.name !== 'npm') {
+    throw new Error(`Unsupported adapter "${adapter && adapter.name ? adapter.name : 'unknown'}".`);
+  }
+
+  return runReleaseCycle(withShipConfigDefaults(args, config), dependencies);
 }
 
 function validateName(name) {
@@ -4733,58 +4737,29 @@ async function run(argv, dependencies = {}) {
     return;
   }
 
-  if (parsed.mode === 'init') {
-    await initExistingPackage(parsed.args, dependencies);
+  const config = loadShipConfig(process.cwd());
+  const adapter = resolveAdapter(String(config.adapter || 'npm'));
+
+  if (parsed.mode === 'open-pr') {
+    if (adapter.name !== 'npm') {
+      throw new Error(`Unsupported adapter "${adapter.name}".`);
+    }
+    await runOpenPrCore(withShipConfigDefaults(parsed.args, config), dependencies);
     return;
   }
 
-  if (parsed.mode === 'setup-github') {
-    setupGithub(parsed.args, dependencies);
+  if (parsed.mode === 'release-cycle') {
+    await runReleaseCycleCore(parsed.args, adapter, dependencies, config);
     return;
   }
-
-  if (parsed.mode === 'setup-beta') {
-    setupBeta(parsed.args, dependencies);
-    return;
-  }
-
-  if (parsed.mode === 'promote-stable') {
-    promoteStable(parsed.args, dependencies);
-    return;
-  }
-
-  if (parsed.mode === 'setup-npm') {
-    setupNpm(parsed.args, dependencies);
-    return;
-  }
-
-  if (parsed.mode === 'ship') {
-    const runShip = dependencies.runShip || (() => {
-      try {
-        return require('@i-santos/ship').run;
-      } catch (error) {
-        if (error && error.code === 'MODULE_NOT_FOUND') {
-          return require('../../ship/lib/run').run;
-        }
-        throw error;
-      }
-    })();
-    await runShip(parsed.args.rawArgs, dependencies);
-    return;
-  }
-
-  createNewPackage(parsed.args);
 }
 
 module.exports = {
   run,
-  parseRepoFromRemote,
-  createBaseRulesetPayload,
-  createBetaRulesetPayload,
-  setupGithub,
-  setupNpm,
-  setupBeta,
-  promoteStable,
+  loadShipConfig,
+  resolveAdapter,
+  runOpenPrCore,
+  runReleaseCycleCore,
   runOpenPrFlow,
   runReleaseCycle,
   renderPrBodyDeterministic

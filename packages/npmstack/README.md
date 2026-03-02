@@ -11,8 +11,8 @@ npx @i-santos/npmstack init --dir ./existing-package
 npx @i-santos/npmstack init --dir . --with-github --with-beta --with-npm --release-auth app --yes
 npx @i-santos/npmstack setup-github --repo i-santos/firestack --dry-run
 npx @i-santos/npmstack setup-beta --dir . --beta-branch release/beta --release-auth pat
-npx @i-santos/npmstack open-pr --auto-merge --watch-checks
-npx @i-santos/npmstack release-cycle --yes
+npx @i-santos/npmstack ship open-pr --auto-merge --watch-checks
+npx @i-santos/npmstack ship release-cycle --yes
 npx @i-santos/npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"
 npx @i-santos/npmstack setup-npm --dir ./existing-package --publish-first
 ```
@@ -71,9 +71,9 @@ Bootstrap beta release flow:
 - `--dry-run` (prints intended operations only)
 - `--yes` (skip interactive confirmations)
 
-Create/update pull requests:
+Create/update pull requests (via `ship` subcommand):
 
-- `open-pr`
+- `ship open-pr`
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
 - `--base <branch>` (default: `release/beta`, or `main` when head is `release/beta`)
 - `--head <branch>` (default: current branch)
@@ -88,9 +88,9 @@ Create/update pull requests:
 - `--yes`
 - `--dry-run`
 
-Orchestrate release cycle:
+Orchestrate release cycle (via `ship` subcommand):
 
-- `release-cycle`
+- `ship release-cycle`
 - `--repo <owner/repo>` (optional; inferred from `remote.origin.url` when omitted)
 - `--mode <auto|open-pr|publish>` (default: `auto`)
 - `--track <auto|beta|stable>` (default: `auto`)
