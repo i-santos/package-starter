@@ -2,7 +2,6 @@
   "mode": "pre",
   "tag": "beta",
   "initialVersions": {
-    "hello-package": "0.1.2",
     "@i-santos/ship": "0.1.0-beta.0"
   },
   "changesets": [

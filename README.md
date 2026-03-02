@@ -17,16 +17,12 @@ Starter workspace to standardize npm package creation and migration with Changes
 
 - Root package `@i-santos/ship`: published CLI and reusable release orchestration engine.
 - `template/`: managed scaffold baseline used by the CLI.
-- `examples/hello-package`: generated reference package.
 
 ## Quickstart
 
 ```bash
 npm install
 npx @i-santos/ship --name @i-santos/hello-package
-cd examples/hello-package
-npm run check
-npm run changeset
 ```
 
 Published CLI:
