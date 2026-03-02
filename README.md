@@ -15,7 +15,7 @@ Starter workspace to standardize npm package creation and migration with Changes
 
 ## Architecture
 
-- `packages/create-package-starter`: published CLI package.
+- `packages/npmstack`: published CLI package.
 - `templates/npm-package`: workspace-local template used by `npm run create:package`.
 - `examples/hello-package`: generated reference package.
 

@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/i-santos/npmstack.git",
-    "directory": "packages/create-package-starter"
+    "directory": "packages/npmstack"
   },
   "bugs": {
     "url": "https://github.com/i-santos/npmstack/issues"
@@ -27,7 +27,7 @@
     "access": "public"
   },
   "bin": {
-    "npmstack": "bin/create-package-starter.js"
+    "npmstack": "bin/npmstack.js"
   },
   "files": [
     "bin",

@@ -72,7 +72,7 @@ jobs:
           file=".changeset/promote-stable-${{ github.run_id }}.md"
           cat > "$file" <<EOF
           ---
-          "@i-santos/create-package-starter": ${{ github.event.inputs.promote_type }}
+          "@i-santos/npmstack": ${{ github.event.inputs.promote_type }}
           ---
 
           ${{ github.event.inputs.summary }}
