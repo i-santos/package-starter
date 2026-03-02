@@ -1,5 +1,11 @@
 # @i-santos/npmstack
 
+## 0.1.0-beta.2
+
+### Patch Changes
+
+- 0bc5fe0: Fail fast in `ship release-cycle` when the release workflow has already completed with failure, and include workflow run details plus failed log excerpt instead of waiting for npm propagation timeout.
+
 ## 0.1.0-beta.1
 
 ### Minor Changes
