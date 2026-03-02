@@ -16,6 +16,7 @@ Starter workspace to standardize npm package creation and migration with Changes
 ## Architecture
 
 - `packages/npmstack`: published CLI package.
+- `packages/ship`: reusable release-cycle orchestration engine used by npmstack.
 - `templates/npm-package`: workspace-local template used by `npm run create:package`.
 - `examples/hello-package`: generated reference package.
 
