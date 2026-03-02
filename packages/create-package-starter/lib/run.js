@@ -2218,7 +2218,11 @@ function validateNpmPublishedPackages(packageTargets, expectedTag, timeoutMinute
       }
 
       const versionMatches = isStableTrack ? observedVersion === target.version : true;
-      const tagMatches = observedTagVersion === target.version;
+      const prereleaseFallbackMatches = !isStableTrack
+        && !observedTagVersion
+        && observedVersion === target.version
+        && String(target.version).includes('-');
+      const tagMatches = observedTagVersion === target.version || prereleaseFallbackMatches;
       const passed = versionMatches && tagMatches;
       if (!passed) {
         allPass = false;
