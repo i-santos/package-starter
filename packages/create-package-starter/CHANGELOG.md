@@ -1,5 +1,11 @@
 # @i-santos/create-package-starter
 
+## 1.5.0-beta.14
+
+### Patch Changes
+
+- 9f4034e: Fix `release-cycle` to handle successful direct publish runs (without opening a release PR) and avoid timeout waiting for a PR that will never be created. Also improves npm validation target resolution for this path by deriving package metadata from repository manifests/workspaces with optional `--npm-package` override.
+
 ## 1.5.0-beta.13
 
 ### Patch Changes
