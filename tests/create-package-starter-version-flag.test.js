@@ -2,10 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-const { run } = require('../packages/ship/lib/run');
+const { run } = require('../lib/run');
 
 test('ship prints version with --version and -v', async () => {
-  const packageJsonPath = path.resolve(__dirname, '..', 'packages', 'ship', 'package.json');
+  const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
   const expectedVersion = require(packageJsonPath).version;
   const outputs = [];
   const originalLog = console.log;

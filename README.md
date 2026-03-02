@@ -6,6 +6,12 @@
 
 Starter workspace to standardize npm package creation and migration with Changesets.
 
+## Documentation
+
+- Complete API and usage guide: [docs/ship-api.md](./docs/ship-api.md)
+- PR orchestration deep dive: [docs/pr-orchestration.md](./docs/pr-orchestration.md)
+- Release auth (GitHub App): [docs/release-auth-github-app.md](./docs/release-auth-github-app.md)
+
 ## What This Solves
 
 - Standardized npm package DX with one scaffold/migration command.
@@ -15,18 +21,14 @@ Starter workspace to standardize npm package creation and migration with Changes
 
 ## Architecture
 
-- `packages/ship`: published CLI package and reusable release orchestration engine.
-- `templates/npm-package`: workspace-local template used by `npm run create:package`.
-- `examples/hello-package`: generated reference package.
+- Root package `@i-santos/ship`: published CLI and reusable release orchestration engine.
+- `template/`: managed scaffold baseline used by the CLI.
 
 ## Quickstart
 
 ```bash
 npm install
-npm run create:package -- --name @i-santos/hello-package
-cd examples/hello-package
-npm run check
-npm run changeset
+npx @i-santos/ship --name @i-santos/hello-package
 ```
 
 Published CLI:

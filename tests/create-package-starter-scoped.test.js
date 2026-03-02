@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 test('ship accepts scoped package names and includes required standards files', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-scoped-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'ship', 'bin', 'ship.js');
+  const binPath = path.resolve(__dirname, '..', 'bin', 'ship.js');
 
   const result = spawnSync('node', [binPath, '--name', '@i-santos/swarm', '--out', outDir], {
     encoding: 'utf8'
@@ -50,7 +50,7 @@ test('ship accepts scoped package names and includes required standards files', 
 
 test('ship supports custom default branch flag', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-custom-branch-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'ship', 'bin', 'ship.js');
+  const binPath = path.resolve(__dirname, '..', 'bin', 'ship.js');
 
   const result = spawnSync('node', [binPath, '--name', 'branchy-package', '--out', outDir, '--default-branch', 'develop'], {
     encoding: 'utf8'
@@ -68,7 +68,7 @@ test('ship supports custom default branch flag', () => {
 
 test('ship supports release auth mode app in release workflow', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-release-auth-app-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'ship', 'bin', 'ship.js');
+  const binPath = path.resolve(__dirname, '..', 'bin', 'ship.js');
 
   const result = spawnSync('node', [binPath, '--name', 'auth-app-package', '--out', outDir, '--release-auth', 'app'], {
     encoding: 'utf8'
