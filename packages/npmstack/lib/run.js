@@ -40,6 +40,7 @@ const INIT_CREATE_ONLY_FILES = new Set(['README.md', 'CONTRIBUTING.md']);
 function usage() {
   return [
     'Usage:',
+    '  npmstack --version',
     '  npmstack --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
     '  npmstack init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
     '  npmstack setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
@@ -801,6 +802,13 @@ function validateReleaseAuthMode(mode, flagName = '--release-auth') {
 }
 
 function parseArgs(argv) {
+  if (argv[0] === '--version' || argv[0] === '-v') {
+    return {
+      mode: 'version',
+      args: {}
+    };
+  }
+
   if (argv[0] === 'init') {
     const args = parseInitArgs(argv.slice(1));
     validateReleaseAuthMode(args.releaseAuth);
@@ -4718,6 +4726,13 @@ function setupGithub(args, dependencies = {}) {
 
 async function run(argv, dependencies = {}) {
   const parsed = parseArgs(argv);
+
+  if (parsed.mode === 'version') {
+    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
+    const packageJson = readJsonFile(packageJsonPath);
+    console.log(packageJson.version);
+    return;
+  }
 
   if (parsed.args.help) {
     console.log(usage());
