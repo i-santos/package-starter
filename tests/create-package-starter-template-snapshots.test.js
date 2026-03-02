@@ -83,7 +83,7 @@ test('template package.json snapshot', () => {
   assert.equal(pkg.scripts['beta:exit'], 'changeset pre exit');
   assert.equal(pkg.scripts['beta:version'], 'changeset version');
   assert.equal(pkg.scripts['beta:publish'], 'changeset publish');
-  assert.equal(pkg.scripts['beta:promote'], 'create-package-starter promote-stable --dir .');
+  assert.equal(pkg.scripts['beta:promote'], 'npmstack promote-stable --dir .');
   assert.equal(pkg.scripts['release:beta'], undefined);
   assert.equal(pkg.devDependencies['@changesets/cli'], '^2.29.7');
 });

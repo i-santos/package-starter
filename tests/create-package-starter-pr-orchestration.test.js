@@ -180,7 +180,7 @@ test('release-cycle with auto-merge does not explicitly merge code PR', async ()
       : null),
     (command, args) => {
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.1.0-beta.0' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '2.1.0-beta.0' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
       return null;
@@ -270,7 +270,7 @@ test('release-cycle full uses release PR matching beta track base branch', async
       : null),
     (command, args) => {
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.3.0-beta.0' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '2.3.0-beta.0' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
       return null;
@@ -315,7 +315,7 @@ test('release-cycle auto mode detects publish on changeset-release branch and en
       : null),
     (command, args) => {
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.1.0-beta.0' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '1.1.0-beta.0' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
       return null;
@@ -359,7 +359,7 @@ test('deterministic PR body renderer merges template placeholder and changeset m
   fs.writeFileSync(path.join(tmpDir, '.github', 'PULL_REQUEST_TEMPLATE.md'), '## Custom Header\n\n<!-- GENERATED_PR_BODY -->\n');
   fs.writeFileSync(path.join(tmpDir, '.changeset', 'demo.md'), [
     '---',
-    '"@i-santos/create-package-starter": minor',
+    '"@i-santos/npmstack": minor',
     '---',
     '',
     'changes'
@@ -382,7 +382,7 @@ test('deterministic PR body renderer merges template placeholder and changeset m
 
   assert.match(body, /## Custom Header/);
   assert.match(body, /## Summary/);
-  assert.match(body, /@i-santos\/create-package-starter/);
+  assert.match(body, /@i-santos\/npmstack/);
   assert.match(body, /## Checklist/);
 });
 
@@ -443,7 +443,7 @@ test('release-cycle --promote-stable dispatches workflow and does not push relea
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"latest":"1.2.3"}\n' } : null),
     (command, args) => {
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=main')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.2.3' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '1.2.3' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
       return null;
@@ -481,7 +481,7 @@ test('release-cycle validates npm tag and version for beta track', async () => {
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
     (command, args) => {
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.2.3-beta.0' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '1.2.3-beta.0' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
       return null;
@@ -518,27 +518,27 @@ test('release-cycle resolves npm target package from release PR files in monorep
       }
 
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/packages/create-package-starter/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.5.0-beta.11' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '1.5.0-beta.11' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
 
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: 'package-starter', version: '1.0.0' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: 'npmstack', version: '1.0.0' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
 
       return null;
     },
     (command, args) => {
-      if (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/create-package-starter' && args[2] === 'version') {
+      if (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/npmstack' && args[2] === 'version') {
         return { status: 0, stdout: '"1.4.0"\n' };
       }
 
-      if (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/create-package-starter' && args[2] === 'dist-tags') {
+      if (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/npmstack' && args[2] === 'dist-tags') {
         return { status: 0, stdout: '{"beta":"1.5.0-beta.11","latest":"1.4.0"}\n' };
       }
 
-      if (command === 'npm' && args[0] === 'view' && args[1] === 'package-starter') {
+      if (command === 'npm' && args[0] === 'view' && args[1] === 'npmstack') {
         return { status: 0, stdout: '"0.2.1"\n' };
       }
 
@@ -553,8 +553,8 @@ test('release-cycle resolves npm target package from release PR files in monorep
     .filter((call) => call.command === 'npm' && call.args[0] === 'view')
     .map((call) => `${call.args[1]}:${call.args[2]}`);
 
-  assert.ok(npmCalls.includes('@i-santos/create-package-starter:dist-tags'), 'expected validation on workspace package');
-  assert.equal(npmCalls.some((entry) => entry.startsWith('package-starter:')), false, 'expected root package not to be validated');
+  assert.ok(npmCalls.includes('@i-santos/npmstack:dist-tags'), 'expected validation on workspace package');
+  assert.equal(npmCalls.some((entry) => entry.startsWith('npmstack:')), false, 'expected root package not to be validated');
 });
 
 test('release-cycle skips cleanup with --no-cleanup', async () => {
@@ -573,7 +573,7 @@ test('release-cycle skips cleanup with --no-cleanup', async () => {
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
     (command, args) => {
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.0.0-beta.1' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '2.0.0-beta.1' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
       return null;
@@ -688,7 +688,7 @@ test('release-cycle resumes from release phase when code branch is already integ
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null),
     (command, args) => {
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '2.2.0-beta.0' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '2.2.0-beta.0' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
       return null;
@@ -798,16 +798,16 @@ test('release-cycle handles direct publish path when no release PR is created', 
       }
 
       if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
-        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/create-package-starter', version: '1.6.0-beta.0' }), 'utf8').toString('base64');
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '1.6.0-beta.0' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
 
       return null;
     },
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/create-package-starter' && args[2] === 'version'
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/npmstack' && args[2] === 'version'
       ? { status: 0, stdout: '"1.4.0"\n' }
       : null),
-    (command, args) => (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/create-package-starter' && args[2] === 'dist-tags'
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/npmstack' && args[2] === 'dist-tags'
       ? { status: 0, stdout: '{"beta":"1.6.0-beta.0"}\n' }
       : null),
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),

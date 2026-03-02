@@ -19,7 +19,7 @@ const RELEASE_AUTH_DOC_LINKS = {
   create: 'https://docs.github.com/apps/creating-github-apps/registering-a-github-app/registering-a-github-app',
   install: 'https://docs.github.com/apps/using-github-apps/installing-your-own-github-app',
   secrets: 'https://docs.github.com/actions/security-guides/using-secrets-in-github-actions',
-  internal: 'https://github.com/i-santos/package-starter/blob/main/docs/release-auth-github-app.md'
+  internal: 'https://github.com/i-santos/npmstack/blob/main/docs/release-auth-github-app.md'
 };
 
 const MANAGED_FILE_SPECS = [
@@ -40,28 +40,28 @@ const INIT_CREATE_ONLY_FILES = new Set(['README.md', 'CONTRIBUTING.md']);
 function usage() {
   return [
     'Usage:',
-    '  create-package-starter --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
-    '  create-package-starter init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
-    '  create-package-starter setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
-    '  create-package-starter setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
-    '  create-package-starter open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
-    '  create-package-starter release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
-    '  create-package-starter promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
-    '  create-package-starter setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
+    '  npmstack --name <name> [--out <directory>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger]',
+    '  npmstack init [--dir <directory>] [--force] [--cleanup-legacy-release] [--scope <scope>] [--default-branch <branch>] [--with-github] [--with-npm] [--with-beta] [--repo <owner/repo>] [--beta-branch <branch>] [--ruleset <path>] [--release-auth github-token|pat|app|manual-trigger] [--dry-run] [--yes]',
+    '  npmstack setup-github [--repo <owner/repo>] [--default-branch <branch>] [--ruleset <path>] [--dry-run]',
+    '  npmstack setup-beta [--dir <directory>] [--repo <owner/repo>] [--beta-branch <branch>] [--default-branch <branch>] [--release-auth github-token|pat|app|manual-trigger] [--force] [--dry-run] [--yes]',
+    '  npmstack open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>] [--body <text>] [--body-file <path>] [--template <path>] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--yes] [--dry-run]',
+    '  npmstack release-cycle [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full] [--track auto|beta|stable] [--promote-stable] [--promote-type patch|minor|major] [--promote-summary <text>] [--head <branch>] [--base <branch>] [--title <text>] [--body-file <path>] [--npm-package <name>] [--update-pr-description] [--draft] [--auto-merge] [--watch-checks] [--check-timeout <minutes>] [--confirm-merges] [--merge-when-green] [--merge-method squash|merge|rebase] [--wait-release-pr] [--release-pr-timeout <minutes>] [--merge-release-pr] [--verify-npm] [--confirm-cleanup] [--sync-base auto|rebase|merge|off] [--no-resume] [--no-cleanup] [--yes] [--dry-run]',
+    '  npmstack promote-stable [--dir <directory>] [--type patch|minor|major] [--summary <text>] [--dry-run]',
+    '  npmstack setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '',
     'Examples:',
-    '  create-package-starter --name hello-package',
-    '  create-package-starter --name @i-santos/swarm --out ./packages --release-auth pat',
-    '  create-package-starter init --dir ./my-package',
-    '  create-package-starter init --cleanup-legacy-release',
-    '  create-package-starter setup-github --repo i-santos/firestack --dry-run',
-    '  create-package-starter init --dir . --with-github --with-beta --with-npm --yes',
-    '  create-package-starter setup-beta --dir . --beta-branch release/beta --release-auth app',
-    '  create-package-starter open-pr --auto-merge --watch-checks',
-    '  create-package-starter release-cycle --yes',
-    '  create-package-starter release-cycle --promote-stable --promote-type minor --yes',
-    '  create-package-starter promote-stable --dir . --type patch --summary "Promote beta to stable"',
-    '  create-package-starter setup-npm --dir . --publish-first'
+    '  npmstack --name hello-package',
+    '  npmstack --name @i-santos/swarm --out ./packages --release-auth pat',
+    '  npmstack init --dir ./my-package',
+    '  npmstack init --cleanup-legacy-release',
+    '  npmstack setup-github --repo i-santos/firestack --dry-run',
+    '  npmstack init --dir . --with-github --with-beta --with-npm --yes',
+    '  npmstack setup-beta --dir . --beta-branch release/beta --release-auth app',
+    '  npmstack open-pr --auto-merge --watch-checks',
+    '  npmstack release-cycle --yes',
+    '  npmstack release-cycle --promote-stable --promote-type minor --yes',
+    '  npmstack promote-stable --dir . --type patch --summary "Promote beta to stable"',
+    '  npmstack setup-npm --dir . --publish-first'
   ].join('\n');
 }
 
@@ -2741,7 +2741,7 @@ function configureExistingPackage(packageDir, templateDir, options) {
     'beta:exit': 'changeset pre exit',
     'beta:version': 'changeset version',
     'beta:publish': 'changeset publish',
-    'beta:promote': 'create-package-starter promote-stable --dir .'
+    'beta:promote': 'npmstack promote-stable --dir .'
   };
 
   let packageJsonChanged = false;
@@ -4224,7 +4224,7 @@ function runNpmSetup(args, dependencies = {}, options = {}) {
   }
 
   if (!existsOnNpm && !shouldPublishFirst) {
-    summary.warnings.push(`package "${packageJson.name}" was not found on npm. Run "create-package-starter setup-npm --dir ${targetDir} --publish-first" to perform first publish.`);
+    summary.warnings.push(`package "${packageJson.name}" was not found on npm. Run "npmstack setup-npm --dir ${targetDir} --publish-first" to perform first publish.`);
   }
 
   if (!existsOnNpm && shouldPublishFirst) {
@@ -4332,7 +4332,7 @@ async function setupBeta(args, dependencies = {}) {
     'beta:exit': 'changeset pre exit',
     'beta:version': 'changeset version',
     'beta:publish': 'changeset publish',
-    'beta:promote': 'create-package-starter promote-stable --dir .'
+    'beta:promote': 'npmstack promote-stable --dir .'
   };
 
   let packageJsonChanged = false;

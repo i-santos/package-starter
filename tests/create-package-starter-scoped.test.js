@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-test('create-package-starter accepts scoped package names and includes required standards files', () => {
+test('npmstack accepts scoped package names and includes required standards files', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-scoped-'));
   const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
 
@@ -29,7 +29,7 @@ test('create-package-starter accepts scoped package names and includes required 
   assert.equal(packageJson.scripts['beta:exit'], 'changeset pre exit');
   assert.equal(packageJson.scripts['beta:version'], 'changeset version');
   assert.equal(packageJson.scripts['beta:publish'], 'changeset publish');
-  assert.equal(packageJson.scripts['beta:promote'], 'create-package-starter promote-stable --dir .');
+  assert.equal(packageJson.scripts['beta:promote'], 'npmstack promote-stable --dir .');
   assert.equal(packageJson.scripts['release:beta'], undefined);
   assert.equal(packageJson.scripts['release:stable'], undefined);
   assert.equal(packageJson.scripts['release:publish'], undefined);
@@ -48,7 +48,7 @@ test('create-package-starter accepts scoped package names and includes required 
   assert.equal(fs.existsSync(path.join(createdDir, 'CONTRIBUTING.md')), true);
 });
 
-test('create-package-starter supports custom default branch flag', () => {
+test('npmstack supports custom default branch flag', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-custom-branch-'));
   const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
 
@@ -66,7 +66,7 @@ test('create-package-starter supports custom default branch flag', () => {
   assert.match(release, /- develop/);
 });
 
-test('create-package-starter supports release auth mode app in release workflow', () => {
+test('npmstack supports release auth mode app in release workflow', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-release-auth-app-'));
   const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
 
