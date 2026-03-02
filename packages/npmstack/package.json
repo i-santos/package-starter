@@ -1,6 +1,6 @@
 {
   "name": "@i-santos/npmstack",
-  "version": "2.0.0-beta.15",
+  "version": "2.0.0-beta.16",
   "description": "Scaffold new npm packages with a standardized Changesets release workflow",
   "license": "MIT",
   "author": "Igor Santos",
