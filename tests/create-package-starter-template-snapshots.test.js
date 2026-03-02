@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const templateRoot = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'template');
+const templateRoot = path.resolve(__dirname, '..', 'packages', 'npmstack', 'template');
 
 function read(relativePath) {
   return fs.readFileSync(path.join(templateRoot, relativePath), 'utf8');

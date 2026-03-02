@@ -7,7 +7,7 @@ const { spawnSync } = require('node:child_process');
 
 test('npmstack accepts scoped package names and includes required standards files', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-scoped-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
+  const binPath = path.resolve(__dirname, '..', 'packages', 'npmstack', 'bin', 'npmstack.js');
 
   const result = spawnSync('node', [binPath, '--name', '@i-santos/swarm', '--out', outDir], {
     encoding: 'utf8'
@@ -50,7 +50,7 @@ test('npmstack accepts scoped package names and includes required standards file
 
 test('npmstack supports custom default branch flag', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-custom-branch-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
+  const binPath = path.resolve(__dirname, '..', 'packages', 'npmstack', 'bin', 'npmstack.js');
 
   const result = spawnSync('node', [binPath, '--name', 'branchy-package', '--out', outDir, '--default-branch', 'develop'], {
     encoding: 'utf8'
@@ -68,7 +68,7 @@ test('npmstack supports custom default branch flag', () => {
 
 test('npmstack supports release auth mode app in release workflow', () => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'create-release-auth-app-'));
-  const binPath = path.resolve(__dirname, '..', 'packages', 'create-package-starter', 'bin', 'create-package-starter.js');
+  const binPath = path.resolve(__dirname, '..', 'packages', 'npmstack', 'bin', 'npmstack.js');
 
   const result = spawnSync('node', [binPath, '--name', 'auth-app-package', '--out', outDir, '--release-auth', 'app'], {
     encoding: 'utf8'

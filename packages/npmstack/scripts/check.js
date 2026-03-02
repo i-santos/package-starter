@@ -2,7 +2,7 @@
 
 const { spawnSync } = require('child_process');
 
-const result = spawnSync('node', ['bin/create-package-starter.js', '--help'], {
+const result = spawnSync('node', ['bin/npmstack.js', '--help'], {
   cwd: process.cwd(),
   stdio: 'inherit'
 });

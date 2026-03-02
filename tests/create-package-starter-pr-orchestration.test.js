@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { run, renderPrBodyDeterministic } = require('../packages/create-package-starter/lib/run');
+const { run, renderPrBodyDeterministic } = require('../packages/npmstack/lib/run');
 
 function createExecStub(handlers) {
   const calls = [];
@@ -538,13 +538,13 @@ test('release-cycle resolves npm target package from release PR files in monorep
         return {
           status: 0,
           stdout: JSON.stringify([
-            { filename: 'packages/create-package-starter/package.json', status: 'modified' },
+            { filename: 'packages/npmstack/package.json', status: 'modified' },
             { filename: 'examples/hello-package/package.json', status: 'modified' }
           ])
         };
       }
 
-      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/packages/create-package-starter/package.json?ref=release%2Fbeta')) {
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/packages/npmstack/package.json?ref=release%2Fbeta')) {
         const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/npmstack', version: '1.5.0-beta.11' }), 'utf8').toString('base64');
         return { status: 0, stdout: JSON.stringify({ content: encoded }) };
       }
