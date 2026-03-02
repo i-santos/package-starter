@@ -1,13 +1,40 @@
 {
-  "name": "ship",
-  "private": true,
-  "version": "1.0.0",
-  "workspaces": [
-    "packages/*",
-    "examples/*"
+  "name": "@i-santos/ship",
+  "version": "1.0.0-beta.5",
+  "description": "Reusable release orchestration engine for PR/release flows",
+  "license": "MIT",
+  "author": "Igor Santos",
+  "homepage": "https://github.com/i-santos/ship#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/i-santos/ship.git"
+  },
+  "bugs": {
+    "url": "https://github.com/i-santos/ship/issues"
+  },
+  "keywords": [
+    "release",
+    "orchestration",
+    "cli",
+    "github",
+    "workflow"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "ship": "bin/ship.js"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "template",
+    "README.md"
   ],
   "scripts": {
-    "create:package": "node scripts/create-package.js",
     "check": "npm run test",
     "test": "node --test tests/*.test.js",
     "changeset": "changeset",

@@ -15,15 +15,15 @@ Starter workspace to standardize npm package creation and migration with Changes
 
 ## Architecture
 
-- `packages/ship`: published CLI package and reusable release orchestration engine.
-- `templates/npm-package`: workspace-local template used by `npm run create:package`.
+- Root package `@i-santos/ship`: published CLI and reusable release orchestration engine.
+- `template/`: managed scaffold baseline used by the CLI.
 - `examples/hello-package`: generated reference package.
 
 ## Quickstart
 
 ```bash
 npm install
-npm run create:package -- --name @i-santos/hello-package
+npx @i-santos/ship --name @i-santos/hello-package
 cd examples/hello-package
 npm run check
 npm run changeset

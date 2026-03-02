@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { run, loadShipConfig } = require('../packages/ship/lib/run');
+const { run, loadShipConfig } = require('../lib/run');
 
 test('ship loads default config when .ship.json is missing', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-default-'));
@@ -13,7 +13,7 @@ test('ship loads default config when .ship.json is missing', () => {
 });
 
 test('ship prints version with --version', async () => {
-  const packageJsonPath = path.resolve(__dirname, '..', 'packages', 'ship', 'package.json');
+  const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
   const expectedVersion = require(packageJsonPath).version;
   const outputs = [];
   const originalLog = console.log;
@@ -26,4 +26,3 @@ test('ship prints version with --version', async () => {
 
   assert.deepEqual(outputs, [expectedVersion]);
 });
-

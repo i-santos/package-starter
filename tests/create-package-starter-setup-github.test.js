@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { run } = require('../packages/ship/lib/run');
+const { run } = require('../lib/run');
 
 function createExecStub(handlers) {
   const calls = [];
