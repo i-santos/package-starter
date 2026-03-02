@@ -1721,6 +1721,61 @@ function getLatestWorkflowRunForBranch(repo, branch, deps) {
   return parsed[0];
 }
 
+function getLatestReleaseWorkflowRunForBranch(repo, branch, deps) {
+  const run = getLatestWorkflowRunForBranch(repo, branch, deps);
+  if (!run) {
+    return null;
+  }
+
+  const workflowName = String(run.workflowName || '').toLowerCase();
+  if (!workflowName.includes('release')) {
+    return null;
+  }
+
+  return run;
+}
+
+function buildWorkflowFailureMessage(repo, run, deps) {
+  const lines = [
+    'Release workflow failed before npm propagation could complete.',
+    `workflow: ${run.workflowName || 'unknown'}`,
+    `status: ${run.status || 'unknown'}`,
+    `conclusion: ${run.conclusion || 'unknown'}`
+  ];
+
+  if (run.url) {
+    lines.push(`url: ${run.url}`);
+  }
+
+  if (run.databaseId) {
+    const failedLogs = deps.exec('gh', ['run', 'view', String(run.databaseId), '--repo', repo, '--log-failed']);
+    if (failedLogs.status === 0 && String(failedLogs.stdout || '').trim()) {
+      const snippet = String(failedLogs.stdout)
+        .trim()
+        .split('\n')
+        .slice(0, 40)
+        .join('\n');
+      lines.push('', 'failed log excerpt:', snippet);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function assertReleaseWorkflowHealthyOrThrow(repo, branch, deps) {
+  const run = getLatestReleaseWorkflowRunForBranch(repo, branch, deps);
+  if (!run) {
+    return;
+  }
+
+  const completed = String(run.status || '').toLowerCase() === 'completed';
+  const successfulConclusions = new Set(['success', 'neutral', 'skipped']);
+  const conclusion = String(run.conclusion || '').toLowerCase();
+  if (completed && !successfulConclusions.has(conclusion)) {
+    throw new Error(buildWorkflowFailureMessage(repo, run, deps));
+  }
+}
+
 function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, deps, options = {}) {
   const timeoutAt = nowMs(deps) + timeoutMinutes * 60 * 1000;
   let lastReadiness = null;
@@ -3383,6 +3438,8 @@ async function runReleaseCycle(args, dependencies = {}) {
       reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
       const targetRef = args.promoteStable ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
       const expectedTag = requestedTrack === 'stable' ? 'latest' : 'beta';
+      const workflowBranch = expectedTag === 'latest' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
+      assertReleaseWorkflowHealthyOrThrow(gitContext.repo, workflowBranch, deps);
       const targetPackages = resolveExpectedNpmPackages(
         gitContext.repo,
         mergedReleasePr && mergedReleasePr.number ? mergedReleasePr.number : 0,
@@ -3398,6 +3455,7 @@ async function runReleaseCycle(args, dependencies = {}) {
         {
           ...deps,
           onNpmValidationProgress: ({ expectedTag: expectedTagValue, observations }) => {
+            assertReleaseWorkflowHealthyOrThrow(gitContext.repo, workflowBranch, deps);
             const statusLine = Object.values(observations)
               .map((entry) => `${entry.name}: expected ${expectedTagValue}=${entry.expectedVersion}, observed version=${entry.observedVersion || 'n/a'}, ${expectedTagValue}=${entry.observedTagVersion || 'n/a'}`)
               .join(' | ');
@@ -3531,6 +3589,8 @@ async function runReleaseCycle(args, dependencies = {}) {
     reporter.start('release-cycle-verify-npm', 'Validating npm publish and dist-tag...');
     const targetRef = effectivePublishTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
     const expectedTag = effectivePublishTrack === 'stable' ? 'latest' : 'beta';
+    const workflowBranch = expectedTag === 'latest' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH;
+    assertReleaseWorkflowHealthyOrThrow(gitContext.repo, workflowBranch, deps);
     const targetPackages = resolveExpectedNpmPackages(
       gitContext.repo,
       releasePr.number,
@@ -3546,6 +3606,7 @@ async function runReleaseCycle(args, dependencies = {}) {
       {
         ...deps,
         onNpmValidationProgress: ({ expectedTag: expectedTagValue, observations }) => {
+          assertReleaseWorkflowHealthyOrThrow(gitContext.repo, workflowBranch, deps);
           const statusLine = Object.values(observations)
             .map((entry) => `${entry.name}: expected ${expectedTagValue}=${entry.expectedVersion}, observed version=${entry.observedVersion || 'n/a'}, ${expectedTagValue}=${entry.observedTagVersion || 'n/a'}`)
             .join(' | ');
