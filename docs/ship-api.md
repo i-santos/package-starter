@@ -20,6 +20,7 @@ It is designed to reduce manual release operations and standardize release workf
 - pull request orchestration (`open-pr`)
 - end-to-end release orchestration (`release`)
 - stable promotion workflow (`promote-stable`)
+- deterministic task state lifecycle bootstrap (`task`)
 
 ## Mental Model
 
@@ -202,6 +203,32 @@ Main flags:
 - `--type <patch|minor|major>`
 - `--summary <text>`
 - `--dry-run`
+
+## `ship task`
+
+Task lifecycle entrypoint (v1 bootstrap).
+
+Current implemented actions:
+
+- `ship task new --type <feature|fix|chore|refactor|test> --title <text>`
+- `ship task plan --id <taskId>`
+- `ship task implement --id <taskId>`
+- `ship task verify --id <taskId>`
+- `ship task publish-ready --id <taskId>`
+- `ship task status --id <taskId>`
+- `ship task doctor`
+
+Common flags:
+
+- `--dir <directory>`
+- `--json`
+- `--dry-run`
+- `--yes`
+
+State files are managed under:
+
+- `.agents/state/tasks/*.json`
+- `.agents/state/ops.log`
 
 ## Agent-Focused Non-Interactive Usage
 

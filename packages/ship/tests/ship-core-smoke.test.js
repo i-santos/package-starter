@@ -143,3 +143,207 @@ test('ship fails fast when adapter does not implement release capability', async
     process.chdir(previousCwd);
   }
 });
+
+test('ship task new creates canonical task state files', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-new-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Critical API integration coverage']);
+
+    const agentsDir = path.join(workDir, '.agents');
+    const stateDir = path.join(agentsDir, 'state');
+    const tasksDir = path.join(stateDir, 'tasks');
+    const taskFiles = fs.readdirSync(tasksDir).filter((entry) => entry.endsWith('.json'));
+    assert.equal(taskFiles.length, 1);
+
+    const task = JSON.parse(fs.readFileSync(path.join(tasksDir, taskFiles[0]), 'utf8'));
+    assert.equal(task.status, 'new');
+    assert.equal(task.type, 'feature');
+    assert.match(task.taskId, /^tsk_\d{8}_\d{6}$/);
+
+    const opsLog = fs.readFileSync(path.join(stateDir, 'ops.log'), 'utf8');
+    assert.match(opsLog, /"action":"task.new"/);
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task status returns created task data in json mode', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-status-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Status lookup fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    outputs.length = 0;
+
+    await run(['task', 'status', '--id', created.task.taskId, '--json']);
+    const statusPayload = JSON.parse(outputs[0]);
+    assert.equal(statusPayload.task.taskId, created.task.taskId);
+    assert.equal(statusPayload.task.status, 'new');
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task doctor reports checks in json mode', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-doctor-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'doctor', '--json']);
+    const payload = JSON.parse(outputs[0]);
+    assert.equal(payload.action, 'doctor');
+    assert.ok(Array.isArray(payload.checks));
+    assert.ok(payload.checks.some((check) => check.name === 'engine'));
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task plan transitions task to planned and writes plan file', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-plan-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Plan fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    outputs.length = 0;
+
+    await run(['task', 'plan', '--id', created.task.taskId, '--json']);
+    const planned = JSON.parse(outputs[0]);
+    assert.equal(planned.task.status, 'planned');
+    assert.ok(planned.task.artifacts.planFile);
+    assert.equal(fs.existsSync(path.resolve(workDir, planned.task.artifacts.planFile)), true);
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task verify transitions implemented task to verified and writes report file', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-verify-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Verify fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
+    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    existing.status = 'implemented';
+    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    outputs.length = 0;
+
+    await run(['task', 'verify', '--id', created.task.taskId, '--json']);
+    const verified = JSON.parse(outputs[0]);
+    assert.equal(verified.task.status, 'verified');
+    assert.equal(verified.task.checks.unit, 'pass');
+    assert.ok(verified.task.artifacts.reportFile);
+    assert.equal(fs.existsSync(path.resolve(workDir, verified.task.artifacts.reportFile)), true);
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task implement transitions tdd_ready task to implemented and writes implementation file', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-implement-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Implement fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
+    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    existing.status = 'tdd_ready';
+    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    outputs.length = 0;
+
+    await run(['task', 'implement', '--id', created.task.taskId, '--json']);
+    const implemented = JSON.parse(outputs[0]);
+    assert.equal(implemented.task.status, 'implemented');
+    assert.ok(implemented.task.artifacts.implementationFile);
+    assert.equal(fs.existsSync(path.resolve(workDir, implemented.task.artifacts.implementationFile)), true);
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task publish-ready transitions verified task to publish_ready', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-publish-ready-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Publish ready fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
+    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    existing.status = 'verified';
+    existing.checks = { unit: 'pass', integration: 'pass', e2e: 'not_required' };
+    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    outputs.length = 0;
+
+    await run(['task', 'publish-ready', '--id', created.task.taskId, '--json']);
+    const publishReady = JSON.parse(outputs[0]);
+    assert.equal(publishReady.task.status, 'publish_ready');
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task publish-ready rejects when required checks did not pass', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-publish-ready-fail-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Publish ready fail fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
+    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    existing.status = 'verified';
+    existing.checks = { unit: 'fail', integration: 'pass', e2e: 'not_required' };
+    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+
+    await assert.rejects(
+      () => run(['task', 'publish-ready', '--id', created.task.taskId, '--json']),
+      /Cannot mark task as publish_ready/
+    );
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
