@@ -2012,6 +2012,18 @@ function validateShipConfig(config = {}) {
     }
   }
 
+  if (firebase.healthcheckUrls !== undefined) {
+    if (!firebase.healthcheckUrls || typeof firebase.healthcheckUrls !== 'object' || Array.isArray(firebase.healthcheckUrls)) {
+      errors.push('"firebase.healthcheckUrls" must be an object when provided.');
+    } else {
+      for (const [env, url] of Object.entries(firebase.healthcheckUrls)) {
+        if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
+          errors.push(`"firebase.healthcheckUrls.${env}" must be an absolute http(s) URL.`);
+        }
+      }
+    }
+  }
+
   if (typeof deploy.workflow !== 'string' || !deploy.workflow.trim()) {
     errors.push('"deploy.workflow" is required when adapter="firebase".');
   }
