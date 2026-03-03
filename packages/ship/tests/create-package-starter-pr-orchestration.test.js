@@ -128,6 +128,48 @@ test('open-pr updates existing PR when head/base already has one', async () => {
   assert.equal(createCall, undefined);
 });
 
+test('open-pr links PR to task when --task-id is provided', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-openpr-task-link-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    fs.mkdirSync(path.join(workDir, '.agents', 'state', 'tasks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000001.json'),
+      JSON.stringify({ taskId: 'tsk_20260303_000001', status: 'publish_ready' }, null, 2)
+    );
+
+    const stub = createExecStub([
+      ...baseHandlers(),
+      (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/task-link\n' } : null),
+      (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+      (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+        ? {
+          status: 0,
+          stdout: JSON.stringify([{
+            number: 55,
+            url: 'https://github.com/i-santos/firestack/pull/55',
+            headRefName: 'feat/task-link',
+            baseRefName: 'release/beta'
+          }])
+        }
+        : null)
+    ]);
+
+    await run(['open-pr', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000001', '--yes'], { exec: stub.exec });
+
+    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000001.json');
+    const updated = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    assert.equal(updated.release.prNumber, 55);
+
+    const opsLog = fs.readFileSync(path.join(workDir, '.agents', 'state', 'ops.log'), 'utf8');
+    assert.match(opsLog, /"action":"task.link-pr"/);
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
 test('release with auto-merge does not explicitly merge code PR', async () => {
   const calls = [];
   let listCall = 0;
@@ -208,6 +250,68 @@ test('release with auto-merge does not explicitly merge code PR', async () => {
     && call.args.includes('303')
     && call.args.includes('--auto'));
   assert.ok(codePrAutoMergeEnable, 'expected auto-merge enable call for code PR');
+});
+
+test('release marks task merged and released when --task-id is provided', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-release-task-link-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    fs.mkdirSync(path.join(workDir, '.agents', 'state', 'tasks'), { recursive: true });
+    fs.writeFileSync(
+      path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000002.json'),
+      JSON.stringify({ taskId: 'tsk_20260303_000002', status: 'publish_ready', release: { prNumber: 98 } }, null, 2)
+    );
+
+    const stub = createExecStub([
+      ...baseHandlers(),
+      (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+        ? {
+          status: 0,
+          stdout: JSON.stringify([{
+            number: 98,
+            url: 'https://github.com/i-santos/firestack/pull/98',
+            headRefName: 'changeset-release/release/beta',
+            baseRefName: 'release/beta'
+          }])
+        }
+        : null),
+      (command, args) => {
+        if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args.includes('mergeCommit')) {
+          return { status: 0, stdout: JSON.stringify({ mergeCommit: { oid: 'abc123merge' } }) };
+        }
+        if (command === 'gh' && args[0] === 'pr' && args[1] === 'view') {
+          return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) };
+        }
+        return null;
+      },
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+      (command, args) => {
+        if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+          const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/ship', version: '9.9.9-beta.1' }), 'utf8').toString('base64');
+          return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+        }
+        return null;
+      },
+      (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"9.9.9-beta.1"\n' } : null),
+      (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"9.9.9-beta.1"}\n' } : null),
+      (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
+    ]);
+
+    await run(['release', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000002', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+
+    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000002.json');
+    const updated = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    assert.equal(updated.release.mergeCommit, 'abc123merge');
+    assert.equal(updated.release.published, true);
+
+    const opsLog = fs.readFileSync(path.join(workDir, '.agents', 'state', 'ops.log'), 'utf8');
+    assert.match(opsLog, /"action":"task.merged"/);
+    assert.match(opsLog, /"action":"task.released"/);
+  } finally {
+    process.chdir(previousCwd);
+  }
 });
 
 test('release full uses release PR matching beta track base branch', async () => {

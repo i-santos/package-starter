@@ -71,11 +71,11 @@ const COMMAND_COMPLETION_SPEC = {
     }
   },
   'open-pr': {
-    options: ['--repo', '--base', '--head', '--title', '--pr-description', '--body', '--pr-description-file', '--body-file', '--template', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--yes', '--dry-run', '--help', '-h'],
+    options: ['--repo', '--base', '--head', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--template', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--yes', '--dry-run', '--help', '-h'],
     values: {}
   },
   release: {
-    options: ['--repo', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
+    options: ['--repo', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
     values: {
       '--mode': ['auto', 'open-pr', 'publish'],
       '--phase': ['code', 'full'],
@@ -577,6 +577,7 @@ function parseOpenPrArgs(argv) {
     base: '',
     head: '',
     title: '',
+    taskId: '',
     body: '',
     bodyFile: '',
     template: '',
@@ -612,6 +613,12 @@ function parseOpenPrArgs(argv) {
 
     if (token === '--title') {
       args.title = parseValueFlag(argv, i, '--title');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--task-id') {
+      args.taskId = parseValueFlag(argv, i, '--task-id');
       i += 1;
       continue;
     }
@@ -698,6 +705,7 @@ function parseReleaseCycleArgs(argv) {
     head: '',
     base: '',
     title: '',
+    taskId: '',
     body: '',
     bodyFile: '',
     npmPackages: [],
@@ -775,6 +783,12 @@ function parseReleaseCycleArgs(argv) {
 
     if (token === '--title') {
       args.title = parseValueFlag(argv, i, '--title');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--task-id') {
+      args.taskId = parseValueFlag(argv, i, '--task-id');
       i += 1;
       continue;
     }
@@ -1384,6 +1398,109 @@ function readTaskFile(taskFilePath) {
   return readJsonFile(taskFilePath);
 }
 
+function resolveTaskFilePath(taskId, config = {}, cwd = process.cwd()) {
+  if (!taskId) {
+    return '';
+  }
+  const taskConfig = resolveTaskConfig(config);
+  const stateDir = path.resolve(cwd, taskConfig.stateDir);
+  const tasksDir = path.join(stateDir, 'tasks');
+  return path.join(tasksDir, `${taskId}.json`);
+}
+
+function updateTaskRecord(taskId, config, cwd, updater) {
+  if (!taskId) {
+    return null;
+  }
+  const taskFilePath = resolveTaskFilePath(taskId, config, cwd);
+  const taskConfig = resolveTaskConfig(config);
+  const stateDir = path.resolve(cwd, taskConfig.stateDir);
+  const existing = readTaskFile(taskFilePath);
+  const next = updater(existing);
+  writeJsonFile(taskFilePath, next);
+  return {
+    taskFilePath,
+    stateDir,
+    task: next
+  };
+}
+
+function attachTaskPrReference(taskId, prNumber, config = {}, cwd = process.cwd(), options = {}) {
+  if (!taskId || !prNumber || options.dryRun) {
+    return null;
+  }
+
+  const nowIso = new Date().toISOString();
+  const result = updateTaskRecord(taskId, config, cwd, (existing) => ({
+    ...existing,
+    updatedAt: nowIso,
+    release: {
+      ...(existing.release || {}),
+      prNumber
+    }
+  }));
+
+  appendOperationLog(result.stateDir, {
+    timestamp: nowIso,
+    action: 'task.link-pr',
+    taskId,
+    prNumber
+  });
+
+  return result.task;
+}
+
+function markTaskMerged(taskId, mergeCommit, config = {}, cwd = process.cwd(), options = {}) {
+  if (!taskId || !mergeCommit || options.dryRun) {
+    return null;
+  }
+
+  const nowIso = new Date().toISOString();
+  const result = updateTaskRecord(taskId, config, cwd, (existing) => ({
+    ...existing,
+    updatedAt: nowIso,
+    release: {
+      ...(existing.release || {}),
+      mergeCommit
+    }
+  }));
+
+  appendOperationLog(result.stateDir, {
+    timestamp: nowIso,
+    action: 'task.merged',
+    taskId,
+    mergeCommit
+  });
+
+  return result.task;
+}
+
+function markTaskReleased(taskId, config = {}, cwd = process.cwd(), options = {}) {
+  if (!taskId || options.dryRun) {
+    return null;
+  }
+
+  const nowIso = new Date().toISOString();
+  const result = updateTaskRecord(taskId, config, cwd, (existing) => ({
+    ...existing,
+    status: 'released',
+    updatedAt: nowIso,
+    release: {
+      ...(existing.release || {}),
+      published: true
+    }
+  }));
+
+  appendOperationLog(result.stateDir, {
+    timestamp: nowIso,
+    action: 'task.released',
+    taskId,
+    status: 'released'
+  });
+
+  return result.task;
+}
+
 function ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir) {
   const contextDir = path.resolve(workingDir, '.agents/context');
   const docsDir = path.resolve(workingDir, 'docs');
@@ -1795,7 +1912,7 @@ function runOpenPrCore(args, adapter, dependencies = {}, config = {}) {
   validateAdapterForCapability(adapter, 'openPr');
   const normalized = normalizeArgsWithAdapter(adapter, args, 'open-pr');
   const adapted = applyOpenPrAdapterContext(adapter, normalized, config, dependencies);
-  return runOpenPrFlow(adapted, dependencies);
+  return runOpenPrFlow(adapted, dependencies, config);
 }
 
 function withShipConfigDefaults(args, config = {}) {
@@ -2920,6 +3037,37 @@ function getPrMergeState(repo, prNumber, deps) {
     state: String(parsed.state || '').toUpperCase(),
     mergedAt: parsed.mergedAt || ''
   };
+}
+
+function getPrMergeCommitSha(repo, prNumber, deps) {
+  const view = deps.exec('gh', [
+    'pr',
+    'view',
+    String(prNumber),
+    '--repo',
+    repo,
+    '--json',
+    'mergeCommit'
+  ]);
+  if (view.status !== 0) {
+    return '';
+  }
+
+  const parsed = parseJsonSafely(view.stdout || '{}', {});
+  const commit = parsed && parsed.mergeCommit ? parsed.mergeCommit : null;
+  if (!commit) {
+    return '';
+  }
+  if (typeof commit === 'string') {
+    return commit;
+  }
+  if (typeof commit.oid === 'string') {
+    return commit.oid;
+  }
+  if (typeof commit.id === 'string') {
+    return commit.id;
+  }
+  return '';
 }
 
 function waitForPrMerged(repo, prNumber, timeoutMinutes, deps) {
@@ -4091,7 +4239,7 @@ function execCommand(command, args, options = {}) {
   });
 }
 
-async function runOpenPrFlow(args, dependencies = {}) {
+async function runOpenPrFlow(args, dependencies = {}, config = {}) {
   const deps = {
     exec: dependencies.exec || execCommand
   };
@@ -4156,6 +4304,9 @@ async function runOpenPrFlow(args, dependencies = {}) {
   reporter.start('open-pr-upsert', 'Creating or updating pull request...');
   const prResult = createOrUpdatePr(context, generatedBody, args, deps);
   reporter.ok('open-pr-upsert', `PR ${prResult.action}: #${prResult.number}`);
+  if (args.taskId) {
+    attachTaskPrReference(args.taskId, prResult.number, config, process.cwd(), { dryRun: args.dryRun });
+  }
   summary.prAction = `${prResult.action} (#${prResult.number})`;
   summary.prUrl = prResult.url || 'n/a';
   summary.actionsPerformed.push(`pr ${prResult.action}: #${prResult.number}`);
@@ -4377,7 +4528,8 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
           skipPush: args.promoteStable,
           printSummary: false
         },
-        dependencies
+        dependencies,
+        config
       );
 
       codePr = openPrResult.pr;
@@ -4412,6 +4564,10 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
         waitForPrMerged(gitContext.repo, codePr.number, args.releasePrTimeout, deps);
         reporter.ok('release-wait-code-merge', `Code PR #${codePr.number} merged.`);
         summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
+        if (args.taskId) {
+          const mergeCommit = getPrMergeCommitSha(gitContext.repo, codePr.number, deps);
+          markTaskMerged(args.taskId, mergeCommit, config, process.cwd(), { dryRun: args.dryRun });
+        }
         summary.merge = `code pr merged (#${codePr.number})`;
       } else {
         summary.merge = args.dryRun ? 'dry-run: would merge code PR' : 'skipped';
@@ -4497,6 +4653,10 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
             reporter.ok('release-release-wait-merge', `Release PR #${releasePr.number} merged.`);
             summary.releasePr = `merged (#${releasePr.number})`;
             summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+            if (args.taskId) {
+              const mergeCommit = getPrMergeCommitSha(gitContext.repo, releasePr.number, deps);
+              markTaskMerged(args.taskId, mergeCommit, config, process.cwd(), { dryRun: args.dryRun });
+            }
             summary.autoMerge = 'enabled (code + release)';
             releaseCandidate = {
               type: 'release_pr',
@@ -4554,6 +4714,9 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
     }
 
     if (!args.dryRun && verificationPassed) {
+      if (args.taskId) {
+        markTaskReleased(args.taskId, config, process.cwd(), { dryRun: args.dryRun });
+      }
       if (args.confirmCleanup && !args.yes) {
         await confirmOrThrow('Release completed and post-merge validation passed.\nProceed with local cleanup now?');
       }
@@ -4653,6 +4816,10 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
       summary.releasePr = `merged (#${releasePr.number})`;
       summary.autoMerge = 'enabled (release)';
       summary.actionsPerformed.push(`release pr merged: #${releasePr.number}`);
+      if (args.taskId) {
+        const mergeCommit = getPrMergeCommitSha(gitContext.repo, releasePr.number, deps);
+        markTaskMerged(args.taskId, mergeCommit, config, process.cwd(), { dryRun: args.dryRun });
+      }
     }
   } else {
     summary.merge = 'skipped';
@@ -4708,6 +4875,9 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
   }
 
   if (!args.dryRun && verificationPassed) {
+    if (args.taskId) {
+      markTaskReleased(args.taskId, config, process.cwd(), { dryRun: args.dryRun });
+    }
     if (args.confirmCleanup && !args.yes) {
       await confirmOrThrow('Release completed and post-merge validation passed.\nProceed with local cleanup now?');
     }
