@@ -83,6 +83,7 @@ Configures an existing package directory to ship standards.
 Main flags:
 
 - `--dir <directory>`
+- `--adapter <npm|firebase>`
 - `--force`
 - `--cleanup-legacy-release`
 - `--default-branch <branch>`
@@ -249,6 +250,7 @@ Safe sequence:
 ```bash
 ship init --dir . --repo owner/repo --with-github --with-beta --with-npm --yes --dry-run
 ship init --dir . --repo owner/repo --with-github --with-beta --with-npm --yes
+ship init --dir . --adapter firebase --repo owner/repo --yes
 ship release --repo owner/repo --yes --dry-run
 ship release --repo owner/repo --yes
 ship release --repo owner/repo --targets auto --yes

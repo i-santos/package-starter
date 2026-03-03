@@ -49,8 +49,9 @@ const COMMAND_COMPLETION_SPEC = {
     }
   },
   init: {
-    options: ['--dir', '--force', '--cleanup-legacy-release', '--scope', '--default-branch', '--with-github', '--with-npm', '--with-beta', '--repo', '--beta-branch', '--ruleset', '--release-auth', '--dry-run', '--yes', '--help', '-h'],
+    options: ['--dir', '--adapter', '--force', '--cleanup-legacy-release', '--scope', '--default-branch', '--with-github', '--with-npm', '--with-beta', '--repo', '--beta-branch', '--ruleset', '--release-auth', '--dry-run', '--yes', '--help', '-h'],
     values: {
+      '--adapter': ['npm', 'firebase'],
       '--release-auth': ['github-token', 'pat', 'app', 'manual-trigger']
     }
   },
@@ -120,7 +121,7 @@ function usage() {
     '  ship --name <name> [--out <directory>] [--default-branch <branch>]',
     '    Create a new package from template.',
     '',
-    '  ship init [--dir <directory>] [--repo <owner/repo>] [--with-github] [--with-beta] [--with-npm] [--yes]',
+    '  ship init [--dir <directory>] [--adapter <npm|firebase>] [--repo <owner/repo>] [--with-github] [--with-beta] [--with-npm] [--yes]',
     '    Bootstrap an existing package with ship standards.',
     '',
     '  ship setup-github [--dir <directory>] [--repo <owner/repo>] [--default-branch <branch>] [--beta-branch <branch>] [--yes]',
@@ -230,6 +231,7 @@ function parseCreateArgs(argv) {
 function parseInitArgs(argv) {
   const args = {
     dir: process.cwd(),
+    adapter: 'npm',
     force: false,
     cleanupLegacyRelease: false,
     defaultBranch: DEFAULT_BASE_BRANCH,
@@ -251,6 +253,12 @@ function parseInitArgs(argv) {
 
     if (token === '--dir') {
       args.dir = parseValueFlag(argv, i, '--dir');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--adapter') {
+      args.adapter = parseValueFlag(argv, i, '--adapter');
       i += 1;
       continue;
     }
@@ -333,6 +341,10 @@ function parseInitArgs(argv) {
     }
 
     throw new Error(`Invalid argument: ${token}\\n\\n${usage()}`);
+  }
+
+  if (!['npm', 'firebase'].includes(args.adapter)) {
+    throw new Error('Invalid --adapter value. Expected npm or firebase.');
   }
 
   return args;
@@ -4150,6 +4162,124 @@ function removeLegacyReleaseScripts(packageJson, summary) {
   }
 }
 
+function sanitizeFirebaseProjectId(raw) {
+  const normalized = String(raw || '')
+    .toLowerCase()
+    .replace(/^@/, '')
+    .replace(/\//g, '-')
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return normalized || 'your-firebase-project-id';
+}
+
+function mergeMissingConfig(existing, defaults, force = false) {
+  if (Array.isArray(defaults)) {
+    if (force || !Array.isArray(existing) || existing.length === 0) {
+      return [...defaults];
+    }
+    return existing;
+  }
+  if (!defaults || typeof defaults !== 'object') {
+    if (force || existing === undefined) {
+      return defaults;
+    }
+    return existing;
+  }
+
+  const base = existing && typeof existing === 'object' && !Array.isArray(existing)
+    ? { ...existing }
+    : {};
+
+  for (const [key, value] of Object.entries(defaults)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      base[key] = mergeMissingConfig(base[key], value, force);
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      if (force || !Array.isArray(base[key]) || base[key].length === 0) {
+        base[key] = [...value];
+      }
+      continue;
+    }
+
+    if (force || base[key] === undefined || base[key] === null || base[key] === '') {
+      base[key] = value;
+    }
+  }
+
+  return base;
+}
+
+function buildInitShipConfig(args, packageName) {
+  if (args.adapter === 'firebase') {
+    const repoName = typeof args.repo === 'string' && args.repo.includes('/')
+      ? args.repo.split('/')[1]
+      : packageName;
+    return {
+      adapter: 'firebase',
+      baseBranch: 'develop',
+      productionBranch: args.defaultBranch || DEFAULT_BASE_BRANCH,
+      betaBranch: args.betaBranch || DEFAULT_BETA_BRANCH,
+      releaseTargets: ['firebase'],
+      releasePolicy: {
+        stopOnError: true
+      },
+      firebase: {
+        projectId: sanitizeFirebaseProjectId(repoName || packageName),
+        environments: ['local', 'staging', 'production']
+      },
+      deploy: {
+        workflow: 'deploy-staging.yml'
+      },
+      environment: 'staging'
+    };
+  }
+
+  return {
+    adapter: 'npm',
+    baseBranch: args.defaultBranch || DEFAULT_BASE_BRANCH,
+    betaBranch: args.betaBranch || DEFAULT_BETA_BRANCH,
+    releaseTargets: ['npm'],
+    releasePolicy: {
+      stopOnError: true
+    }
+  };
+}
+
+function ensureShipConfigFile(targetDir, args, packageName, summary, reporter) {
+  const shipConfigPath = path.join(targetDir, '.ship.json');
+  const desiredConfig = buildInitShipConfig(args, packageName);
+  const exists = fs.existsSync(shipConfigPath);
+
+  if (args.dryRun) {
+    const dryAction = exists ? (args.force ? 'overwritten' : 'updated') : 'created';
+    if (dryAction === 'created') {
+      summary.createdFiles.push('.ship.json');
+    } else {
+      summary.overwrittenFiles.push('.ship.json');
+    }
+    reporter.warn('ship-config', `Dry-run enabled; .ship.json would be ${dryAction}.`);
+    return;
+  }
+
+  let nextConfig = desiredConfig;
+  if (exists) {
+    const existingConfig = readJsonFile(shipConfigPath);
+    nextConfig = mergeMissingConfig(existingConfig, desiredConfig, args.force);
+  }
+
+  writeJsonFile(shipConfigPath, nextConfig);
+  if (!exists) {
+    summary.createdFiles.push('.ship.json');
+    reporter.ok('ship-config', '.ship.json created.');
+  } else {
+    summary.overwrittenFiles.push('.ship.json');
+    reporter.ok('ship-config', args.force ? '.ship.json overwritten (--force).' : '.ship.json updated with missing fields.');
+  }
+}
+
 function configureExistingPackage(packageDir, templateDir, options) {
   if (!fs.existsSync(packageDir)) {
     throw new Error(`Directory not found: ${packageDir}`);
@@ -4323,6 +4453,9 @@ async function initExistingPackage(args, dependencies = {}) {
   });
   mergeSummary(overallSummary, localSummary);
   reporter.ok('local-init', args.dryRun ? 'Local package bootstrap previewed.' : 'Local package bootstrap applied.');
+
+  reporter.start('ship-config', 'Ensuring .ship.json configuration...');
+  ensureShipConfigFile(targetDir, args, context.packageName, overallSummary, reporter);
 
   if (selections.withGithub && selections.withBeta) {
     ensureBetaWorkflowTriggers(

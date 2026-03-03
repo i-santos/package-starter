@@ -66,9 +66,43 @@ test('init bootstraps missing standards files, scripts and dependency in existin
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'PULL_REQUEST_TEMPLATE.md')), true);
   assert.equal(fs.existsSync(path.join(workDir, '.github', 'CODEOWNERS')), true);
   assert.equal(fs.existsSync(path.join(workDir, 'CONTRIBUTING.md')), true);
+  assert.equal(fs.existsSync(path.join(workDir, '.ship.json')), true);
+
+  const shipConfig = readJson(path.join(workDir, '.ship.json'));
+  assert.equal(shipConfig.adapter, 'npm');
+  assert.deepEqual(shipConfig.releaseTargets, ['npm']);
 
   const installCall = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'install');
   assert.ok(installCall, 'expected npm install at end of init');
+});
+
+test('init --adapter firebase writes firebase-ready .ship.json profile', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'init-firebase-profile-'));
+  fs.writeFileSync(path.join(workDir, 'package.json'), JSON.stringify({
+    name: '@i-santos/firestack',
+    version: '1.0.0',
+    scripts: {
+      test: 'node -e "process.exit(0)"'
+    }
+  }, null, 2) + '\n');
+
+  await runCli([
+    'init',
+    '--dir', workDir,
+    '--repo', 'i-santos/firestack',
+    '--adapter', 'firebase',
+    '--yes'
+  ], { exec: createExecStub().exec });
+
+  const shipConfig = readJson(path.join(workDir, '.ship.json'));
+  assert.equal(shipConfig.adapter, 'firebase');
+  assert.equal(shipConfig.baseBranch, 'develop');
+  assert.equal(shipConfig.productionBranch, 'main');
+  assert.deepEqual(shipConfig.releaseTargets, ['firebase']);
+  assert.equal(shipConfig.releasePolicy.stopOnError, true);
+  assert.equal(shipConfig.firebase.projectId, 'firestack');
+  assert.deepEqual(shipConfig.firebase.environments, ['local', 'staging', 'production']);
+  assert.equal(shipConfig.deploy.workflow, 'deploy-staging.yml');
 });
 
 test('init preserves existing config by default (safe merge)', async () => {
