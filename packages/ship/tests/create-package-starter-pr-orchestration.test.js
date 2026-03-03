@@ -1013,3 +1013,172 @@ test('release handles direct publish path when no release PR is created', async 
     '--release-pr-timeout', '0.05'
   ], { exec: stub.exec });
 });
+
+test('release with firebase adapter succeeds via deploy workflow direct publish', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-release-firebase-success-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
+      adapter: 'firebase',
+      baseBranch: 'develop',
+      firebase: {
+        projectId: 'demo-present-goal',
+        environments: ['local', 'staging', 'production']
+      },
+      deploy: {
+        workflow: 'deploy-staging.yml'
+      }
+    }, null, 2));
+
+    let listCall = 0;
+    const stub = createExecStub([
+      ...baseHandlers(),
+      (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/firebase-release\n' } : null),
+      (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+      (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+      (command, args) => {
+        if (command === 'gh' && args[0] === 'pr' && args[1] === 'list') {
+          listCall += 1;
+          if (listCall === 1) {
+            return { status: 0, stdout: '[]' };
+          }
+          if (listCall === 2) {
+            return {
+              status: 0,
+              stdout: JSON.stringify([{
+                number: 811,
+                url: 'https://github.com/i-santos/firestack/pull/811',
+                headRefName: 'feat/firebase-release',
+                baseRefName: 'develop'
+              }])
+            };
+          }
+          return { status: 0, stdout: '[]' };
+        }
+        return null;
+      },
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'create'
+        ? { status: 0, stdout: 'https://github.com/i-santos/firestack/pull/811\n' }
+        : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+        ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+        : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+        ? { status: 0, stdout: 'merged' }
+        : null),
+      (command, args) => {
+        if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/actions/workflows/deploy-staging.yml/runs?branch=develop')) {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              workflow_runs: [{
+                id: 1234,
+                name: 'Deploy Staging',
+                status: 'completed',
+                conclusion: 'success',
+                html_url: 'https://github.com/i-santos/firestack/actions/runs/1234'
+              }]
+            })
+          };
+        }
+        return null;
+      },
+      (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+      (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+      (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+      (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+    ]);
+
+    await run([
+      'release',
+      '--repo', 'i-santos/firestack',
+      '--yes',
+      '--phase', 'full',
+      '--check-timeout', '0.05',
+      '--release-pr-timeout', '0.05'
+    ], { exec: stub.exec });
+
+    const npmCalls = stub.calls.filter((call) => call.command === 'npm');
+    assert.equal(npmCalls.length, 0, 'expected no npm validation calls for firebase adapter');
+
+    const workflowCall = stub.calls.find((call) => call.command === 'gh'
+      && call.args[0] === 'api'
+      && call.args[2] === 'GET'
+      && String(call.args[3]).includes('/actions/workflows/deploy-staging.yml/runs?branch=develop'));
+    assert.ok(workflowCall, 'expected deploy workflow polling for firebase direct publish');
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
+test('release with firebase adapter fails when deploy workflow is not successful', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-release-firebase-fail-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
+      adapter: 'firebase',
+      baseBranch: 'develop',
+      firebase: {
+        projectId: 'demo-present-goal',
+        environments: ['local', 'staging', 'production']
+      },
+      deploy: {
+        workflow: 'deploy-staging.yml'
+      }
+    }, null, 2));
+
+    const stub = createExecStub([
+      ...baseHandlers(),
+      (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'release/beta\n' } : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+        ? {
+          status: 0,
+          stdout: JSON.stringify([{
+            number: 901,
+            url: 'https://github.com/i-santos/firestack/pull/901',
+            headRefName: 'release/staging-20260303',
+            baseRefName: 'develop'
+          }])
+        }
+        : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+        ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+        : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+        ? { status: 0, stdout: 'merged' }
+        : null),
+      (command, args) => {
+        if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/actions/workflows/deploy-staging.yml/runs?branch=develop')) {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              workflow_runs: [{
+                id: 5678,
+                name: 'Deploy Staging',
+                status: 'completed',
+                conclusion: 'failure',
+                html_url: 'https://github.com/i-santos/firestack/actions/runs/5678'
+              }]
+            })
+          };
+        }
+        return null;
+      }
+    ]);
+
+    await assert.rejects(
+      () => run([
+        'release',
+        '--repo', 'i-santos/firestack',
+        '--yes',
+        '--check-timeout', '0.05',
+        '--release-pr-timeout', '0.05'
+      ], { exec: stub.exec }),
+      /Deploy workflow \"deploy-staging\.yml\" is not successful yet/
+    );
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
