@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { run, loadShipConfig, validateShipConfig, resolveReleaseAdapterName, resolveAdapter } = require('../lib/run');
+const { run, loadShipConfig, validateShipConfig, resolveReleaseAdapterName, resolveReleaseTargetPlan, runReleaseByTargets, resolveAdapter } = require('../lib/run');
 const { firebaseAdapter } = require('../lib/adapters/firebase');
 
 test('ship loads default config when .ship.json is missing', () => {
@@ -84,6 +84,74 @@ test('ship resolves release adapter name from --target and releaseTargets', () =
     resolveReleaseAdapterName({}, { adapter: 'npm', releaseTargets: [] }),
     'npm'
   );
+});
+
+test('ship resolves release target plan for single and auto modes', () => {
+  assert.deepEqual(
+    resolveReleaseTargetPlan({ target: 'firebase', targets: 'auto' }, { adapter: 'npm', releaseTargets: ['npm', 'firebase'] }),
+    ['firebase']
+  );
+  assert.deepEqual(
+    resolveReleaseTargetPlan({ targets: 'auto' }, { adapter: 'npm', releaseTargets: ['npm', 'firebase', 'npm'] }),
+    ['npm', 'firebase']
+  );
+  assert.deepEqual(
+    resolveReleaseTargetPlan({ targets: 'auto' }, { adapter: 'npm', releaseTargets: [] }),
+    ['npm']
+  );
+});
+
+test('ship runs release across targets and stops on first error by default', async () => {
+  const called = [];
+  const error = new Error('boom-a');
+  await assert.rejects(
+    () => runReleaseByTargets(
+      { targets: 'auto' },
+      { releaseTargets: ['a', 'b'], releasePolicy: { stopOnError: true } },
+      {},
+      {
+        warn() {},
+        info() {},
+        resolveAdapterByName(name) {
+          return { name };
+        },
+        async runReleaseForTarget(args) {
+          called.push(args.target);
+          if (args.target === 'a') {
+            throw error;
+          }
+        }
+      }
+    ),
+    /boom-a/
+  );
+  assert.deepEqual(called, ['a']);
+});
+
+test('ship runs release across targets and continues when stopOnError is false', async () => {
+  const called = [];
+  await assert.rejects(
+    () => runReleaseByTargets(
+      { targets: 'auto' },
+      { releaseTargets: ['a', 'b'], releasePolicy: { stopOnError: false } },
+      {},
+      {
+        warn() {},
+        info() {},
+        resolveAdapterByName(name) {
+          return { name };
+        },
+        async runReleaseForTarget(args) {
+          called.push(args.target);
+          if (args.target === 'a') {
+            throw new Error('boom-a');
+          }
+        }
+      }
+    ),
+    /Release failed for targets: a/
+  );
+  assert.deepEqual(called, ['a', 'b']);
 });
 
 test('ship prints version with --version', async () => {

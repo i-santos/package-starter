@@ -75,9 +75,10 @@ const COMMAND_COMPLETION_SPEC = {
     values: {}
   },
   release: {
-    options: ['--repo', '--target', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
+    options: ['--repo', '--target', '--targets', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
     values: {
       '--target': ['npm', 'firebase'],
+      '--targets': ['single', 'auto'],
       '--mode': ['auto', 'open-pr', 'publish'],
       '--phase': ['code', 'full'],
       '--track': ['auto', 'beta', 'stable'],
@@ -134,7 +135,7 @@ function usage() {
     '               [--auto-merge] [--watch-checks] [--yes] [--dry-run]',
     '    Create/update code PR and optionally watch checks.',
     '',
-    '  ship release [--repo <owner/repo>] [--target <adapter>] [--mode auto|open-pr|publish] [--phase code|full]',
+    '  ship release [--repo <owner/repo>] [--target <adapter>] [--targets single|auto] [--mode auto|open-pr|publish] [--phase code|full]',
     '               [--track auto|beta|stable] [--promote-stable] [--yes] [--dry-run]',
     '    Orchestrate end-to-end release flow (PRs, checks, merge, npm validation).',
     '',
@@ -159,6 +160,7 @@ function usage() {
     '  ship init --dir . --with-github --with-beta --with-npm --yes',
     '  ship open-pr --auto-merge --watch-checks',
     '  ship release --yes',
+    '  ship release --targets auto --yes',
     '  ship task new --type feature --title "critical api integration coverage" --json',
     '  ship task status --id tsk_20260303_001 --json',
     '  ship release --promote-stable --promote-type minor --yes',
@@ -697,6 +699,7 @@ function parseReleaseCycleArgs(argv) {
   const args = {
     repo: '',
     target: '',
+    targets: 'single',
     mode: 'auto',
     phase: 'full',
     phaseProvided: false,
@@ -742,6 +745,12 @@ function parseReleaseCycleArgs(argv) {
 
     if (token === '--target') {
       args.target = parseValueFlag(argv, i, '--target');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--targets') {
+      args.targets = parseValueFlag(argv, i, '--targets');
       i += 1;
       continue;
     }
@@ -928,6 +937,10 @@ function parseReleaseCycleArgs(argv) {
 
   if (!['auto', 'open-pr', 'publish'].includes(args.mode)) {
     throw new Error('Invalid --mode value. Expected auto, open-pr, or publish.');
+  }
+
+  if (!['single', 'auto'].includes(args.targets)) {
+    throw new Error('Invalid --targets value. Expected single or auto.');
   }
 
   if (!['code', 'full'].includes(args.phase)) {
@@ -1957,6 +1970,81 @@ function resolveReleaseAdapterName(args = {}, config = {}, warn = () => {}) {
   }
 
   return configuredTargets[0];
+}
+
+function resolveReleaseTargetPlan(args = {}, config = {}, warn = () => {}) {
+  if (args.target) {
+    return [String(args.target).trim()];
+  }
+
+  const configuredTargets = Array.isArray(config.releaseTargets)
+    ? config.releaseTargets.map((target) => String(target).trim()).filter(Boolean)
+    : [];
+
+  if (args.targets === 'auto') {
+    if (configuredTargets.length > 0) {
+      return [...new Set(configuredTargets)];
+    }
+    return [String(config.adapter || 'npm')];
+  }
+
+  return [resolveReleaseAdapterName(args, config, warn)];
+}
+
+async function runReleaseByTargets(args, config = {}, dependencies = {}, options = {}) {
+  const warn = typeof options.warn === 'function'
+    ? options.warn
+    : (message) => console.warn(`[WARN] ${message}`);
+  const info = typeof options.info === 'function'
+    ? options.info
+    : (message) => console.log(`[INFO] ${message}`);
+  const resolveAdapterByName = options.resolveAdapterByName;
+  const runReleaseForTarget = options.runReleaseForTarget;
+
+  if (typeof resolveAdapterByName !== 'function') {
+    throw new Error('runReleaseByTargets requires resolveAdapterByName option.');
+  }
+  if (typeof runReleaseForTarget !== 'function') {
+    throw new Error('runReleaseByTargets requires runReleaseForTarget option.');
+  }
+
+  const targets = resolveReleaseTargetPlan(args, config, warn);
+  const stopOnError = !(config.releasePolicy && config.releasePolicy.stopOnError === false);
+  const results = [];
+
+  for (const target of targets) {
+    const adapter = resolveAdapterByName(target);
+    const releaseArgs = {
+      ...args,
+      target
+    };
+
+    if (targets.length > 1) {
+      info(`Running release target "${target}"...`);
+    }
+
+    try {
+      await runReleaseForTarget(releaseArgs, adapter);
+      results.push({ target, ok: true });
+      if (targets.length > 1) {
+        info(`Release target "${target}" completed.`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ target, ok: false, error: message });
+      warn(`Release target "${target}" failed: ${message}`);
+      if (stopOnError) {
+        throw error;
+      }
+    }
+  }
+
+  const failed = results.filter((result) => !result.ok);
+  if (failed.length > 0) {
+    throw new Error(`Release failed for targets: ${failed.map((result) => result.target).join(', ')}`);
+  }
+
+  return results;
 }
 
 function resolveAdapter(name, options = {}) {
@@ -6251,15 +6339,10 @@ async function run(argv, dependencies = {}) {
   }
 
   if (parsed.mode === 'release') {
-    const releaseAdapterName = resolveReleaseAdapterName(parsed.args, config, (message) => {
-      console.warn(`[WARN] ${message}`);
+    await runReleaseByTargets(parsed.args, config, dependencies, {
+      resolveAdapterByName: (name) => resolveConfiguredAdapter(name),
+      runReleaseForTarget: (releaseArgs, adapter) => runReleaseCycleCore(releaseArgs, adapter, dependencies, config)
     });
-    const adapter = resolveConfiguredAdapter(releaseAdapterName);
-    const releaseArgs = {
-      ...parsed.args,
-      target: releaseAdapterName
-    };
-    await runReleaseCycleCore(releaseArgs, adapter, dependencies, config);
     return;
   }
 
@@ -6273,6 +6356,8 @@ module.exports = {
   loadShipConfig,
   validateShipConfig,
   resolveReleaseAdapterName,
+  resolveReleaseTargetPlan,
+  runReleaseByTargets,
   resolveAdapter,
   runOpenPrCore,
   runReleaseCycleCore,
