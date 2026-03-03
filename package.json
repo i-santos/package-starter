@@ -19,7 +19,8 @@
     "beta:enter": "changeset pre enter beta",
     "beta:exit": "changeset pre exit",
     "beta:version": "changeset version",
-    "beta:publish": "changeset publish"
+    "beta:publish": "changeset publish",
+    "beta:promote": "ship promote-stable --dir ."
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7"
