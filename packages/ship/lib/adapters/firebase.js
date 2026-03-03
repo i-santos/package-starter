@@ -6,6 +6,40 @@ function resolveReleaseBranch(config = {}) {
   return config.betaBranch || 'release/beta';
 }
 
+function parseJsonSafely(raw, fallback) {
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function getLatestWorkflowRun(repo, workflow, branch, deps) {
+  if (!repo || !workflow || !branch || !deps || typeof deps.exec !== 'function') {
+    return null;
+  }
+
+  const endpoint = `repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/runs?branch=${encodeURIComponent(branch)}&per_page=1`;
+  const response = deps.exec('gh', ['api', '-X', 'GET', endpoint]);
+  if (response.status !== 0) {
+    return null;
+  }
+
+  const parsed = parseJsonSafely(response.stdout || '{}', {});
+  const run = Array.isArray(parsed.workflow_runs) ? parsed.workflow_runs[0] : null;
+  if (!run) {
+    return null;
+  }
+
+  return {
+    id: run.id,
+    name: run.name || '',
+    status: run.status || '',
+    conclusion: run.conclusion || '',
+    htmlUrl: run.html_url || ''
+  };
+}
+
 const firebaseAdapter = {
   name: 'firebase',
   capabilities: {
@@ -64,7 +98,7 @@ const firebaseAdapter = {
   },
 
   findReleaseCandidates(context) {
-    const { gitContext, releaseContext, args, primitives } = context;
+    const { gitContext, releaseContext, args, primitives, config = {}, deps = {} } = context;
     const prs = primitives.listOpenPullRequests(gitContext.repo);
     const releasePrs = prs.filter((pr) => pr
       && typeof pr.headRefName === 'string'
@@ -76,8 +110,20 @@ const firebaseAdapter = {
       releasePr
     }));
 
+    const workflow = config.deploy && config.deploy.workflow ? String(config.deploy.workflow) : '';
+    if (workflow) {
+      const run = getLatestWorkflowRun(gitContext.repo, workflow, releaseContext.workflowBranch, deps);
+      if (run && run.status === 'completed' && run.conclusion === 'success') {
+        candidates.push({
+          type: 'direct_publish',
+          workflowRun: run
+        });
+      }
+    }
+
     if (args.head) {
-      return candidates.filter((candidate) => candidate.releasePr.headRefName === args.head);
+      return candidates.filter((candidate) => candidate && candidate.type === 'release_pr'
+        && candidate.releasePr && candidate.releasePr.headRefName === args.head);
     }
 
     return candidates;
@@ -88,15 +134,48 @@ const firebaseAdapter = {
       return null;
     }
 
-    if (candidates.length > 1) {
-      throw new Error(`Ambiguous release PR selection: ${candidates.map((item) => item.releasePr.url).join(', ')}`);
+    const releasePrCandidates = candidates.filter((candidate) => candidate && candidate.type === 'release_pr');
+    if (releasePrCandidates.length > 1) {
+      throw new Error(`Ambiguous release PR selection: ${releasePrCandidates.map((item) => item.releasePr.url).join(', ')}`);
+    }
+    if (releasePrCandidates.length === 1) {
+      return releasePrCandidates[0];
     }
 
-    return candidates[0];
+    const directPublishCandidate = candidates.find((candidate) => candidate && candidate.type === 'direct_publish');
+    if (directPublishCandidate) {
+      return directPublishCandidate;
+    }
+
+    return candidates[0] || null;
   },
 
   verifyPostMerge(context) {
-    const { gitContext, releaseContext, primitives } = context;
+    const { gitContext, releaseContext, primitives, config = {}, deps = {}, releaseCandidate } = context;
+    const workflow = config.deploy && config.deploy.workflow ? String(config.deploy.workflow) : '';
+
+    if (releaseCandidate && releaseCandidate.type === 'direct_publish' && releaseCandidate.workflowRun) {
+      const run = releaseCandidate.workflowRun;
+      const pass = run.status === 'completed' && run.conclusion === 'success';
+      return {
+        pass,
+        expectedTag: 'deploy',
+        diagnostics: pass ? [] : [`Deploy workflow did not succeed: status=${run.status}, conclusion=${run.conclusion}`],
+        targets: []
+      };
+    }
+
+    if (workflow) {
+      const run = getLatestWorkflowRun(gitContext.repo, workflow, releaseContext.workflowBranch, deps);
+      const pass = !!(run && run.status === 'completed' && run.conclusion === 'success');
+      return {
+        pass,
+        expectedTag: 'deploy',
+        diagnostics: pass ? [] : [`Deploy workflow "${workflow}" is not successful yet on branch "${releaseContext.workflowBranch}".`],
+        targets: []
+      };
+    }
+
     primitives.assertReleaseWorkflowHealthyOrThrow(gitContext.repo, releaseContext.workflowBranch);
     return {
       pass: true,
