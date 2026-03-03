@@ -2,9 +2,11 @@
   "mode": "pre",
   "tag": "beta",
   "initialVersions": {
-    "@i-santos/ship": "0.1.0-beta.0"
+    "@i-santos/ship": "0.1.0-beta.0",
+    "@i-santos/agent": "0.1.0-beta.0"
   },
   "changesets": [
+    "bright-lobsters-cheer",
     "flat-roots-smile",
     "metal-gifts-breathe",
     "nice-buses-build"
