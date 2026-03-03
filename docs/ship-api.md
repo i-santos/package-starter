@@ -153,6 +153,7 @@ Main orchestration command for PR/release progression.
 Main flags:
 
 - `--repo <owner/repo>`
+- `--target <adapter>` (`npm` or `firebase`)
 - `--mode <auto|open-pr|publish>`
 - `--phase <code|full>`
 - `--track <auto|beta|stable>`
@@ -256,6 +257,10 @@ Optional local config file at repository root:
 {
   "adapter": "npm",
   "adapterModule": "./ship-adapter.js",
+  "releaseTargets": ["npm"],
+  "releasePolicy": {
+    "stopOnError": true
+  },
   "baseBranch": "main",
   "betaBranch": "release/beta",
   "deploy": {
@@ -294,6 +299,8 @@ External adapters can be loaded from local path via `adapterModule` and selected
 ```
 
 `adapterModule` path is resolved relative to current working directory.
+
+For hybrid repositories (for example, npm package + app deploy), configure target priority with `releaseTargets` and select explicitly with `ship release --target <adapter>`.
 
 ## Adapter Contract (v1)
 

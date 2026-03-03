@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { run, loadShipConfig, validateShipConfig, resolveAdapter } = require('../lib/run');
+const { run, loadShipConfig, validateShipConfig, resolveReleaseAdapterName, resolveAdapter } = require('../lib/run');
 const { firebaseAdapter } = require('../lib/adapters/firebase');
 
 test('ship loads default config when .ship.json is missing', () => {
@@ -33,6 +33,57 @@ test('ship validates firebase adapter config contract', () => {
     firebase: { projectId: 'demo-project', environments: ['local', 'staging', 'production'] },
     deploy: { workflow: 'deploy.yml' }
   }));
+});
+
+test('ship validates releaseTargets and releasePolicy schema', () => {
+  assert.throws(
+    () => validateShipConfig({ adapter: 'npm', releaseTargets: 'firebase' }),
+    /releaseTargets/
+  );
+  assert.throws(
+    () => validateShipConfig({ adapter: 'npm', releaseTargets: ['npm', ''] }),
+    /releaseTargets/
+  );
+  assert.throws(
+    () => validateShipConfig({ adapter: 'npm', releasePolicy: { stopOnError: 'yes' } }),
+    /releasePolicy\.stopOnError/
+  );
+  assert.doesNotThrow(() => validateShipConfig({
+    adapter: 'npm',
+    releaseTargets: ['npm', 'firebase'],
+    releasePolicy: { stopOnError: true },
+    firebase: {
+      projectId: 'demo-project',
+      environments: ['local', 'staging', 'production']
+    },
+    deploy: {
+      workflow: 'deploy-staging.yml'
+    }
+  }));
+});
+
+test('ship resolves release adapter name from --target and releaseTargets', () => {
+  assert.equal(
+    resolveReleaseAdapterName({ target: 'firebase' }, { adapter: 'npm', releaseTargets: ['npm'] }),
+    'firebase'
+  );
+
+  assert.equal(
+    resolveReleaseAdapterName({}, { adapter: 'npm', releaseTargets: ['firebase'] }),
+    'firebase'
+  );
+
+  const warnings = [];
+  const selected = resolveReleaseAdapterName({}, { adapter: 'npm', releaseTargets: ['firebase', 'npm'] }, (message) => {
+    warnings.push(message);
+  });
+  assert.equal(selected, 'firebase');
+  assert.equal(warnings.length, 1);
+
+  assert.equal(
+    resolveReleaseAdapterName({}, { adapter: 'npm', releaseTargets: [] }),
+    'npm'
+  );
 });
 
 test('ship prints version with --version', async () => {
