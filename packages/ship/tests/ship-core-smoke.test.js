@@ -143,3 +143,72 @@ test('ship fails fast when adapter does not implement release capability', async
     process.chdir(previousCwd);
   }
 });
+
+test('ship task new creates canonical task state files', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-new-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Critical API integration coverage']);
+
+    const agentsDir = path.join(workDir, '.agents');
+    const stateDir = path.join(agentsDir, 'state');
+    const tasksDir = path.join(stateDir, 'tasks');
+    const taskFiles = fs.readdirSync(tasksDir).filter((entry) => entry.endsWith('.json'));
+    assert.equal(taskFiles.length, 1);
+
+    const task = JSON.parse(fs.readFileSync(path.join(tasksDir, taskFiles[0]), 'utf8'));
+    assert.equal(task.status, 'new');
+    assert.equal(task.type, 'feature');
+    assert.match(task.taskId, /^tsk_\d{8}_\d{6}$/);
+
+    const opsLog = fs.readFileSync(path.join(stateDir, 'ops.log'), 'utf8');
+    assert.match(opsLog, /"action":"task.new"/);
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task status returns created task data in json mode', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-status-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Status lookup fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    outputs.length = 0;
+
+    await run(['task', 'status', '--id', created.task.taskId, '--json']);
+    const statusPayload = JSON.parse(outputs[0]);
+    assert.equal(statusPayload.task.taskId, created.task.taskId);
+    assert.equal(statusPayload.task.status, 'new');
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task doctor reports checks in json mode', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-doctor-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'doctor', '--json']);
+    const payload = JSON.parse(outputs[0]);
+    assert.equal(payload.action, 'doctor');
+    assert.ok(Array.isArray(payload.checks));
+    assert.ok(payload.checks.some((check) => check.name === 'engine'));
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});

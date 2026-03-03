@@ -91,13 +91,19 @@ const COMMAND_COMPLETION_SPEC = {
       '--type': ['patch', 'minor', 'major']
     }
   },
+  task: {
+    options: ['new', 'plan', 'tdd', 'implement', 'verify', 'publish-ready', 'status', 'doctor', '--id', '--type', '--title', '--branch', '--dir', '--json', '--yes', '--dry-run', '--help', '-h'],
+    values: {
+      '--type': ['feature', 'fix', 'chore', 'refactor', 'test']
+    }
+  },
   completion: {
     options: ['--help', '-h'],
     values: {}
   }
 };
 
-const ROOT_COMMANDS = ['init', 'setup-github', 'setup-npm', 'setup-beta', 'open-pr', 'release', 'promote-stable', 'completion'];
+const ROOT_COMMANDS = ['init', 'setup-github', 'setup-npm', 'setup-beta', 'open-pr', 'release', 'promote-stable', 'task', 'completion'];
 const ROOT_OPTIONS = ['--help', '-h', '--version', '-v', '--name', '--out', '--default-branch', '--release-auth'];
 
 function usage() {
@@ -131,6 +137,11 @@ function usage() {
     '               [--track auto|beta|stable] [--promote-stable] [--yes] [--dry-run]',
     '    Orchestrate end-to-end release flow (PRs, checks, merge, npm validation).',
     '',
+    '  ship task new --type <type> --title <text> [--json] [--dry-run]',
+    '  ship task status --id <taskId> [--json]',
+    '  ship task doctor [--json] [--dry-run]',
+    '    Manage deterministic task lifecycle state in .agents/.',
+    '',
     '  ship completion <bash|zsh|fish>',
     '    Print shell completion script for ship.',
     '',
@@ -147,6 +158,8 @@ function usage() {
     '  ship init --dir . --with-github --with-beta --with-npm --yes',
     '  ship open-pr --auto-merge --watch-checks',
     '  ship release --yes',
+    '  ship task new --type feature --title "critical api integration coverage" --json',
+    '  ship task status --id tsk_20260303_001 --json',
     '  ship release --promote-stable --promote-type minor --yes',
     '  ship completion zsh',
     '  ship promote-stable --dir . --type patch --summary "Promote beta to stable"',
@@ -926,6 +939,101 @@ function parseReleaseCycleArgs(argv) {
   return args;
 }
 
+function parseTaskArgs(argv) {
+  const args = {
+    action: '',
+    id: '',
+    type: 'feature',
+    title: '',
+    branch: '',
+    dir: process.cwd(),
+    json: false,
+    dryRun: false,
+    yes: false
+  };
+
+  if (!argv[0]) {
+    args.help = true;
+    return args;
+  }
+
+  args.action = argv[0];
+  const allowedActions = new Set(['new', 'plan', 'tdd', 'implement', 'verify', 'publish-ready', 'status', 'doctor']);
+  if (!allowedActions.has(args.action)) {
+    throw new Error(`Invalid task action: ${args.action}\n\n${usage()}`);
+  }
+
+  for (let i = 1; i < argv.length; i += 1) {
+    const token = argv[i];
+
+    if (token === '--id') {
+      args.id = parseValueFlag(argv, i, '--id');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--type') {
+      args.type = parseValueFlag(argv, i, '--type');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--title') {
+      args.title = parseValueFlag(argv, i, '--title');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--branch') {
+      args.branch = parseValueFlag(argv, i, '--branch');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--dir') {
+      args.dir = parseValueFlag(argv, i, '--dir');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--json') {
+      args.json = true;
+      continue;
+    }
+
+    if (token === '--dry-run') {
+      args.dryRun = true;
+      continue;
+    }
+
+    if (token === '--yes') {
+      args.yes = true;
+      continue;
+    }
+
+    if (token === '--help' || token === '-h') {
+      args.help = true;
+      continue;
+    }
+
+    throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
+  }
+
+  if (!['feature', 'fix', 'chore', 'refactor', 'test'].includes(args.type)) {
+    throw new Error(`Invalid --type value: ${args.type}. Expected feature, fix, chore, refactor, or test.`);
+  }
+
+  if (args.action === 'new' && !args.title) {
+    throw new Error('Missing --title for "ship task new".');
+  }
+
+  if (args.action === 'status' && !args.id) {
+    throw new Error('Missing --id for "ship task status".');
+  }
+
+  return args;
+}
+
 function validateReleaseAuthMode(mode, flagName = '--release-auth') {
   if (!RELEASE_AUTH_MODES.has(mode)) {
     throw new Error(`Invalid ${flagName} value: ${mode}. Expected one of: github-token, pat, app, manual-trigger.`);
@@ -1030,6 +1138,13 @@ function parseArgs(argv) {
     return {
       mode: 'release',
       args: parseReleaseCycleArgs(argv.slice(1))
+    };
+  }
+
+  if (argv[0] === 'task') {
+    return {
+      mode: 'task',
+      args: parseTaskArgs(argv.slice(1))
     };
   }
 
@@ -1216,6 +1331,194 @@ function renderCompletion(shell) {
   }
 
   throw new Error(`Unsupported shell "${shell}" for completion.`);
+}
+
+function resolveTaskConfig(config = {}) {
+  const task = config.task && typeof config.task === 'object' ? config.task : {};
+  return {
+    engine: task.engine || '@i-santos/agent',
+    plansDir: task.plansDir || '.agents/plans',
+    stateDir: task.stateDir || '.agents/state',
+    requireCleanTree: task.requireCleanTree !== false
+  };
+}
+
+function sanitizeTaskTitle(title) {
+  return String(title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'task';
+}
+
+function createTaskId(now = new Date()) {
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  const hh = String(now.getUTCHours()).padStart(2, '0');
+  const mm = String(now.getUTCMinutes()).padStart(2, '0');
+  const ss = String(now.getUTCSeconds()).padStart(2, '0');
+  return `tsk_${y}${m}${d}_${hh}${mm}${ss}`;
+}
+
+function ensureDirectory(targetPath) {
+  if (!fs.existsSync(targetPath)) {
+    fs.mkdirSync(targetPath, { recursive: true });
+  }
+}
+
+function appendOperationLog(stateDir, op) {
+  const opsPath = path.join(stateDir, 'ops.log');
+  const line = `${JSON.stringify(op)}\n`;
+  fs.appendFileSync(opsPath, line, 'utf8');
+}
+
+function readTaskFile(taskFilePath) {
+  if (!fs.existsSync(taskFilePath)) {
+    throw new Error(`Task file not found: ${taskFilePath}`);
+  }
+  return readJsonFile(taskFilePath);
+}
+
+function runTaskCommand(args, config = {}, dependencies = {}) {
+  const nowIso = new Date().toISOString();
+  const workingDir = path.resolve(args.dir || process.cwd());
+  const taskConfig = resolveTaskConfig(config);
+  const stateDir = path.resolve(workingDir, taskConfig.stateDir);
+  const tasksDir = path.join(stateDir, 'tasks');
+  const contextDir = path.resolve(workingDir, '.agents/context');
+  const docsDir = path.resolve(workingDir, 'docs');
+
+  let agentApi;
+  if (taskConfig.engine === '@i-santos/agent') {
+    // eslint-disable-next-line global-require, import/no-dynamic-require
+    agentApi = require('@i-santos/agent');
+  } else if (typeof dependencies.resolveTaskEngine === 'function') {
+    agentApi = dependencies.resolveTaskEngine(taskConfig.engine);
+  } else {
+    throw new Error(`Unsupported task engine "${taskConfig.engine}".`);
+  }
+
+  const output = {
+    ok: true,
+    action: args.action,
+    dryRun: Boolean(args.dryRun)
+  };
+
+  if (args.action === 'doctor') {
+    const checks = [
+      { name: 'engine', status: agentApi ? 'pass' : 'fail', detail: taskConfig.engine },
+      { name: 'cwd', status: fs.existsSync(workingDir) ? 'pass' : 'fail', detail: workingDir },
+      { name: 'stateDir', status: fs.existsSync(stateDir) ? 'pass' : 'warn', detail: stateDir },
+      { name: 'tasksDir', status: fs.existsSync(tasksDir) ? 'pass' : 'warn', detail: tasksDir },
+      { name: 'opsLog', status: fs.existsSync(path.join(stateDir, 'ops.log')) ? 'pass' : 'warn', detail: path.join(stateDir, 'ops.log') }
+    ];
+    output.checks = checks;
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`task doctor (${taskConfig.engine})`);
+    for (const check of checks) {
+      console.log(`- ${check.name}: ${check.status} (${check.detail})`);
+    }
+    return;
+  }
+
+  if (args.action === 'new') {
+    const taskId = createTaskId(new Date());
+    const title = args.title;
+    const branch = args.branch || `${args.type}/${sanitizeTaskTitle(title)}`;
+    const taskRecord = {
+      taskId,
+      title,
+      type: args.type,
+      branch,
+      status: 'new',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      artifacts: {
+        planFile: '',
+        tddFile: '',
+        reportFile: ''
+      },
+      checks: {
+        unit: 'pending',
+        integration: 'pending',
+        e2e: 'not_required'
+      },
+      release: {
+        prNumber: 0,
+        mergeCommit: '',
+        published: false
+      }
+    };
+
+    output.task = taskRecord;
+
+    if (!args.dryRun) {
+      ensureDirectory(stateDir);
+      ensureDirectory(tasksDir);
+      ensureDirectory(path.resolve(workingDir, taskConfig.plansDir));
+      ensureDirectory(path.resolve(workingDir, '.agents/commands'));
+      ensureDirectory(contextDir);
+      ensureDirectory(docsDir);
+
+      const contextIndexPath = path.join(contextDir, 'index.json');
+      if (!fs.existsSync(contextIndexPath)) {
+        fs.writeFileSync(contextIndexPath, JSON.stringify({ version: 1, tasks: [] }, null, 2));
+      }
+      const handoffPath = path.join(contextDir, 'HANDOFF.md');
+      if (!fs.existsSync(handoffPath)) {
+        fs.writeFileSync(handoffPath, '# HANDOFF\n\n');
+      }
+      const projectStatePath = path.join(docsDir, 'PROJECT_STATE.md');
+      if (!fs.existsSync(projectStatePath)) {
+        fs.writeFileSync(projectStatePath, '# Project State\n\n');
+      }
+
+      const taskFilePath = path.join(tasksDir, `${taskId}.json`);
+      writeJsonFile(taskFilePath, taskRecord);
+      appendOperationLog(stateDir, {
+        timestamp: nowIso,
+        action: 'task.new',
+        taskId,
+        status: 'new'
+      });
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`task created: ${taskId}`);
+    console.log(`- title: ${title}`);
+    console.log(`- type: ${args.type}`);
+    console.log(`- branch: ${branch}`);
+    console.log(`- state: new`);
+    if (args.dryRun) {
+      console.log('- dry-run: no files were written');
+    }
+    return;
+  }
+
+  if (args.action === 'status') {
+    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
+    const taskRecord = readTaskFile(taskFilePath);
+    output.task = taskRecord;
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`task status: ${taskRecord.taskId}`);
+    console.log(`- title: ${taskRecord.title}`);
+    console.log(`- status: ${taskRecord.status}`);
+    console.log(`- branch: ${taskRecord.branch}`);
+    console.log(`- updatedAt: ${taskRecord.updatedAt}`);
+    return;
+  }
+
+  throw new Error(`Task action "${args.action}" is planned but not implemented yet.`);
 }
 
 function loadShipConfig(cwd = process.cwd()) {
@@ -5461,6 +5764,11 @@ async function run(argv, dependencies = {}) {
     return;
   }
 
+  if (parsed.mode === 'task') {
+    runTaskCommand(parsed.args, config, dependencies);
+    return;
+  }
+
   if (parsed.mode === 'open-pr') {
     await runOpenPrCore(parsed.args, adapter, dependencies, config);
     return;
@@ -5485,5 +5793,6 @@ module.exports = {
   runOpenPrFlow,
   runReleaseCycle,
   renderPrBodyDeterministic,
-  validateAdapterForCapability
+  validateAdapterForCapability,
+  runTaskCommand
 };

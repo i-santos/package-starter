@@ -43,5 +43,8 @@
     "beta:version": "changeset version",
     "beta:publish": "changeset publish",
     "beta:promote": "ship promote-stable --dir ."
+  },
+  "dependencies": {
+    "@i-santos/agent": "^0.1.0-beta.0"
   }
 }
