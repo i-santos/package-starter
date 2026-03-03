@@ -240,6 +240,40 @@ Optional local config file at repository root:
 
 Current built-in adapter is `npm`.
 
+External adapters can be loaded from local path via `adapterModule` and selected by name:
+
+```json
+{
+  "adapter": "firebase",
+  "adapterModule": "./ship-adapter.firebase.js"
+}
+```
+
+`adapterModule` path is resolved relative to current working directory.
+
+## Adapter Contract (v1)
+
+Required for `open-pr` capability:
+
+- `name: string`
+- `capabilities.openPr: true`
+- optional `normalizeArgs(args, { command })`
+- optional `preparePrContext(context)` (return partial args override)
+
+Required for `release` capability:
+
+- `capabilities.release: true`
+- `detectReleaseMode(context) -> "open-pr" | "publish"`
+- `resolveReleaseContext(context) -> object`
+- `findReleaseCandidates(context) -> ReleaseCandidate[]`
+- `selectReleaseCandidate(context, candidates) -> ReleaseCandidate | null`
+- `verifyPostMerge(context) -> { pass: boolean, diagnostics?: string[], targets?: [] }`
+
+`ReleaseCandidate` supports:
+
+- `{ type: "release_pr", releasePr: { number, url, headRefName, baseRefName } }`
+- `{ type: "direct_publish", workflowRun: { databaseId, workflowName, status, conclusion, url } }`
+
 ## Node API
 
 `ship` can also be used programmatically:
@@ -265,9 +299,10 @@ Useful helpers:
 
 - `loadShipConfig(cwd?)`
 - `resolveAdapter(name, options?)`
-- `runOpenPrCore(args, dependencies?)`
+- `runOpenPrCore(args, adapter, dependencies?, config?)`
 - `runReleaseCycleCore(args, adapter, dependencies?, config?)`
 - `renderPrBodyDeterministic(context, deps, options?)`
+- `validateAdapterForCapability(adapter, capability)`
 
 `dependencies` allows injection of custom executors for testing/mocking.
 

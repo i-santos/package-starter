@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { run, loadShipConfig } = require('../lib/run');
+const { run, loadShipConfig, resolveAdapter } = require('../lib/run');
 
 test('ship loads default config when .ship.json is missing', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-default-'));
@@ -25,4 +25,69 @@ test('ship prints version with --version', async () => {
   }
 
   assert.deepEqual(outputs, [expectedVersion]);
+});
+
+test('ship resolves external adapter via adapterModule path', () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-adapter-module-'));
+  const adapterPath = path.join(workDir, 'adapter.js');
+  fs.writeFileSync(
+    adapterPath,
+    [
+      'module.exports = {',
+      '  name: "custom",',
+      '  capabilities: { openPr: true, release: true },',
+      '  detectReleaseMode: () => "open-pr",',
+      '  resolveReleaseContext: () => ({}),',
+      '  findReleaseCandidates: () => [],',
+      '  selectReleaseCandidate: () => null,',
+      '  verifyPostMerge: () => ({ pass: true, targets: [] })',
+      '};'
+    ].join('\n')
+  );
+
+  const adapter = resolveAdapter('custom', {
+    cwd: workDir,
+    adapterModule: './adapter.js'
+  });
+  assert.equal(adapter.name, 'custom');
+});
+
+test('ship fails fast when adapter does not implement openPr capability', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-adapter-openpr-cap-'));
+  fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
+    adapter: 'custom',
+    adapterModule: './adapter.js'
+  }, null, 2));
+  fs.writeFileSync(path.join(workDir, 'adapter.js'), 'module.exports = { name: "custom", capabilities: { release: true } };');
+
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    await assert.rejects(
+      () => run(['open-pr']),
+      /does not implement openPr capability/
+    );
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship fails fast when adapter does not implement release capability', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-adapter-release-cap-'));
+  fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
+    adapter: 'custom',
+    adapterModule: './adapter.js'
+  }, null, 2));
+  fs.writeFileSync(path.join(workDir, 'adapter.js'), 'module.exports = { name: "custom", capabilities: { openPr: true } };');
+
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    await assert.rejects(
+      () => run(['release']),
+      /does not implement release capability/
+    );
+  } finally {
+    process.chdir(previousCwd);
+  }
 });
