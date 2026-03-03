@@ -75,8 +75,9 @@ const COMMAND_COMPLETION_SPEC = {
     values: {}
   },
   release: {
-    options: ['--repo', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
+    options: ['--repo', '--target', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
     values: {
+      '--target': ['npm', 'firebase'],
       '--mode': ['auto', 'open-pr', 'publish'],
       '--phase': ['code', 'full'],
       '--track': ['auto', 'beta', 'stable'],
@@ -133,7 +134,7 @@ function usage() {
     '               [--auto-merge] [--watch-checks] [--yes] [--dry-run]',
     '    Create/update code PR and optionally watch checks.',
     '',
-    '  ship release [--repo <owner/repo>] [--mode auto|open-pr|publish] [--phase code|full]',
+    '  ship release [--repo <owner/repo>] [--target <adapter>] [--mode auto|open-pr|publish] [--phase code|full]',
     '               [--track auto|beta|stable] [--promote-stable] [--yes] [--dry-run]',
     '    Orchestrate end-to-end release flow (PRs, checks, merge, npm validation).',
     '',
@@ -695,6 +696,7 @@ function parseOpenPrArgs(argv) {
 function parseReleaseCycleArgs(argv) {
   const args = {
     repo: '',
+    target: '',
     mode: 'auto',
     phase: 'full',
     phaseProvided: false,
@@ -734,6 +736,12 @@ function parseReleaseCycleArgs(argv) {
 
     if (token === '--repo') {
       args.repo = parseValueFlag(argv, i, '--repo');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--target') {
+      args.target = parseValueFlag(argv, i, '--target');
       i += 1;
       continue;
     }
@@ -1857,7 +1865,11 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
 function loadShipConfig(cwd = process.cwd()) {
   const defaultConfig = {
     adapter: 'npm',
-    adapterModule: ''
+    adapterModule: '',
+    releaseTargets: [],
+    releasePolicy: {
+      stopOnError: true
+    }
   };
   const configPath = path.join(cwd, '.ship.json');
   if (!fs.existsSync(configPath)) {
@@ -1872,14 +1884,38 @@ function loadShipConfig(cwd = process.cwd()) {
 }
 
 function validateShipConfig(config = {}) {
+  const errors = [];
   const adapter = String(config.adapter || 'npm');
-  if (adapter !== 'firebase') {
+  const releaseTargets = Array.isArray(config.releaseTargets)
+    ? config.releaseTargets
+    : [];
+  const includesFirebaseTarget = releaseTargets.some((target) => String(target).trim() === 'firebase');
+
+  if (config.releaseTargets !== undefined) {
+    if (!Array.isArray(config.releaseTargets)) {
+      errors.push('"releaseTargets" must be an array when provided.');
+    } else if (config.releaseTargets.some((target) => typeof target !== 'string' || !target.trim())) {
+      errors.push('"releaseTargets" entries must be non-empty strings.');
+    }
+  }
+
+  if (config.releasePolicy !== undefined) {
+    if (!config.releasePolicy || typeof config.releasePolicy !== 'object' || Array.isArray(config.releasePolicy)) {
+      errors.push('"releasePolicy" must be an object when provided.');
+    } else if (config.releasePolicy.stopOnError !== undefined && typeof config.releasePolicy.stopOnError !== 'boolean') {
+      errors.push('"releasePolicy.stopOnError" must be boolean when provided.');
+    }
+  }
+
+  if (adapter !== 'firebase' && !includesFirebaseTarget) {
+    if (errors.length > 0) {
+      throw new Error(`Invalid .ship.json:\n- ${errors.join('\n- ')}`);
+    }
     return;
   }
 
   const firebase = config.firebase || {};
   const deploy = config.deploy || {};
-  const errors = [];
 
   if (typeof firebase.projectId !== 'string' || !firebase.projectId.trim()) {
     errors.push('"firebase.projectId" is required when adapter="firebase".');
@@ -1899,8 +1935,28 @@ function validateShipConfig(config = {}) {
   }
 
   if (errors.length > 0) {
-    throw new Error(`Invalid .ship.json for firebase adapter:\n- ${errors.join('\n- ')}`);
+    throw new Error(`Invalid .ship.json:\n- ${errors.join('\n- ')}`);
   }
+}
+
+function resolveReleaseAdapterName(args = {}, config = {}, warn = () => {}) {
+  if (args.target) {
+    return String(args.target).trim();
+  }
+
+  const configuredTargets = Array.isArray(config.releaseTargets)
+    ? config.releaseTargets.map((target) => String(target).trim()).filter(Boolean)
+    : [];
+
+  if (configuredTargets.length === 0) {
+    return String(config.adapter || 'npm');
+  }
+
+  if (configuredTargets.length > 1) {
+    warn(`Multiple releaseTargets configured (${configuredTargets.join(', ')}). Using "${configuredTargets[0]}". Pass --target to select explicitly.`);
+  }
+
+  return configuredTargets[0];
 }
 
 function resolveAdapter(name, options = {}) {
@@ -6152,7 +6208,7 @@ async function run(argv, dependencies = {}) {
 
   const config = loadShipConfig(process.cwd());
   validateShipConfig(config);
-  const adapter = resolveAdapter(String(config.adapter || 'npm'), {
+  const resolveConfiguredAdapter = (name) => resolveAdapter(String(name || config.adapter || 'npm'), {
     cwd: process.cwd(),
     adapterModule: config.adapterModule,
     resolveAdapter: dependencies.resolveAdapter
@@ -6189,12 +6245,21 @@ async function run(argv, dependencies = {}) {
   }
 
   if (parsed.mode === 'open-pr') {
+    const adapter = resolveConfiguredAdapter(config.adapter || 'npm');
     await runOpenPrCore(parsed.args, adapter, dependencies, config);
     return;
   }
 
   if (parsed.mode === 'release') {
-    await runReleaseCycleCore(parsed.args, adapter, dependencies, config);
+    const releaseAdapterName = resolveReleaseAdapterName(parsed.args, config, (message) => {
+      console.warn(`[WARN] ${message}`);
+    });
+    const adapter = resolveConfiguredAdapter(releaseAdapterName);
+    const releaseArgs = {
+      ...parsed.args,
+      target: releaseAdapterName
+    };
+    await runReleaseCycleCore(releaseArgs, adapter, dependencies, config);
     return;
   }
 
@@ -6207,6 +6272,7 @@ module.exports = {
   run,
   loadShipConfig,
   validateShipConfig,
+  resolveReleaseAdapterName,
   resolveAdapter,
   runOpenPrCore,
   runReleaseCycleCore,
