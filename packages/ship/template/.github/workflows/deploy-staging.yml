@@ -1,0 +1,21 @@
+name: Deploy Staging
+
+on:
+  push:
+    branches:
+      - __BASE_BRANCH__
+  workflow_dispatch:
+
+jobs:
+  required-check:
+    name: required-check
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "required-check"
+
+  deploy-staging:
+    name: deploy-staging
+    runs-on: ubuntu-latest
+    needs: required-check
+    steps:
+      - run: echo "Deploying to staging..."

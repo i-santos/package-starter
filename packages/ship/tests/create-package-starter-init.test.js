@@ -86,13 +86,14 @@ test('init --adapter firebase writes firebase-ready .ship.json profile', async (
     }
   }, null, 2) + '\n');
 
+  const stub = createExecStub();
   await runCli([
     'init',
     '--dir', workDir,
     '--repo', 'i-santos/firestack',
     '--adapter', 'firebase',
     '--yes'
-  ], { exec: createExecStub().exec });
+  ], { exec: stub.exec });
 
   const shipConfig = readJson(path.join(workDir, '.ship.json'));
   assert.equal(shipConfig.adapter, 'firebase');
@@ -103,6 +104,11 @@ test('init --adapter firebase writes firebase-ready .ship.json profile', async (
   assert.equal(shipConfig.firebase.projectId, 'firestack');
   assert.deepEqual(shipConfig.firebase.environments, ['local', 'staging', 'production']);
   assert.equal(shipConfig.deploy.workflow, 'deploy-staging.yml');
+
+  const npmLookup = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'view');
+  const npmWhoami = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'whoami');
+  assert.equal(npmLookup, undefined, 'expected no npm package lookup in firebase init default profile');
+  assert.equal(npmWhoami, undefined, 'expected no npm auth check in firebase init default profile');
 });
 
 test('init preserves existing config by default (safe merge)', async () => {
