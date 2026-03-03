@@ -91,6 +91,8 @@ Main flags:
 - `--with-beta`
 - `--with-npm`
 - `--repo <owner/repo>`
+- `--base-branch <branch>` (firebase profile; default `develop`)
+- `--production-branch <branch>` (firebase profile; default `main`)
 - `--release-auth <github-token|pat|app|manual-trigger>`
 - `--yes`
 - `--dry-run`
@@ -102,8 +104,11 @@ Applies GitHub repository defaults + beta flow setup.
 Main flags:
 
 - `--dir <directory>`
+- `--adapter <npm|firebase>`
 - `--repo <owner/repo>`
 - `--default-branch <branch>`
+- `--base-branch <branch>` (firebase profile)
+- `--production-branch <branch>` (firebase profile)
 - `--beta-branch <branch>`
 - `--ruleset <path>`
 - `--release-auth <github-token|pat|app|manual-trigger>`
