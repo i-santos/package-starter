@@ -154,6 +154,7 @@ Main flags:
 
 - `--repo <owner/repo>`
 - `--target <adapter>` (`npm` or `firebase`)
+- `--targets <single|auto>`
 - `--mode <auto|open-pr|publish>`
 - `--phase <code|full>`
 - `--track <auto|beta|stable>`
@@ -193,6 +194,9 @@ Operational behavior:
 - Watches checks and merge readiness
 - Validates npm publication and dist-tags
 - Performs local cleanup after successful flow
+- With `--targets auto`, executes all configured `releaseTargets` in order
+- `releasePolicy.stopOnError=true` stops on first target failure (default)
+- `releasePolicy.stopOnError=false` continues remaining targets and fails at end if any target failed
 
 ## `ship promote-stable`
 
@@ -247,6 +251,7 @@ ship init --dir . --repo owner/repo --with-github --with-beta --with-npm --yes -
 ship init --dir . --repo owner/repo --with-github --with-beta --with-npm --yes
 ship release --repo owner/repo --yes --dry-run
 ship release --repo owner/repo --yes
+ship release --repo owner/repo --targets auto --yes
 ```
 
 ## `.ship.json` Configuration
@@ -301,6 +306,12 @@ External adapters can be loaded from local path via `adapterModule` and selected
 `adapterModule` path is resolved relative to current working directory.
 
 For hybrid repositories (for example, npm package + app deploy), configure target priority with `releaseTargets` and select explicitly with `ship release --target <adapter>`.
+
+If you want to execute all targets in sequence, use:
+
+```bash
+ship release --targets auto --yes
+```
 
 ## Adapter Contract (v1)
 
