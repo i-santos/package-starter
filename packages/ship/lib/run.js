@@ -12,6 +12,8 @@ const DEFAULT_BASE_BRANCH = 'main';
 const DEFAULT_BETA_BRANCH = 'release/beta';
 const DEFAULT_PROMOTE_WORKFLOW = 'promote-stable.yml';
 const DEFAULT_RULESET_NAME = 'Default main branch protection';
+const DEFAULT_FIREBASE_BASE_BRANCH = 'develop';
+const DEFAULT_FIREBASE_PRODUCTION_BRANCH = 'main';
 const REQUIRED_CHECK_CONTEXT = 'required-check';
 const DEFAULT_RELEASE_AUTH = 'pat';
 const RELEASE_AUTH_MODES = new Set(['github-token', 'pat', 'app', 'manual-trigger']);
@@ -49,14 +51,16 @@ const COMMAND_COMPLETION_SPEC = {
     }
   },
   init: {
-    options: ['--dir', '--force', '--cleanup-legacy-release', '--scope', '--default-branch', '--with-github', '--with-npm', '--with-beta', '--repo', '--beta-branch', '--ruleset', '--release-auth', '--dry-run', '--yes', '--help', '-h'],
+    options: ['--dir', '--adapter', '--force', '--cleanup-legacy-release', '--scope', '--default-branch', '--with-github', '--with-npm', '--with-beta', '--repo', '--beta-branch', '--ruleset', '--release-auth', '--dry-run', '--yes', '--help', '-h'],
     values: {
+      '--adapter': ['npm', 'firebase'],
       '--release-auth': ['github-token', 'pat', 'app', 'manual-trigger']
     }
   },
   'setup-github': {
-    options: ['--dir', '--repo', '--default-branch', '--beta-branch', '--ruleset', '--release-auth', '--force', '--dry-run', '--yes', '--help', '-h'],
+    options: ['--dir', '--adapter', '--repo', '--default-branch', '--base-branch', '--production-branch', '--beta-branch', '--ruleset', '--release-auth', '--force', '--dry-run', '--yes', '--help', '-h'],
     values: {
+      '--adapter': ['npm', 'firebase'],
       '--release-auth': ['github-token', 'pat', 'app', 'manual-trigger']
     }
   },
@@ -120,10 +124,10 @@ function usage() {
     '  ship --name <name> [--out <directory>] [--default-branch <branch>]',
     '    Create a new package from template.',
     '',
-    '  ship init [--dir <directory>] [--repo <owner/repo>] [--with-github] [--with-beta] [--with-npm] [--yes]',
+    '  ship init [--dir <directory>] [--adapter <npm|firebase>] [--repo <owner/repo>] [--with-github] [--with-beta] [--with-npm] [--yes]',
     '    Bootstrap an existing package with ship standards.',
     '',
-    '  ship setup-github [--dir <directory>] [--repo <owner/repo>] [--default-branch <branch>] [--beta-branch <branch>] [--yes]',
+    '  ship setup-github [--dir <directory>] [--adapter <npm|firebase>] [--repo <owner/repo>] [--default-branch <branch>] [--beta-branch <branch>] [--yes]',
     '    Configure GitHub repository defaults, rulesets, and beta flow.',
     '',
     '  ship setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
@@ -167,7 +171,8 @@ function usage() {
     '  ship completion zsh',
     '  ship promote-stable --dir . --type patch --summary "Promote beta to stable"',
     '  ship setup-npm --dir . --publish-first',
-    '  ship setup-github --dir . --beta-branch release/beta --release-auth app'
+    '  ship setup-github --dir . --beta-branch release/beta --release-auth app',
+    '  ship setup-github --adapter firebase --dir . --repo owner/repo --base-branch develop --production-branch main --yes'
   ].join('\n');
 }
 
@@ -230,6 +235,7 @@ function parseCreateArgs(argv) {
 function parseInitArgs(argv) {
   const args = {
     dir: process.cwd(),
+    adapter: 'npm',
     force: false,
     cleanupLegacyRelease: false,
     defaultBranch: DEFAULT_BASE_BRANCH,
@@ -242,6 +248,9 @@ function parseInitArgs(argv) {
     withGithub: true,
     withNpm: true,
     withBeta: true,
+    withGithubProvided: false,
+    withNpmProvided: false,
+    withBetaProvided: false,
     dryRun: false,
     yes: false
   };
@@ -251,6 +260,12 @@ function parseInitArgs(argv) {
 
     if (token === '--dir') {
       args.dir = parseValueFlag(argv, i, '--dir');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--adapter') {
+      args.adapter = parseValueFlag(argv, i, '--adapter');
       i += 1;
       continue;
     }
@@ -294,16 +309,19 @@ function parseInitArgs(argv) {
 
     if (token === '--with-github') {
       args.withGithub = true;
+      args.withGithubProvided = true;
       continue;
     }
 
     if (token === '--with-npm') {
       args.withNpm = true;
+      args.withNpmProvided = true;
       continue;
     }
 
     if (token === '--with-beta') {
       args.withBeta = true;
+      args.withBetaProvided = true;
       continue;
     }
 
@@ -335,14 +353,33 @@ function parseInitArgs(argv) {
     throw new Error(`Invalid argument: ${token}\\n\\n${usage()}`);
   }
 
+  if (!['npm', 'firebase'].includes(args.adapter)) {
+    throw new Error('Invalid --adapter value. Expected npm or firebase.');
+  }
+
+  if (args.adapter === 'firebase') {
+    if (!args.withNpmProvided) {
+      args.withNpm = false;
+    }
+    if (!args.withBetaProvided) {
+      args.withBeta = false;
+    }
+    if (!args.withGithubProvided) {
+      args.withGithub = true;
+    }
+  }
+
   return args;
 }
 
 function parseSetupGithubArgs(argv) {
   const args = {
     dir: process.cwd(),
+    adapter: 'npm',
     betaBranch: DEFAULT_BETA_BRANCH,
     defaultBranch: DEFAULT_BASE_BRANCH,
+    baseBranch: DEFAULT_FIREBASE_BASE_BRANCH,
+    productionBranch: DEFAULT_FIREBASE_PRODUCTION_BRANCH,
     releaseAuth: DEFAULT_RELEASE_AUTH,
     releaseAuthProvided: false,
     force: false,
@@ -365,8 +402,26 @@ function parseSetupGithubArgs(argv) {
       continue;
     }
 
+    if (token === '--adapter') {
+      args.adapter = parseValueFlag(argv, i, '--adapter');
+      i += 1;
+      continue;
+    }
+
     if (token === '--default-branch') {
       args.defaultBranch = parseValueFlag(argv, i, '--default-branch');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--base-branch') {
+      args.baseBranch = parseValueFlag(argv, i, '--base-branch');
+      i += 1;
+      continue;
+    }
+
+    if (token === '--production-branch') {
+      args.productionBranch = parseValueFlag(argv, i, '--production-branch');
       i += 1;
       continue;
     }
@@ -411,6 +466,20 @@ function parseSetupGithubArgs(argv) {
     }
 
     throw new Error(`Invalid argument: ${token}\\n\\n${usage()}`);
+  }
+
+  if (!['npm', 'firebase'].includes(args.adapter)) {
+    throw new Error('Invalid --adapter value. Expected npm or firebase.');
+  }
+
+  if (args.adapter === 'firebase') {
+    if (!args.baseBranch) {
+      throw new Error('Invalid --base-branch value for firebase adapter.');
+    }
+    if (!args.productionBranch) {
+      throw new Error('Invalid --production-branch value for firebase adapter.');
+    }
+    args.defaultBranch = args.productionBranch;
   }
 
   return args;
@@ -4150,6 +4219,124 @@ function removeLegacyReleaseScripts(packageJson, summary) {
   }
 }
 
+function sanitizeFirebaseProjectId(raw) {
+  const normalized = String(raw || '')
+    .toLowerCase()
+    .replace(/^@/, '')
+    .replace(/\//g, '-')
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return normalized || 'your-firebase-project-id';
+}
+
+function mergeMissingConfig(existing, defaults, force = false) {
+  if (Array.isArray(defaults)) {
+    if (force || !Array.isArray(existing) || existing.length === 0) {
+      return [...defaults];
+    }
+    return existing;
+  }
+  if (!defaults || typeof defaults !== 'object') {
+    if (force || existing === undefined) {
+      return defaults;
+    }
+    return existing;
+  }
+
+  const base = existing && typeof existing === 'object' && !Array.isArray(existing)
+    ? { ...existing }
+    : {};
+
+  for (const [key, value] of Object.entries(defaults)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      base[key] = mergeMissingConfig(base[key], value, force);
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      if (force || !Array.isArray(base[key]) || base[key].length === 0) {
+        base[key] = [...value];
+      }
+      continue;
+    }
+
+    if (force || base[key] === undefined || base[key] === null || base[key] === '') {
+      base[key] = value;
+    }
+  }
+
+  return base;
+}
+
+function buildInitShipConfig(args, packageName) {
+  if (args.adapter === 'firebase') {
+    const repoName = typeof args.repo === 'string' && args.repo.includes('/')
+      ? args.repo.split('/')[1]
+      : packageName;
+    return {
+      adapter: 'firebase',
+      baseBranch: 'develop',
+      productionBranch: args.defaultBranch || DEFAULT_BASE_BRANCH,
+      betaBranch: args.betaBranch || DEFAULT_BETA_BRANCH,
+      releaseTargets: ['firebase'],
+      releasePolicy: {
+        stopOnError: true
+      },
+      firebase: {
+        projectId: sanitizeFirebaseProjectId(repoName || packageName),
+        environments: ['local', 'staging', 'production']
+      },
+      deploy: {
+        workflow: 'deploy-staging.yml'
+      },
+      environment: 'staging'
+    };
+  }
+
+  return {
+    adapter: 'npm',
+    baseBranch: args.defaultBranch || DEFAULT_BASE_BRANCH,
+    betaBranch: args.betaBranch || DEFAULT_BETA_BRANCH,
+    releaseTargets: ['npm'],
+    releasePolicy: {
+      stopOnError: true
+    }
+  };
+}
+
+function ensureShipConfigFile(targetDir, args, packageName, summary, reporter) {
+  const shipConfigPath = path.join(targetDir, '.ship.json');
+  const desiredConfig = buildInitShipConfig(args, packageName);
+  const exists = fs.existsSync(shipConfigPath);
+
+  if (args.dryRun) {
+    const dryAction = exists ? (args.force ? 'overwritten' : 'updated') : 'created';
+    if (dryAction === 'created') {
+      summary.createdFiles.push('.ship.json');
+    } else {
+      summary.overwrittenFiles.push('.ship.json');
+    }
+    reporter.warn('ship-config', `Dry-run enabled; .ship.json would be ${dryAction}.`);
+    return;
+  }
+
+  let nextConfig = desiredConfig;
+  if (exists) {
+    const existingConfig = readJsonFile(shipConfigPath);
+    nextConfig = mergeMissingConfig(existingConfig, desiredConfig, args.force);
+  }
+
+  writeJsonFile(shipConfigPath, nextConfig);
+  if (!exists) {
+    summary.createdFiles.push('.ship.json');
+    reporter.ok('ship-config', '.ship.json created.');
+  } else {
+    summary.overwrittenFiles.push('.ship.json');
+    reporter.ok('ship-config', args.force ? '.ship.json overwritten (--force).' : '.ship.json updated with missing fields.');
+  }
+}
+
 function configureExistingPackage(packageDir, templateDir, options) {
   if (!fs.existsSync(packageDir)) {
     throw new Error(`Directory not found: ${packageDir}`);
@@ -4323,6 +4510,9 @@ async function initExistingPackage(args, dependencies = {}) {
   });
   mergeSummary(overallSummary, localSummary);
   reporter.ok('local-init', args.dryRun ? 'Local package bootstrap previewed.' : 'Local package bootstrap applied.');
+
+  reporter.start('ship-config', 'Ensuring .ship.json configuration...');
+  ensureShipConfigFile(targetDir, args, context.packageName, overallSummary, reporter);
 
   if (selections.withGithub && selections.withBeta) {
     ensureBetaWorkflowTriggers(
@@ -5104,14 +5294,14 @@ function resolveRepo(args, deps) {
   return repo;
 }
 
-function createBaseRulesetPayload(defaultBranch) {
+function createBranchRulesetPayload(branchName, rulesetName = DEFAULT_RULESET_NAME) {
   return {
-    name: DEFAULT_RULESET_NAME,
+    name: rulesetName,
     target: 'branch',
     enforcement: 'active',
     conditions: {
       ref_name: {
-        include: [`refs/heads/${defaultBranch}`],
+        include: [`refs/heads/${branchName}`],
         exclude: []
       }
     },
@@ -5144,43 +5334,18 @@ function createBaseRulesetPayload(defaultBranch) {
   };
 }
 
+function createBaseRulesetPayload(defaultBranch) {
+  return createBranchRulesetPayload(defaultBranch, DEFAULT_RULESET_NAME);
+}
+
 function createBetaRulesetPayload(betaBranch) {
+  return createBranchRulesetPayload(betaBranch, `Beta branch protection (${betaBranch})`);
+}
+
+function createFirebaseRulesetPayloads(baseBranch, productionBranch) {
   return {
-    name: `Beta branch protection (${betaBranch})`,
-    target: 'branch',
-    enforcement: 'active',
-    conditions: {
-      ref_name: {
-        include: [`refs/heads/${betaBranch}`],
-        exclude: []
-      }
-    },
-    bypass_actors: [],
-    rules: [
-      { type: 'deletion' },
-      { type: 'non_fast_forward' },
-      {
-        type: 'pull_request',
-        parameters: {
-          required_approving_review_count: 0,
-          dismiss_stale_reviews_on_push: true,
-          require_code_owner_review: false,
-          require_last_push_approval: false,
-          required_review_thread_resolution: true
-        }
-      },
-      {
-        type: 'required_status_checks',
-        parameters: {
-          strict_required_status_checks_policy: true,
-          required_status_checks: [
-            {
-              context: REQUIRED_CHECK_CONTEXT
-            }
-          ]
-        }
-      }
-    ]
+    base: createBranchRulesetPayload(baseBranch, `Develop branch protection (${baseBranch})`),
+    production: createBranchRulesetPayload(productionBranch, `Production branch protection (${productionBranch})`)
   };
 }
 
@@ -6184,6 +6349,140 @@ function applyGithubBetaSetup(args, dependencies, summary, reporter, repo) {
   reporter.ok('github-beta-ruleset', `Beta ruleset ${upsertResult}.`);
 }
 
+function upsertSimpleWorkflow(targetPath, templatePath, options = {}) {
+  const exists = fs.existsSync(targetPath);
+  const action = exists ? (options.force ? 'overwritten' : 'skipped') : 'created';
+
+  if (action === 'skipped') {
+    return { result: 'skipped' };
+  }
+
+  if (options.dryRun) {
+    return { result: action };
+  }
+
+  ensureFileFromTemplate(targetPath, templatePath, {
+    force: options.force,
+    dryRun: false,
+    variables: options.variables || {}
+  });
+  return { result: action };
+}
+
+function applyLocalFirebaseSetup(args, summary, reporter) {
+  const targetDir = path.resolve(args.dir);
+  const packageJsonPath = path.join(targetDir, 'package.json');
+  if (!fs.existsSync(targetDir) || !fs.existsSync(packageJsonPath)) {
+    summary.warnings.push(`Skipping local firebase workflow setup: package.json not found in ${targetDir}.`);
+    return;
+  }
+
+  const packageRoot = path.resolve(__dirname, '..');
+  const templateDir = path.join(packageRoot, 'template');
+  const workflowSpecs = [
+    ['.github/workflows/deploy-staging.yml', '.github/workflows/deploy-staging.yml'],
+    ['.github/workflows/deploy-production.yml', '.github/workflows/deploy-production.yml']
+  ];
+  const variables = {
+    BASE_BRANCH: args.baseBranch,
+    PRODUCTION_BRANCH: args.productionBranch
+  };
+
+  for (const [targetRelative, templateRelative] of workflowSpecs) {
+    const targetPath = path.join(targetDir, targetRelative);
+    const templatePath = path.join(templateDir, templateRelative);
+    if (!fs.existsSync(templatePath)) {
+      summary.warnings.push(`Skipping ${targetRelative}: missing template ${templateRelative}.`);
+      continue;
+    }
+
+    reporter.start('firebase-workflow', `Ensuring ${targetRelative}...`);
+    const result = upsertSimpleWorkflow(targetPath, templatePath, {
+      force: args.force,
+      dryRun: args.dryRun,
+      variables
+    });
+    if (result.result === 'created') {
+      summary.createdFiles.push(targetRelative);
+      reporter.ok('firebase-workflow', `${targetRelative} created.`);
+    } else if (result.result === 'overwritten') {
+      summary.overwrittenFiles.push(targetRelative);
+      reporter.ok('firebase-workflow', `${targetRelative} overwritten.`);
+    } else {
+      summary.skippedFiles.push(targetRelative);
+      reporter.warn('firebase-workflow', `${targetRelative} already exists; kept as-is.`);
+    }
+  }
+}
+
+function applyGithubFirebaseSetup(args, dependencies, summary, reporter) {
+  const deps = {
+    exec: dependencies.exec || execCommand
+  };
+  const repo = resolveRepo(args, deps);
+  const rulesets = createFirebaseRulesetPayloads(args.baseBranch, args.productionBranch);
+
+  summary.updatedScriptKeys.push(
+    'repository.default_branch',
+    'repository.delete_branch_on_merge',
+    'repository.allow_auto_merge',
+    'repository.merge_policy',
+    'actions.default_workflow_permissions',
+    'github.firebase.base_branch',
+    'github.firebase.production_branch'
+  );
+
+  if (args.dryRun) {
+    summary.warnings.push(`dry-run: would ensure branch "${args.baseBranch}" exists in ${repo}`);
+    summary.warnings.push(`dry-run: would set default branch to ${args.baseBranch}`);
+    summary.warnings.push(`dry-run: would upsert ruleset "${rulesets.base.name}"`);
+    summary.warnings.push(`dry-run: would upsert ruleset "${rulesets.production.name}"`);
+    summary.warnings.push(`dry-run: would set actions workflow permissions to write for ${repo}`);
+    return { repo };
+  }
+
+  reporter.start('github-firebase-branch', `Ensuring branch "${args.baseBranch}" exists...`);
+  const branchResult = ensureBranchExists(deps, repo, args.productionBranch, args.baseBranch);
+  if (branchResult === 'created') {
+    summary.createdFiles.push(`github-branch:${args.baseBranch}`);
+    reporter.ok('github-firebase-branch', `Branch "${args.baseBranch}" created.`);
+  } else {
+    summary.skippedFiles.push(`github-branch:${args.baseBranch}`);
+    reporter.warn('github-firebase-branch', `Branch "${args.baseBranch}" already exists.`);
+  }
+
+  reporter.start('github-firebase-settings', 'Applying GitHub repository settings...');
+  const repoPayload = {
+    default_branch: args.baseBranch,
+    delete_branch_on_merge: true,
+    allow_auto_merge: true,
+    allow_squash_merge: true,
+    allow_merge_commit: false,
+    allow_rebase_merge: false
+  };
+  const patchRepo = ghApi(deps, 'PATCH', `/repos/${repo}`, repoPayload);
+  if (patchRepo.status !== 0) {
+    reporter.fail('github-firebase-settings', 'Failed to update repository settings.');
+    throw new Error(`Failed to update repository settings: ${patchRepo.stderr || patchRepo.stdout}`.trim());
+  }
+  reporter.ok('github-firebase-settings', 'Repository settings updated.');
+
+  reporter.start('github-firebase-workflow-permissions', 'Applying GitHub Actions workflow permissions...');
+  updateWorkflowPermissions(deps, repo);
+  reporter.ok('github-firebase-workflow-permissions', 'Workflow permissions configured.');
+
+  reporter.start('github-firebase-ruleset-develop', `Applying ruleset "${rulesets.base.name}"...`);
+  const baseUpsert = upsertRuleset(deps, repo, rulesets.base);
+  summary.overwrittenFiles.push(`github-firebase-ruleset:${baseUpsert}:develop`);
+  reporter.ok('github-firebase-ruleset-develop', `Develop ruleset ${baseUpsert}.`);
+
+  reporter.start('github-firebase-ruleset-production', `Applying ruleset "${rulesets.production.name}"...`);
+  const productionUpsert = upsertRuleset(deps, repo, rulesets.production);
+  summary.overwrittenFiles.push(`github-firebase-ruleset:${productionUpsert}:production`);
+  reporter.ok('github-firebase-ruleset-production', `Production ruleset ${productionUpsert}.`);
+  return { repo };
+}
+
 function applyLocalBetaSetup(args, summary, reporter) {
   const targetDir = path.resolve(args.dir);
   if (!fs.existsSync(targetDir)) {
@@ -6265,6 +6564,14 @@ function setupGithub(args, dependencies = {}) {
   ensureGhAvailable(deps);
 
   const reporter = new StepReporter();
+  if (args.adapter === 'firebase') {
+    const { repo } = applyGithubFirebaseSetup(args, dependencies, summary, reporter);
+    applyLocalFirebaseSetup(args, summary, reporter);
+    summary.warnings.push('Firebase profile configured. Next step: connect deploy workflows and required secrets/environments.');
+    printSummary(args.dryRun ? `GitHub+firebase setup dry-run for ${repo}` : `GitHub+firebase setup applied to ${repo}`, summary);
+    return;
+  }
+
   const { repo } = applyGithubMainSetup(args, dependencies, summary, reporter);
   applyGithubBetaSetup(args, dependencies, summary, reporter, repo);
   applyLocalBetaSetup(args, summary, reporter);

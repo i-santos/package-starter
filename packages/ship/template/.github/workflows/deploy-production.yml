@@ -1,0 +1,21 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - __PRODUCTION_BRANCH__
+  workflow_dispatch:
+
+jobs:
+  required-check:
+    name: required-check
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "required-check"
+
+  deploy-production:
+    name: deploy-production
+    runs-on: ubuntu-latest
+    needs: required-check
+    steps:
+      - run: echo "Deploying to production..."
