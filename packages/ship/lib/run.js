@@ -1031,7 +1031,7 @@ function parseTaskArgs(argv) {
     throw new Error('Missing --id for "ship task status".');
   }
 
-  if ((args.action === 'plan' || args.action === 'verify') && !args.id) {
+  if ((args.action === 'plan' || args.action === 'implement' || args.action === 'verify' || args.action === 'publish-ready') && !args.id) {
     throw new Error(`Missing --id for "ship task ${args.action}".`);
   }
 
@@ -1566,6 +1566,60 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     return;
   }
 
+  if (args.action === 'implement') {
+    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
+    const existing = readTaskFile(taskFilePath);
+    const transitioned = agentApi.transitionTask(existing, 'implemented', nowIso);
+    const implementationFileRelative = path.join(taskConfig.plansDir, `${transitioned.taskId}-${sanitizeTaskTitle(transitioned.title)}.implementation.md`);
+    const implementationFileAbsolute = path.resolve(workingDir, implementationFileRelative);
+
+    transitioned.artifacts = transitioned.artifacts || {};
+    transitioned.artifacts.implementationFile = implementationFileRelative;
+    output.task = transitioned;
+    output.artifacts = {
+      implementationFile: implementationFileRelative
+    };
+
+    if (!args.dryRun) {
+      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
+      writeJsonFile(taskFilePath, transitioned);
+      if (!fs.existsSync(implementationFileAbsolute)) {
+        fs.writeFileSync(
+          implementationFileAbsolute,
+          [
+            `# Implementation Notes: ${transitioned.title}`,
+            '',
+            `- taskId: ${transitioned.taskId}`,
+            '- scope:',
+            '- changed files:',
+            '- risks and mitigations:',
+            '- follow-ups:',
+            ''
+          ].join('\n'),
+          'utf8'
+        );
+      }
+      appendOperationLog(stateDir, {
+        timestamp: nowIso,
+        action: 'task.implement',
+        taskId: transitioned.taskId,
+        status: transitioned.status
+      });
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`task implemented: ${transitioned.taskId}`);
+    console.log(`- status: ${transitioned.status}`);
+    console.log(`- implementationFile: ${implementationFileRelative}`);
+    if (args.dryRun) {
+      console.log('- dry-run: no files were written');
+    }
+    return;
+  }
+
   if (args.action === 'verify') {
     const taskFilePath = path.join(tasksDir, `${args.id}.json`);
     const existing = readTaskFile(taskFilePath);
@@ -1619,6 +1673,45 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     console.log(`task verified: ${transitioned.taskId}`);
     console.log(`- status: ${transitioned.status}`);
     console.log(`- reportFile: ${reportFileRelative}`);
+    if (args.dryRun) {
+      console.log('- dry-run: no files were written');
+    }
+    return;
+  }
+
+  if (args.action === 'publish-ready') {
+    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
+    const existing = readTaskFile(taskFilePath);
+    const checks = existing.checks || {};
+    if (checks.unit !== 'pass' || checks.integration !== 'pass') {
+      throw new Error(
+        [
+          'Cannot mark task as publish_ready.',
+          `Expected checks unit=pass and integration=pass but got unit=${checks.unit || 'n/a'}, integration=${checks.integration || 'n/a'}.`
+        ].join('\n')
+      );
+    }
+
+    const transitioned = agentApi.transitionTask(existing, 'publish_ready', nowIso);
+    output.task = transitioned;
+
+    if (!args.dryRun) {
+      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
+      writeJsonFile(taskFilePath, transitioned);
+      appendOperationLog(stateDir, {
+        timestamp: nowIso,
+        action: 'task.publish-ready',
+        taskId: transitioned.taskId,
+        status: transitioned.status
+      });
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`task publish-ready: ${transitioned.taskId}`);
+    console.log(`- status: ${transitioned.status}`);
     if (args.dryRun) {
       console.log('- dry-run: no files were written');
     }
