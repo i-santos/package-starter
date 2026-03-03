@@ -212,3 +212,56 @@ test('ship task doctor reports checks in json mode', async () => {
     process.chdir(previousCwd);
   }
 });
+
+test('ship task plan transitions task to planned and writes plan file', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-plan-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Plan fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    outputs.length = 0;
+
+    await run(['task', 'plan', '--id', created.task.taskId, '--json']);
+    const planned = JSON.parse(outputs[0]);
+    assert.equal(planned.task.status, 'planned');
+    assert.ok(planned.task.artifacts.planFile);
+    assert.equal(fs.existsSync(path.resolve(workDir, planned.task.artifacts.planFile)), true);
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});
+
+test('ship task verify transitions implemented task to verified and writes report file', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-task-verify-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['task', 'new', '--type', 'feature', '--title', 'Verify fixture', '--json']);
+    const created = JSON.parse(outputs[0]);
+    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
+    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
+    existing.status = 'implemented';
+    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    outputs.length = 0;
+
+    await run(['task', 'verify', '--id', created.task.taskId, '--json']);
+    const verified = JSON.parse(outputs[0]);
+    assert.equal(verified.task.status, 'verified');
+    assert.equal(verified.task.checks.unit, 'pass');
+    assert.ok(verified.task.artifacts.reportFile);
+    assert.equal(fs.existsSync(path.resolve(workDir, verified.task.artifacts.reportFile)), true);
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+});

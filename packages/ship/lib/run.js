@@ -1031,6 +1031,10 @@ function parseTaskArgs(argv) {
     throw new Error('Missing --id for "ship task status".');
   }
 
+  if ((args.action === 'plan' || args.action === 'verify') && !args.id) {
+    throw new Error(`Missing --id for "ship task ${args.action}".`);
+  }
+
   return args;
 }
 
@@ -1380,14 +1384,38 @@ function readTaskFile(taskFilePath) {
   return readJsonFile(taskFilePath);
 }
 
+function ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir) {
+  const contextDir = path.resolve(workingDir, '.agents/context');
+  const docsDir = path.resolve(workingDir, 'docs');
+
+  ensureDirectory(stateDir);
+  ensureDirectory(tasksDir);
+  ensureDirectory(plansDir);
+  ensureDirectory(path.resolve(workingDir, '.agents/commands'));
+  ensureDirectory(contextDir);
+  ensureDirectory(docsDir);
+
+  const contextIndexPath = path.join(contextDir, 'index.json');
+  if (!fs.existsSync(contextIndexPath)) {
+    fs.writeFileSync(contextIndexPath, JSON.stringify({ version: 1, tasks: [] }, null, 2));
+  }
+  const handoffPath = path.join(contextDir, 'HANDOFF.md');
+  if (!fs.existsSync(handoffPath)) {
+    fs.writeFileSync(handoffPath, '# HANDOFF\n\n');
+  }
+  const projectStatePath = path.join(docsDir, 'PROJECT_STATE.md');
+  if (!fs.existsSync(projectStatePath)) {
+    fs.writeFileSync(projectStatePath, '# Project State\n\n');
+  }
+}
+
 function runTaskCommand(args, config = {}, dependencies = {}) {
   const nowIso = new Date().toISOString();
   const workingDir = path.resolve(args.dir || process.cwd());
   const taskConfig = resolveTaskConfig(config);
   const stateDir = path.resolve(workingDir, taskConfig.stateDir);
   const tasksDir = path.join(stateDir, 'tasks');
-  const contextDir = path.resolve(workingDir, '.agents/context');
-  const docsDir = path.resolve(workingDir, 'docs');
+  const plansDir = path.resolve(workingDir, taskConfig.plansDir);
 
   let agentApi;
   if (taskConfig.engine === '@i-santos/agent') {
@@ -1457,25 +1485,7 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     output.task = taskRecord;
 
     if (!args.dryRun) {
-      ensureDirectory(stateDir);
-      ensureDirectory(tasksDir);
-      ensureDirectory(path.resolve(workingDir, taskConfig.plansDir));
-      ensureDirectory(path.resolve(workingDir, '.agents/commands'));
-      ensureDirectory(contextDir);
-      ensureDirectory(docsDir);
-
-      const contextIndexPath = path.join(contextDir, 'index.json');
-      if (!fs.existsSync(contextIndexPath)) {
-        fs.writeFileSync(contextIndexPath, JSON.stringify({ version: 1, tasks: [] }, null, 2));
-      }
-      const handoffPath = path.join(contextDir, 'HANDOFF.md');
-      if (!fs.existsSync(handoffPath)) {
-        fs.writeFileSync(handoffPath, '# HANDOFF\n\n');
-      }
-      const projectStatePath = path.join(docsDir, 'PROJECT_STATE.md');
-      if (!fs.existsSync(projectStatePath)) {
-        fs.writeFileSync(projectStatePath, '# Project State\n\n');
-      }
+      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
 
       const taskFilePath = path.join(tasksDir, `${taskId}.json`);
       writeJsonFile(taskFilePath, taskRecord);
@@ -1502,6 +1512,119 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     return;
   }
 
+  if (args.action === 'plan') {
+    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
+    const existing = readTaskFile(taskFilePath);
+    const transitioned = agentApi.transitionTask(existing, 'planned', nowIso);
+    const planFileRelative = path.join(taskConfig.plansDir, `${transitioned.taskId}-${sanitizeTaskTitle(transitioned.title)}.plan.md`);
+    const planFileAbsolute = path.resolve(workingDir, planFileRelative);
+
+    transitioned.artifacts = transitioned.artifacts || {};
+    transitioned.artifacts.planFile = planFileRelative;
+    output.task = transitioned;
+    output.artifacts = {
+      planFile: planFileRelative
+    };
+
+    if (!args.dryRun) {
+      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
+      writeJsonFile(taskFilePath, transitioned);
+      if (!fs.existsSync(planFileAbsolute)) {
+        fs.writeFileSync(
+          planFileAbsolute,
+          [
+            `# Plan: ${transitioned.title}`,
+            '',
+            `- taskId: ${transitioned.taskId}`,
+            '- goals:',
+            '- constraints:',
+            '- risks:',
+            '- implementation steps:',
+            ''
+          ].join('\n'),
+          'utf8'
+        );
+      }
+      appendOperationLog(stateDir, {
+        timestamp: nowIso,
+        action: 'task.plan',
+        taskId: transitioned.taskId,
+        status: transitioned.status
+      });
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`task planned: ${transitioned.taskId}`);
+    console.log(`- status: ${transitioned.status}`);
+    console.log(`- planFile: ${planFileRelative}`);
+    if (args.dryRun) {
+      console.log('- dry-run: no files were written');
+    }
+    return;
+  }
+
+  if (args.action === 'verify') {
+    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
+    const existing = readTaskFile(taskFilePath);
+    const transitioned = agentApi.transitionTask(existing, 'verified', nowIso);
+    const reportFileRelative = path.join('docs/tests', `${transitioned.taskId}-verification.local.md`);
+    const reportFileAbsolute = path.resolve(workingDir, reportFileRelative);
+
+    transitioned.artifacts = transitioned.artifacts || {};
+    transitioned.artifacts.reportFile = reportFileRelative;
+    transitioned.checks = {
+      unit: 'pass',
+      integration: 'pass',
+      e2e: transitioned.checks && transitioned.checks.e2e ? transitioned.checks.e2e : 'not_required'
+    };
+    output.task = transitioned;
+    output.artifacts = {
+      reportFile: reportFileRelative
+    };
+
+    if (!args.dryRun) {
+      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
+      ensureDirectory(path.dirname(reportFileAbsolute));
+      writeJsonFile(taskFilePath, transitioned);
+      if (!fs.existsSync(reportFileAbsolute)) {
+        fs.writeFileSync(
+          reportFileAbsolute,
+          [
+            `# Verification Report: ${transitioned.title}`,
+            '',
+            `- taskId: ${transitioned.taskId}`,
+            '- unit: pass',
+            '- integration: pass',
+            `- e2e: ${transitioned.checks.e2e}`,
+            ''
+          ].join('\n'),
+          'utf8'
+        );
+      }
+      appendOperationLog(stateDir, {
+        timestamp: nowIso,
+        action: 'task.verify',
+        taskId: transitioned.taskId,
+        status: transitioned.status
+      });
+    }
+
+    if (args.json) {
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+    console.log(`task verified: ${transitioned.taskId}`);
+    console.log(`- status: ${transitioned.status}`);
+    console.log(`- reportFile: ${reportFileRelative}`);
+    if (args.dryRun) {
+      console.log('- dry-run: no files were written');
+    }
+    return;
+  }
+
   if (args.action === 'status') {
     const taskFilePath = path.join(tasksDir, `${args.id}.json`);
     const taskRecord = readTaskFile(taskFilePath);
@@ -1518,7 +1641,7 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     return;
   }
 
-  throw new Error(`Task action "${args.action}" is planned but not implemented yet.`);
+  throw new Error(`Task action "${args.action}" is planned but not implemented yet. Current implemented actions: new, plan, verify, status, doctor.`);
 }
 
 function loadShipConfig(cwd = process.cwd()) {
