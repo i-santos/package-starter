@@ -267,6 +267,23 @@ Optional local config file at repository root:
 
 Current built-in adapters are `npm` and `firebase`.
 
+When `adapter` is `firebase`, the minimum required config is:
+
+```json
+{
+  "adapter": "firebase",
+  "firebase": {
+    "projectId": "your-firebase-project-id",
+    "environments": ["local", "staging", "production"]
+  },
+  "deploy": {
+    "workflow": "deploy-staging.yml"
+  }
+}
+```
+
+Validation is fail-fast: `ship` exits with an error if any required field is missing.
+
 External adapters can be loaded from local path via `adapterModule` and selected by name:
 
 ```json

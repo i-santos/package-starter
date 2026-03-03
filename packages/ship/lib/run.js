@@ -1871,6 +1871,38 @@ function loadShipConfig(cwd = process.cwd()) {
   };
 }
 
+function validateShipConfig(config = {}) {
+  const adapter = String(config.adapter || 'npm');
+  if (adapter !== 'firebase') {
+    return;
+  }
+
+  const firebase = config.firebase || {};
+  const deploy = config.deploy || {};
+  const errors = [];
+
+  if (typeof firebase.projectId !== 'string' || !firebase.projectId.trim()) {
+    errors.push('"firebase.projectId" is required when adapter="firebase".');
+  }
+
+  if (!Array.isArray(firebase.environments) || firebase.environments.length === 0) {
+    errors.push('"firebase.environments" must be a non-empty array when adapter="firebase".');
+  } else {
+    const invalidEnv = firebase.environments.find((entry) => typeof entry !== 'string' || !entry.trim());
+    if (invalidEnv !== undefined) {
+      errors.push('"firebase.environments" entries must be non-empty strings.');
+    }
+  }
+
+  if (typeof deploy.workflow !== 'string' || !deploy.workflow.trim()) {
+    errors.push('"deploy.workflow" is required when adapter="firebase".');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Invalid .ship.json for firebase adapter:\n- ${errors.join('\n- ')}`);
+  }
+}
+
 function resolveAdapter(name, options = {}) {
   if (name === 'npm') {
     validateAdapterShape(npmAdapter);
@@ -6119,6 +6151,7 @@ async function run(argv, dependencies = {}) {
   }
 
   const config = loadShipConfig(process.cwd());
+  validateShipConfig(config);
   const adapter = resolveAdapter(String(config.adapter || 'npm'), {
     cwd: process.cwd(),
     adapterModule: config.adapterModule,
@@ -6173,6 +6206,7 @@ async function run(argv, dependencies = {}) {
 module.exports = {
   run,
   loadShipConfig,
+  validateShipConfig,
   resolveAdapter,
   runOpenPrCore,
   runReleaseCycleCore,

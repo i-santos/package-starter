@@ -4,12 +4,35 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { run, loadShipConfig, resolveAdapter } = require('../lib/run');
+const { run, loadShipConfig, validateShipConfig, resolveAdapter } = require('../lib/run');
+const { firebaseAdapter } = require('../lib/adapters/firebase');
 
 test('ship loads default config when .ship.json is missing', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-default-'));
   const config = loadShipConfig(workDir);
   assert.equal(config.adapter, 'npm');
+});
+
+test('ship validates firebase adapter config contract', () => {
+  assert.throws(
+    () => validateShipConfig({ adapter: 'firebase' }),
+    /firebase\.projectId/
+  );
+
+  assert.throws(
+    () => validateShipConfig({
+      adapter: 'firebase',
+      firebase: { projectId: 'demo', environments: ['staging', ''] },
+      deploy: { workflow: 'deploy.yml' }
+    }),
+    /firebase\.environments/
+  );
+
+  assert.doesNotThrow(() => validateShipConfig({
+    adapter: 'firebase',
+    firebase: { projectId: 'demo-project', environments: ['local', 'staging', 'production'] },
+    deploy: { workflow: 'deploy.yml' }
+  }));
 });
 
 test('ship prints version with --version', async () => {
@@ -102,6 +125,74 @@ test('ship resolves builtin firebase adapter', () => {
   assert.equal(adapter.name, 'firebase');
   assert.equal(Boolean(adapter.capabilities && adapter.capabilities.openPr), true);
   assert.equal(Boolean(adapter.capabilities && adapter.capabilities.release), true);
+});
+
+test('firebase adapter can resolve direct publish candidate from deploy workflow', () => {
+  const candidates = firebaseAdapter.findReleaseCandidates({
+    gitContext: { repo: 'i-santos/firestack' },
+    releaseContext: { workflowBranch: 'develop', expectedReleasePrBase: 'develop' },
+    args: {},
+    config: { deploy: { workflow: 'deploy-staging.yml' } },
+    deps: {
+      exec(command, args) {
+        if (command === 'gh' && args[0] === 'api') {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              workflow_runs: [{
+                id: 123,
+                status: 'completed',
+                conclusion: 'success',
+                html_url: 'https://github.com/i-santos/firestack/actions/runs/123'
+              }]
+            })
+          };
+        }
+        return { status: 0, stdout: '' };
+      }
+    },
+    primitives: {
+      listOpenPullRequests() {
+        return [];
+      }
+    }
+  });
+
+  assert.equal(Array.isArray(candidates), true);
+  assert.equal(candidates.length, 1);
+  assert.equal(candidates[0].type, 'direct_publish');
+});
+
+test('firebase adapter verifies deploy workflow from config', () => {
+  const verification = firebaseAdapter.verifyPostMerge({
+    gitContext: { repo: 'i-santos/firestack' },
+    releaseContext: { workflowBranch: 'develop' },
+    config: { deploy: { workflow: 'deploy-staging.yml' } },
+    deps: {
+      exec(command, args) {
+        if (command === 'gh' && args[0] === 'api') {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              workflow_runs: [{
+                id: 123,
+                status: 'completed',
+                conclusion: 'success'
+              }]
+            })
+          };
+        }
+        return { status: 1, stdout: '' };
+      }
+    },
+    primitives: {
+      assertReleaseWorkflowHealthyOrThrow() {
+        throw new Error('should not be called when deploy.workflow is configured');
+      }
+    }
+  });
+
+  assert.equal(verification.pass, true);
 });
 
 test('ship fails fast when adapter does not implement openPr capability', async () => {
