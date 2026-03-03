@@ -1,5 +1,17 @@
 # @i-santos/ship
 
+## 1.0.0-beta.11
+
+### Patch Changes
+
+- 74e6c53: Add release target selection support and hybrid release config schema groundwork.
+
+  - add `ship release --target <adapter>` for explicit adapter selection
+  - add `.ship.json` support for `releaseTargets` and `releasePolicy.stopOnError`
+  - resolve release adapter by priority: `--target` > first `releaseTargets` entry > `adapter`
+  - emit warning when multiple `releaseTargets` are configured without `--target`
+  - validate release target/policy config shape and update docs for hybrid repositories
+
 ## 1.0.0-beta.10
 
 ### Patch Changes
