@@ -33,6 +33,21 @@ test('ship validates firebase adapter config contract', () => {
     firebase: { projectId: 'demo-project', environments: ['local', 'staging', 'production'] },
     deploy: { workflow: 'deploy.yml' }
   }));
+
+  assert.throws(
+    () => validateShipConfig({
+      adapter: 'firebase',
+      firebase: {
+        projectId: 'demo-project',
+        environments: ['local', 'staging', 'production'],
+        healthcheckUrls: {
+          staging: 'not-a-url'
+        }
+      },
+      deploy: { workflow: 'deploy.yml' }
+    }),
+    /healthcheckUrls\.staging/
+  );
 });
 
 test('ship validates releaseTargets and releasePolicy schema', () => {
@@ -312,6 +327,47 @@ test('firebase adapter verifies deploy workflow from config', () => {
   });
 
   assert.equal(verification.pass, true);
+});
+
+test('firebase adapter verifyPostMerge fails when healthcheck URL is down', () => {
+  const verification = firebaseAdapter.verifyPostMerge({
+    gitContext: { repo: 'i-santos/firestack' },
+    releaseContext: { workflowBranch: 'develop', track: 'beta' },
+    config: {
+      deploy: { workflow: 'deploy-staging.yml' },
+      firebase: {
+        healthcheckUrls: {
+          staging: 'https://staging.example.com/health'
+        }
+      }
+    },
+    deps: {
+      exec(command, args) {
+        if (command === 'gh' && args[0] === 'api') {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              workflow_runs: [{
+                id: 123,
+                status: 'completed',
+                conclusion: 'success'
+              }]
+            })
+          };
+        }
+        if (command === 'curl') {
+          return { status: 0, stdout: '503' };
+        }
+        return { status: 1, stdout: '' };
+      }
+    },
+    primitives: {
+      assertReleaseWorkflowHealthyOrThrow() {}
+    }
+  });
+
+  assert.equal(verification.pass, false);
+  assert.match((verification.diagnostics || []).join('\n'), /Healthcheck failed/);
 });
 
 test('ship fails fast when adapter does not implement openPr capability', async () => {

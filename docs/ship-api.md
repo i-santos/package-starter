@@ -291,7 +291,11 @@ When `adapter` is `firebase`, the minimum required config is:
   "adapter": "firebase",
   "firebase": {
     "projectId": "your-firebase-project-id",
-    "environments": ["local", "staging", "production"]
+    "environments": ["local", "staging", "production"],
+    "healthcheckUrls": {
+      "staging": "https://staging.example.com/health",
+      "production": "https://example.com/health"
+    }
   },
   "deploy": {
     "workflow": "deploy-staging.yml"
@@ -300,6 +304,7 @@ When `adapter` is `firebase`, the minimum required config is:
 ```
 
 Validation is fail-fast: `ship` exits with an error if any required field is missing.
+When `firebase.healthcheckUrls` is provided, URLs must be absolute `http(s)` addresses. During release verification, successful deploy workflow status is combined with healthcheck validation.
 
 External adapters can be loaded from local path via `adapterModule` and selected by name:
 
