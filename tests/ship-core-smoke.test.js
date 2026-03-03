@@ -27,6 +27,51 @@ test('ship prints version with --version', async () => {
   assert.deepEqual(outputs, [expectedVersion]);
 });
 
+test('ship prints bash completion script', async () => {
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['completion', 'bash']);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(outputs.length, 1);
+  assert.match(outputs[0], /complete -F _ship_completion ship/);
+  assert.match(outputs[0], /release/);
+});
+
+test('ship prints zsh completion script', async () => {
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['completion', 'zsh']);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(outputs.length, 1);
+  assert.match(outputs[0], /#compdef ship/);
+  assert.match(outputs[0], /compdef _ship ship/);
+});
+
+test('ship prints fish completion script', async () => {
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['completion', 'fish']);
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(outputs.length, 1);
+  assert.match(outputs[0], /complete -c ship/);
+  assert.match(outputs[0], /__fish_use_subcommand/);
+});
+
 test('ship resolves external adapter via adapterModule path', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-adapter-module-'));
   const adapterPath = path.join(workDir, 'adapter.js');
