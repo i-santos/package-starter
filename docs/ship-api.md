@@ -211,6 +211,8 @@ Task lifecycle entrypoint (v1 bootstrap).
 Current implemented actions:
 
 - `ship task new --type <feature|fix|chore|refactor|test> --title <text>`
+- `ship task plan --id <taskId>`
+- `ship task verify --id <taskId>`
 - `ship task status --id <taskId>`
 - `ship task doctor`
 
