@@ -1,5 +1,33 @@
 # @i-santos/ship
 
+## 1.0.0-beta.9
+
+### Minor Changes
+
+- 05ff955: Expand `ship task` lifecycle support with deterministic plan and verify actions.
+
+  - add `ship task plan --id <taskId>` transitioning tasks to `planned`
+  - add `ship task verify --id <taskId>` transitioning tasks to `verified`
+  - generate canonical artifacts for plan (`.agents/plans/*.plan.md`) and verification (`docs/tests/*.local.md`)
+  - persist operation records into `.agents/state/ops.log`
+  - keep `--json` and `--dry-run` behavior for automation-friendly execution
+
+- 05ff955: Expand `ship task` lifecycle support with implement and publish-ready actions.
+
+  - add `ship task implement --id <taskId>` transitioning tasks to `implemented`
+  - add `ship task publish-ready --id <taskId>` transitioning tasks to `publish_ready`
+  - enforce publish-ready precondition checks (`unit=pass` and `integration=pass`)
+  - persist operation records for new task actions in `.agents/state/ops.log`
+
+### Patch Changes
+
+- 05ff955: Link `--task-id` into PR/release orchestration so task lifecycle state stays in sync.
+
+  - open-pr now writes `release.prNumber` when a task id is provided
+  - release now records merge commit (`release.mergeCommit`) after PR merges
+  - release now marks `release.published = true` after successful post-merge verification
+  - add regression tests for task linking in open-pr and release flows
+
 ## 1.0.0-beta.8
 
 ### Major Changes
