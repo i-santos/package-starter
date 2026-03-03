@@ -1,0 +1,37 @@
+{
+  "name": "@i-santos/agent",
+  "version": "0.1.0-beta.0",
+  "description": "Deterministic task lifecycle engine for ship",
+  "license": "MIT",
+  "author": "Igor Santos",
+  "homepage": "https://github.com/i-santos/ship#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/i-santos/ship.git",
+    "directory": "packages/agent"
+  },
+  "bugs": {
+    "url": "https://github.com/i-santos/ship/issues"
+  },
+  "keywords": [
+    "agent",
+    "fsm",
+    "workflow",
+    "tasks"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "lib/index.js",
+  "files": [
+    "lib",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "npm run test"
+  }
+}
