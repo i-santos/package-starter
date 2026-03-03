@@ -97,6 +97,13 @@ test('ship resolves external adapter via adapterModule path', () => {
   assert.equal(adapter.name, 'custom');
 });
 
+test('ship resolves builtin firebase adapter', () => {
+  const adapter = resolveAdapter('firebase');
+  assert.equal(adapter.name, 'firebase');
+  assert.equal(Boolean(adapter.capabilities && adapter.capabilities.openPr), true);
+  assert.equal(Boolean(adapter.capabilities && adapter.capabilities.release), true);
+});
+
 test('ship fails fast when adapter does not implement openPr capability', async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-adapter-openpr-cap-'));
   fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
