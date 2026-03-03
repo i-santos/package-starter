@@ -3,6 +3,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const readline = require('readline/promises');
 const { npmAdapter } = require('./adapters/npm');
+const { firebaseAdapter } = require('./adapters/firebase');
 const { validateAdapterForCapability, validateAdapterShape } = require('./adapters/types');
 
 const CHANGESETS_DEP = '@changesets/cli';
@@ -1238,6 +1239,10 @@ function resolveAdapter(name, options = {}) {
   if (name === 'npm') {
     validateAdapterShape(npmAdapter);
     return npmAdapter;
+  }
+  if (name === 'firebase') {
+    validateAdapterShape(firebaseAdapter);
+    return firebaseAdapter;
   }
 
   if (typeof options.resolveAdapter === 'function') {
@@ -2787,6 +2792,9 @@ function validateNpmPublishedPackages(packageTargets, expectedTag, timeoutMinute
 
 function buildAdapterPrimitives(deps) {
   return {
+    listOpenPullRequests(repo) {
+      return listOpenPullRequests(repo, deps);
+    },
     findReleaseCandidates({ repo, expectedBase }) {
       return findReleasePrs(repo, deps, { expectedBase });
     },

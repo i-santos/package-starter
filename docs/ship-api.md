@@ -238,7 +238,7 @@ Optional local config file at repository root:
 }
 ```
 
-Current built-in adapter is `npm`.
+Current built-in adapters are `npm` and `firebase`.
 
 External adapters can be loaded from local path via `adapterModule` and selected by name:
 
