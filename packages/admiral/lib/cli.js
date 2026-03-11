@@ -11,6 +11,8 @@ const {
   runTaskVerify,
   runTaskPublishReady,
   runTaskRetry,
+  runTaskUnblock,
+  runTaskDone,
 } = require("./commands/task");
 const { runStatus } = require("./commands/status");
 const { runRun } = require("./commands/run");
@@ -63,6 +65,8 @@ Usage:
   admiral task verify <id> [--json]
   admiral task publish-ready <id> [--json]
   admiral task retry <id>
+  admiral task unblock <id> [--json]
+  admiral task done <id> [--json]
   admiral merge <id>
   admiral cleanup [task-id]
 `);
@@ -180,6 +184,24 @@ async function main(argv) {
         throw new Error("task retry requires an id");
       }
       await runTaskRetry(taskId);
+      return;
+    }
+
+    if (subcommand === "unblock") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task unblock requires an id");
+      }
+      await runTaskUnblock(taskId, flags);
+      return;
+    }
+
+    if (subcommand === "done") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task done requires an id");
+      }
+      await runTaskDone(taskId, flags);
       return;
     }
   }

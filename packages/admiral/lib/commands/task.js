@@ -19,6 +19,7 @@ function sanitizeTaskTitle(title) {
 
 function formatTask(task) {
   const workflow = readTaskRecord(task);
+  const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
   return {
     id: task.id,
     title: task.title,
@@ -31,6 +32,7 @@ function formatTask(task) {
     workspace: workflow.workspace || task.workspace || "",
     retries: task.retries,
     workflow,
+    execution,
   };
 }
 
@@ -47,6 +49,15 @@ function printTask(payload, flags = {}) {
     console.log(`- scope: ${payload.task.scope}`);
     console.log(`- branch: ${payload.task.branch || "-"}`);
     console.log(`- workspace: ${payload.task.workspace || "-"}`);
+    if (payload.task.execution.last_summary) {
+      console.log(`- summary: ${payload.task.execution.last_summary}`);
+    }
+    if (Array.isArray(payload.task.execution.last_blockers) && payload.task.execution.last_blockers.length > 0) {
+      console.log(`- blockers: ${payload.task.execution.last_blockers.join(" | ")}`);
+    }
+    if (Array.isArray(payload.task.execution.last_next_actions) && payload.task.execution.last_next_actions.length > 0) {
+      console.log(`- next_actions: ${payload.task.execution.last_next_actions.join(" | ")}`);
+    }
     return;
   }
 
@@ -327,6 +338,54 @@ async function runTaskRetry(taskId) {
   console.log(`Retried task ${taskId}`);
 }
 
+async function runTaskUnblock(taskId, flags = {}) {
+  const project = await loadProject(process.cwd());
+  let updatedTask;
+  await withGraphMutation(project, (graph) => {
+    const task = getTaskById(graph, taskId);
+    if (task.status !== "blocked") {
+      throw new Error(`task ${taskId} is not blocked`);
+    }
+    const previousExecution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
+    task.status = "todo";
+    task.metadata = {
+      ...(task.metadata || {}),
+      execution: {
+        ...previousExecution,
+        last_blockers: [],
+      },
+    };
+    updatedTask = task;
+    return graph;
+  });
+
+  await appendEvent(project, "TASK_UNBLOCKED", taskId, null);
+  await saveBoard(project);
+  await syncProjectContext(project);
+  await syncTaskContext(project, updatedTask);
+  printTask({ ok: true, action: "unblock", task: formatTask(updatedTask) }, flags);
+}
+
+async function runTaskDone(taskId, flags = {}) {
+  const project = await loadProject(process.cwd());
+  let updatedTask;
+  await withGraphMutation(project, (graph) => {
+    const task = getTaskById(graph, taskId);
+    if (!["review", "blocked"].includes(task.status)) {
+      throw new Error(`task ${taskId} is not in review or blocked`);
+    }
+    task.status = "done";
+    updatedTask = task;
+    return graph;
+  });
+
+  await appendEvent(project, "TASK_DONE_MANUAL", taskId, null);
+  await saveBoard(project);
+  await syncProjectContext(project);
+  await syncTaskContext(project, updatedTask);
+  printTask({ ok: true, action: "done", task: formatTask(updatedTask) }, flags);
+}
+
 module.exports = {
   runTaskCreate,
   runTaskList,
@@ -337,4 +396,6 @@ module.exports = {
   runTaskVerify,
   runTaskPublishReady,
   runTaskRetry,
+  runTaskUnblock,
+  runTaskDone,
 };

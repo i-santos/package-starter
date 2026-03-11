@@ -225,3 +225,42 @@ test("structured blocked result moves task to blocked without treating command a
   assert.equal(result.status, "blocked");
   assert.deepEqual(result.blockers, ["missing API key"]);
 });
+
+test("blocked task can be unblocked back to todo", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'blocked',summary:'Waiting on API key',blockers:['missing API key'],next_actions:['provision credential'],next_task_status:'blocked'}, null, 2));\"";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await runCli(["task", "unblock", "backend-auth"], repoDir);
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "backend-auth");
+  assert.equal(task.status, "todo");
+  assert.deepEqual(task.metadata.execution.last_blockers, []);
+});
+
+test("review task can be manually marked done", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Ready for review',next_task_status:'review'}, null, 2));\"";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await runCli(["task", "done", "backend-auth"], repoDir);
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "backend-auth");
+  assert.equal(task.status, "done");
+});

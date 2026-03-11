@@ -43,6 +43,9 @@ async function runStatus() {
     if (Array.isArray(execution.last_blockers) && execution.last_blockers.length > 0) {
       console.log(`  blockers: ${execution.last_blockers.join(" | ")}`);
     }
+    if (Array.isArray(execution.last_next_actions) && execution.last_next_actions.length > 0) {
+      console.log(`  next_actions: ${execution.last_next_actions.join(" | ")}`);
+    }
   }
 
   console.log("");

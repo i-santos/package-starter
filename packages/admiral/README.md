@@ -20,6 +20,8 @@ The current implementation covers the practical core of phases 1 and 2:
 - `admiral task verify`
 - `admiral task publish-ready`
 - `admiral task retry`
+- `admiral task unblock`
+- `admiral task done`
 - `admiral merge`
 - `admiral cleanup`
 
@@ -85,6 +87,14 @@ Check status:
 
 ```bash
 admiral status
+admiral task status backend-auth
+```
+
+Resolve operational states:
+
+```bash
+admiral task unblock backend-auth
+admiral task done backend-auth
 ```
 
 Delivery and release still happen through `ship`, using the same task identifier:
