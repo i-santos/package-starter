@@ -42,13 +42,44 @@ function summarizeRecentEvent(event) {
   return event.event.toLowerCase();
 }
 
-async function runStatus() {
-  const project = await loadProject(process.cwd());
+function buildTaskStatus(project, task, recentEvent) {
+  const workflow = readTaskRecord(task);
+  const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
+  const assignment = resolveTaskAssignment(project, task);
+  return {
+    id: task.id,
+    scheduler_status: task.status,
+    workflow_status: workflow.status,
+    agent: task.agent || null,
+    workspace: task.workspace || null,
+    branch: task.branch || null,
+    profile: task.profile || "default",
+    active_profile: assignment.resolvedProfile.name,
+    stage_profile: assignment.stageProfile || null,
+    summary: execution.last_summary || null,
+    blockers: Array.isArray(execution.last_blockers) ? execution.last_blockers : [],
+    next_actions: Array.isArray(execution.last_next_actions) ? execution.last_next_actions : [],
+    workflow_action: execution.last_workflow_action || null,
+    workflow_reason: execution.last_workflow_reason || null,
+    recommended_action: execution.last_recommended_action || null,
+    enqueue_source: execution.last_enqueue_source || null,
+    enqueue_reason: execution.last_enqueue_reason || null,
+    recent_activity: recentEvent
+      ? {
+          summary: summarizeRecentEvent(recentEvent),
+          timestamp: recentEvent.timestamp,
+          event: recentEvent.event,
+        }
+      : null,
+  };
+}
+
+async function buildStatusPayload(project) {
   const heartbeats = await readHeartbeats(project);
   const events = await readEvents(project);
   const activeAgents = new Set(heartbeats.map((heartbeat) => heartbeat.agent));
 
-  const counts = new Map();
+  const counts = {};
   let autoReenqueued = 0;
   let manualInterventions = 0;
   const recentEventByTask = new Map();
@@ -68,69 +99,91 @@ async function runStatus() {
   }
 
   for (const task of project.graph.tasks) {
-    counts.set(task.status, (counts.get(task.status) || 0) + 1);
+    counts[task.status] = (counts[task.status] || 0) + 1;
+  }
+
+  return {
+    summary: {
+      counts,
+      waiting_human: project.graph.tasks.filter((task) => ["blocked", "review"].includes(task.status)).length,
+      auto_reenqueued: autoReenqueued,
+      manual_interventions: manualInterventions,
+      active_agents: activeAgents.size,
+    },
+    tasks: project.graph.tasks.map((task) => buildTaskStatus(project, task, recentEventByTask.get(task.id) || null)),
+  };
+}
+
+async function runStatus(flags = {}) {
+  const project = await loadProject(process.cwd());
+  const payload = await buildStatusPayload(project);
+
+  if (flags.json) {
+    console.log(JSON.stringify({
+      ok: true,
+      ...payload,
+    }, null, 2));
+    return;
   }
 
   console.log("Summary");
   for (const status of ["todo", "claimed", "running", "review", "done", "failed", "blocked", "retry_wait", "cancelled"]) {
-    if (counts.has(status)) {
-      console.log(`- ${status}: ${counts.get(status)}`);
+    if (payload.summary.counts[status]) {
+      console.log(`- ${status}: ${payload.summary.counts[status]}`);
     }
   }
-  console.log(`- waiting_human: ${project.graph.tasks.filter((task) => ["blocked", "review"].includes(task.status)).length}`);
-  console.log(`- auto_reenqueued: ${autoReenqueued}`);
-  console.log(`- manual_interventions: ${manualInterventions}`);
+  console.log(`- waiting_human: ${payload.summary.waiting_human}`);
+  console.log(`- auto_reenqueued: ${payload.summary.auto_reenqueued}`);
+  console.log(`- manual_interventions: ${payload.summary.manual_interventions}`);
 
   console.log("");
   console.log("Tasks");
-  if (project.graph.tasks.length === 0) {
+  if (payload.tasks.length === 0) {
     console.log("No tasks.");
     return;
   }
 
-  for (const task of project.graph.tasks) {
-    const workflow = readTaskRecord(task);
-    const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
-    const assignment = resolveTaskAssignment(project, task);
-    const recentEvent = recentEventByTask.get(task.id) || null;
+  for (const task of payload.tasks) {
     console.log([
       task.id.padEnd(20, " "),
-      task.status.padEnd(12, " "),
-      workflow.status.padEnd(14, " "),
-      assignment.resolvedProfile.name.padEnd(12, " "),
+      task.scheduler_status.padEnd(12, " "),
+      task.workflow_status.padEnd(14, " "),
+      task.active_profile.padEnd(12, " "),
       String(task.agent || "-").padEnd(18, " "),
       String(task.workspace || "-"),
     ].join(" "));
-    if (execution.last_summary) {
-      console.log(`  summary: ${execution.last_summary}`);
+    if (task.summary) {
+      console.log(`  summary: ${task.summary}`);
     }
-    if (execution.last_workflow_action) {
-      console.log(`  workflow: ${execution.last_workflow_action} -> ${execution.last_workflow_status || workflow.status}`);
+    if (task.workflow_action) {
+      console.log(`  workflow: ${task.workflow_action} -> ${task.workflow_status}`);
     }
-    if (Array.isArray(execution.last_blockers) && execution.last_blockers.length > 0) {
-      console.log(`  blockers: ${execution.last_blockers.join(" | ")}`);
+    if (task.blockers.length > 0) {
+      console.log(`  blockers: ${task.blockers.join(" | ")}`);
     }
-    if (Array.isArray(execution.last_next_actions) && execution.last_next_actions.length > 0) {
-      console.log(`  next_actions: ${execution.last_next_actions.join(" | ")}`);
+    if (task.next_actions.length > 0) {
+      console.log(`  next_actions: ${task.next_actions.join(" | ")}`);
     }
-    if (execution.last_workflow_reason) {
-      console.log(`  reason: ${execution.last_workflow_reason}`);
+    if (task.workflow_reason) {
+      console.log(`  reason: ${task.workflow_reason}`);
     }
-    if (execution.last_recommended_action) {
-      console.log(`  next: ${execution.last_recommended_action}`);
+    if (task.recommended_action) {
+      console.log(`  next: ${task.recommended_action}`);
     }
-    if (execution.last_enqueue_source || execution.last_enqueue_reason) {
-      console.log(`  queue: ${(execution.last_enqueue_source || "-")} | ${execution.last_enqueue_reason || "-"}`);
+    if (task.enqueue_source || task.enqueue_reason) {
+      console.log(`  queue: ${(task.enqueue_source || "-")} | ${task.enqueue_reason || "-"}`);
     }
-    if (recentEvent) {
-      console.log(`  activity: ${summarizeRecentEvent(recentEvent)} @ ${recentEvent.timestamp}`);
+    if (task.recent_activity) {
+      console.log(`  activity: ${task.recent_activity.summary} @ ${task.recent_activity.timestamp}`);
     }
   }
 
   console.log("");
-  console.log(`Active agents: ${activeAgents.size}`);
+  console.log(`Active agents: ${payload.summary.active_agents}`);
 }
 
 module.exports = {
   runStatus,
+  buildStatusPayload,
+  summarizeRecentEvent,
 };

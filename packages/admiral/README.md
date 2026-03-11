@@ -93,6 +93,7 @@ admiral task status backend-auth
 ```
 
 `admiral status` now also surfaces recent task activity, automatic re-enqueue behavior, and tasks waiting for human intervention.
+Use `admiral status --json` when you need a structured operational snapshot for automation or external tooling.
 
 Resolve operational states:
 

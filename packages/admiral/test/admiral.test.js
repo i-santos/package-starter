@@ -141,6 +141,32 @@ serialTest("status shows recent activity and operational aggregates", async () =
   assert.match(output, /activity: workflow -> planned @/);
 });
 
+serialTest("status supports structured json output", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Planned from json status test',stage_output:{plan:{goals:['plan'],constraints:['stable'],risks:['none'],implementation_steps:['step']}}}, null, 2));\"";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const output = await captureCliOutput(["status", "--json"], repoDir);
+  const payload = JSON.parse(output);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.summary.auto_reenqueued, 1);
+  assert.equal(payload.summary.manual_interventions, 0);
+  assert.equal(payload.summary.waiting_human, 0);
+  assert.equal(payload.tasks.length, 1);
+  assert.equal(payload.tasks[0].id, "backend-auth");
+  assert.equal(payload.tasks[0].scheduler_status, "todo");
+  assert.equal(payload.tasks[0].workflow_status, "planned");
+  assert.equal(payload.tasks[0].recent_activity.event, "TASK_WORKFLOW_AUTO_ADVANCED");
+});
+
 serialTest("admiral task workflow lifecycle persists metadata and artifacts", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);

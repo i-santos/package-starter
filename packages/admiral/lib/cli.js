@@ -56,7 +56,7 @@ function printHelp() {
 Usage:
   admiral init
   admiral run [--once]
-  admiral status
+  admiral status [--json]
   admiral task create <id> [--title "..."] [--scope backend] [--profile implementer] [--priority 1] [--depends-on a,b] [--json]
   admiral task list [--json]
   admiral task status <id> [--json]
