@@ -29,6 +29,7 @@ async function runStatus() {
 
   for (const task of project.graph.tasks) {
     const workflow = readTaskRecord(task);
+    const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
     console.log([
       task.id.padEnd(20, " "),
       task.status.padEnd(12, " "),
@@ -36,6 +37,12 @@ async function runStatus() {
       String(task.agent || "-").padEnd(18, " "),
       String(task.workspace || "-"),
     ].join(" "));
+    if (execution.last_summary) {
+      console.log(`  summary: ${execution.last_summary}`);
+    }
+    if (Array.isArray(execution.last_blockers) && execution.last_blockers.length > 0) {
+      console.log(`  blockers: ${execution.last_blockers.join(" | ")}`);
+    }
   }
 
   console.log("");

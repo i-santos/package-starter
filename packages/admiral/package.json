@@ -35,7 +35,7 @@
   ],
   "type": "commonjs",
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/admiral.test.js",
+    "test": "node --test test/admiral.test.js",
     "pack:check": "npm pack --dry-run",
     "beta:enter": "changeset pre enter beta",
     "beta:exit": "changeset pre exit",

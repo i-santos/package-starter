@@ -100,7 +100,7 @@ test("scheduler moves a successful task to review", async () => {
 
   const configPath = path.join(repoDir, ".admiral", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
-  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync('done.txt', process.env.ADMIRAL_TASK_ID);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({ok:true, taskId:process.env.ADMIRAL_TASK_ID}, null, 2));\"";
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync('done.txt', process.env.ADMIRAL_TASK_ID);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Implemented backend auth',changed_files:['src/backend/auth.js'],next_actions:['open pr'],tests_run:['unit'],artifacts:{report:'docs/tests/backend-auth.md'},ok:true,taskId:process.env.ADMIRAL_TASK_ID}, null, 2));\"";
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth", "--scope", "general"], repoDir);
@@ -128,10 +128,15 @@ test("scheduler moves a successful task to review", async () => {
   assert.equal(contract.context.project_file, path.join(repoDir, ".admiral", "context", "project.json"));
   assert.equal(contract.context.task_file, path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"));
   assert.equal(result.status, "succeeded");
+  assert.equal(result.summary, "Implemented backend auth");
+  assert.deepEqual(result.changed_files, ["src/backend/auth.js"]);
   assert.equal(result.ok, true);
   assert.equal(projectContext.project.default_branch, "main");
   assert.equal(taskContext.execution.last_status, "succeeded");
-  assert.equal(handoff.latest.summary, "Execution completed successfully.");
+  assert.equal(taskContext.execution.last_summary, "Implemented backend auth");
+  assert.deepEqual(taskContext.execution.last_next_actions, ["open pr"]);
+  assert.equal(handoff.latest.summary, "Implemented backend auth");
+  assert.deepEqual(handoff.latest.tests_run, ["unit"]);
 });
 
 test("recovery retries a dead running task", async () => {
@@ -195,4 +200,28 @@ test("failed execution persists contract failure state", async () => {
   assert.match(runtimeRecord.result.error, /agent command failed with code 7/);
   assert.equal(taskContext.execution.last_status, "failed");
   assert.match(handoff.latest.blockers[0], /agent command failed with code 7/);
+});
+
+test("structured blocked result moves task to blocked without treating command as failed", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'blocked',summary:'Waiting on API key',blockers:['missing API key'],next_actions:['provision credential'],next_task_status:'blocked'}, null, 2));\"";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "backend-auth");
+  assert.equal(task.status, "blocked");
+  assert.equal(task.metadata.execution.last_status, "blocked");
+  assert.equal(task.metadata.execution.last_summary, "Waiting on API key");
+
+  const result = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-result.json"), "utf8"));
+  assert.equal(result.status, "blocked");
+  assert.deepEqual(result.blockers, ["missing API key"]);
 });

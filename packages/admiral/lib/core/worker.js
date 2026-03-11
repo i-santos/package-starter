@@ -9,8 +9,9 @@ const { writeHeartbeat, clearHeartbeat } = require("./heartbeat");
 const { applyRetry } = require("./retry-policy");
 const { prepareExecutionContract, buildExecutionEnv, finalizeExecutionContract } = require("./execution-contract");
 const { syncProjectContext, syncTaskContext, writeTaskHandoff } = require("./context-store");
+const { normalizeTaskResult } = require("./task-result");
 const { execShellCommand } = require("../utils/process");
-const { removeFileIfExists, appendText } = require("../utils/fs");
+const { removeFileIfExists, appendText, readJsonIfExists } = require("../utils/fs");
 
 async function runTaskCommand(project, task) {
   const logPath = path.join(project.paths.agentLogsDir, `${task.id}.log`);
@@ -60,22 +61,33 @@ async function runTaskCommand(project, task) {
       });
     }
 
-    await finalizeExecutionContract(contract, {
-      status: "succeeded",
+    const structuredResult = normalizeTaskResult(
+      await readJsonIfExists(contract.files.workspace_result, {}),
+      {
+        status: "succeeded",
+        summary: "Execution completed successfully.",
+      }
+    );
+
+    const finalized = await finalizeExecutionContract(contract, {
+      ...structuredResult,
       completed_at: new Date().toISOString(),
       exit_code: result.code,
       stdout_present: Boolean(result.stdout),
       stderr_present: Boolean(result.stderr),
     });
 
-    return contract;
+    return finalized;
   } catch (error) {
-    await finalizeExecutionContract(contract, {
+    const finalized = await finalizeExecutionContract(contract, {
       status: "failed",
+      summary: "Execution failed.",
       completed_at: new Date().toISOString(),
       exit_code: typeof error.code === "number" ? error.code : 1,
+      blockers: [error.message],
       error: error.message,
     });
+    error.executionContract = finalized;
     throw error;
   }
 }
@@ -117,17 +129,21 @@ async function main() {
     const contract = await runTaskCommand(project, task);
     await withGraphMutation(project, (graph) => {
       const freshTask = getTaskById(graph, taskId);
-      freshTask.status = "review";
+      const nextSchedulerStatus = contract.result.next_task_status || (contract.result.status === "blocked" || (contract.result.blockers || []).length > 0 ? "blocked" : "review");
+      freshTask.status = nextSchedulerStatus;
       freshTask.metadata = {
         ...(freshTask.metadata || {}),
         execution: {
           last_execution_id: contract.execution_id,
-          last_status: "succeeded",
+          last_status: contract.result.status,
           last_started_at: contract.started_at,
           last_completed_at: new Date().toISOString(),
           contract_file: contract.files.workspace_contract,
           result_file: contract.files.workspace_result,
           runtime_record: contract.files.runtime_record,
+          last_summary: contract.result.summary,
+          last_blockers: contract.result.blockers || [],
+          last_next_actions: contract.result.next_actions || [],
         },
       };
       return graph;
@@ -137,15 +153,18 @@ async function main() {
     await syncTaskContext(project, task);
     await writeTaskHandoff(project, task, {
       execution_id: contract.execution_id,
-      summary: contract.result && contract.result.summary ? contract.result.summary : "Execution completed successfully.",
-      changed_files: contract.result && Array.isArray(contract.result.changed_files) ? contract.result.changed_files : [],
-      next_actions: contract.result && Array.isArray(contract.result.next_actions) ? contract.result.next_actions : [],
-      blockers: contract.result && Array.isArray(contract.result.blockers) ? contract.result.blockers : [],
+      summary: contract.result.summary,
+      changed_files: contract.result.changed_files || [],
+      next_actions: contract.result.next_actions || [],
+      blockers: contract.result.blockers || [],
+      tests_run: contract.result.tests_run || [],
+      handoff: contract.result.handoff || "",
       result_file: contract.files.workspace_result,
     });
     await appendEvent(project, "TASK_DONE", taskId, task.agent);
   } catch (error) {
     const failedAt = new Date().toISOString();
+    const executionContract = error.executionContract || null;
     await withGraphMutation(project, (graph) => {
       const freshTask = getTaskById(graph, taskId);
       const lastExecution = freshTask.metadata && freshTask.metadata.execution ? freshTask.metadata.execution : {};
@@ -153,8 +172,10 @@ async function main() {
         ...(freshTask.metadata || {}),
         execution: {
           ...lastExecution,
-          last_status: "failed",
+          last_status: executionContract && executionContract.result ? executionContract.result.status : "failed",
           last_completed_at: failedAt,
+          last_summary: executionContract && executionContract.result ? executionContract.result.summary : "Execution failed.",
+          last_blockers: executionContract && executionContract.result ? executionContract.result.blockers || [error.message] : [error.message],
           last_error: error.message,
         },
       };
@@ -165,8 +186,9 @@ async function main() {
     task = getTaskById(project.graph, taskId);
     await syncTaskContext(project, task);
     await writeTaskHandoff(project, task, {
-      summary: "Execution failed.",
-      blockers: [error.message],
+      summary: executionContract && executionContract.result ? executionContract.result.summary : "Execution failed.",
+      blockers: executionContract && executionContract.result ? executionContract.result.blockers || [error.message] : [error.message],
+      next_actions: executionContract && executionContract.result ? executionContract.result.next_actions || [] : [],
     });
     await appendEvent(project, "TASK_FAILED", taskId, task.agent, {
       error: error.message,

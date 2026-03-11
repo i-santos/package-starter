@@ -132,6 +132,18 @@ It also materializes shared context files under `.admiral/context/`:
 - `tasks/<task-id>.json`: current task context, workflow state, and latest execution summary
 - `handoffs/<task-id>.json`: rolling handoff history between executions/agents
 
+`task-result.json` is now treated as a structured contract. Supported fields include:
+
+- `status`: `succeeded` | `failed` | `blocked`
+- `summary`
+- `changed_files`
+- `blockers`
+- `next_actions`
+- `tests_run`
+- `artifacts`
+- `handoff`
+- `next_task_status`: `review` | `blocked` | `done`
+
 ## Development
 
 Run tests:
