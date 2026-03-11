@@ -167,6 +167,38 @@ serialTest("status supports structured json output", async () => {
   assert.equal(payload.tasks[0].recent_activity.event, "TASK_WORKFLOW_AUTO_ADVANCED");
 });
 
+serialTest("run can target a specific ready task in assisted mode", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Planned from assisted run',stage_output:{plan:{goals:['plan'],constraints:['stable'],risks:['none'],implementation_steps:['step']}}}, null, 2));\"";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["task", "create", "frontend-login"], repoDir);
+  await runCli(["run", "--once", "--task-id", "frontend-login"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const backend = graph.tasks.find((task) => task.id === "backend-auth");
+  const frontend = graph.tasks.find((task) => task.id === "frontend-login");
+  assert.equal(frontend.metadata.execution.last_status, "succeeded");
+  assert.equal(frontend.metadata.workflow.status, "planned");
+  assert.equal(backend.metadata.execution && backend.metadata.execution.last_status, undefined);
+});
+
+serialTest("run rejects a specific task that is not ready", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["task", "create", "frontend-login", "--depends-on", "backend-auth"], repoDir);
+
+  const result = await runCliAllowFailure(["run", "--once", "--task-id", "frontend-login"], repoDir);
+  assert.equal(result.code, 1);
+});
+
 serialTest("admiral task workflow lifecycle persists metadata and artifacts", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);

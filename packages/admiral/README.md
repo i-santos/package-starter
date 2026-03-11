@@ -83,6 +83,7 @@ Run the scheduler once:
 
 ```bash
 admiral run --once
+admiral run --once --task-id backend-auth
 ```
 
 Check status:

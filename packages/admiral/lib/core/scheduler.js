@@ -2,19 +2,27 @@
 
 const { reloadGraph, withGraphMutation, saveBoard } = require("./project");
 const { appendEvent } = require("./event-bus");
-const { getReadyTasks, validateGraphIntegrity } = require("./task-graph");
+const { getReadyTasks, getTaskById, validateGraphIntegrity } = require("./task-graph");
 const { ensureWorkspace } = require("./workspace-manager");
 const { spawnTaskWorker } = require("./agent-runner");
 const { runRecovery } = require("./recovery");
 const { sleep } = require("../utils/time");
 
-async function claimReadyTasks(project) {
+async function claimReadyTasks(project, options = {}) {
   const availableSlots = Math.max(0, project.config.max_agents - project.graph.tasks.filter((task) => ["claimed", "running"].includes(task.status)).length);
   if (availableSlots <= 0) {
     return 0;
   }
 
-  const ready = getReadyTasks(project.graph).slice(0, availableSlots);
+  let ready = getReadyTasks(project.graph);
+  if (options.taskId) {
+    const requestedTask = getTaskById(project.graph, options.taskId);
+    ready = ready.filter((task) => task.id === requestedTask.id);
+    if (ready.length === 0) {
+      throw new Error(`task ${options.taskId} is not ready to run`);
+    }
+  }
+  ready = ready.slice(0, availableSlots);
   if (ready.length === 0) {
     return 0;
   }
@@ -23,7 +31,14 @@ async function claimReadyTasks(project) {
   const claimedTaskIds = [];
   await withGraphMutation(project, async (graph) => {
     validateGraphIntegrity(graph);
-    const freshReady = getReadyTasks(graph).slice(0, availableSlots);
+    let freshReady = getReadyTasks(graph);
+    if (options.taskId) {
+      freshReady = freshReady.filter((task) => task.id === options.taskId);
+      if (freshReady.length === 0) {
+        throw new Error(`task ${options.taskId} is not ready to run`);
+      }
+    }
+    freshReady = freshReady.slice(0, availableSlots);
     for (const task of freshReady) {
       const agentId = `agent-${task.id}`;
       const workspaceInfo = await ensureWorkspace(project, task);
@@ -65,7 +80,7 @@ async function runScheduler(project, options = {}) {
 
   do {
     await reloadGraph(project);
-    await claimReadyTasks(project);
+    await claimReadyTasks(project, options);
     await saveBoard(project);
 
     if (options.once) {
