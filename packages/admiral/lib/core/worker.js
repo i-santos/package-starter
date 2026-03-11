@@ -66,6 +66,9 @@ async function runTaskCommand(project, task) {
       {
         status: "succeeded",
         summary: "Execution completed successfully.",
+      },
+      {
+        workflowStatus: contract.command.workflow_status,
       }
     );
 
@@ -144,6 +147,7 @@ async function main() {
           last_summary: contract.result.summary,
           last_blockers: contract.result.blockers || [],
           last_next_actions: contract.result.next_actions || [],
+          last_stage_output: contract.result.stage_output || {},
           last_decision: decision.schedulerStatus,
         },
       };
@@ -160,6 +164,7 @@ async function main() {
       blockers: contract.result.blockers || [],
       tests_run: contract.result.tests_run || [],
       handoff: contract.result.handoff || "",
+      stage_output: contract.result.stage_output || {},
       result_file: contract.files.workspace_result,
     });
     await appendEvent(project, decision.eventName, taskId, task.agent, {

@@ -135,7 +135,7 @@ serialTest("scheduler moves a successful task to review", async () => {
 
   const configPath = path.join(repoDir, ".admiral", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
-  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync('done.txt', process.env.ADMIRAL_TASK_ID);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Implemented backend auth',changed_files:['src/backend/auth.js'],next_actions:['open pr'],tests_run:['unit'],artifacts:{report:'docs/tests/backend-auth.md'},ok:true,taskId:process.env.ADMIRAL_TASK_ID}, null, 2));\"";
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync('done.txt', process.env.ADMIRAL_TASK_ID);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Implemented backend auth',changed_files:['src/backend/auth.js'],next_actions:['open pr'],tests_run:['unit'],artifacts:{report:'docs/tests/backend-auth.md'},stage_output:{plan:{goals:['Implement backend auth'],constraints:['keep public API stable'],risks:['auth regression'],implementation_steps:['define auth flow','wire controller']}},ok:true,taskId:process.env.ADMIRAL_TASK_ID}, null, 2));\"";
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth", "--scope", "general"], repoDir);
@@ -164,8 +164,10 @@ serialTest("scheduler moves a successful task to review", async () => {
   assert.equal(contract.context.task_file, path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"));
   assert.equal(contract.context.previous_stage, "");
   assert.equal(contract.context.previous_stage_handoff, null);
+  assert.equal(contract.command.result_contract.key, "plan");
   assert.equal(result.status, "succeeded");
   assert.equal(result.summary, "Implemented backend auth");
+  assert.deepEqual(result.stage_output.plan.goals, ["Implement backend auth"]);
   assert.deepEqual(result.changed_files, ["src/backend/auth.js"]);
   assert.equal(result.ok, true);
   assert.equal(projectContext.project.default_branch, "main");
@@ -186,7 +188,7 @@ serialTest("task profile selects the profile command and capabilities", async ()
   config.agent_command = "node -e \"process.exit(9)\"";
   config.workflow_stage_profiles.new = "implementer";
   config.agent_profiles.implementer = {
-    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('profile.txt', process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_AGENT_CAPABILITIES);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Implemented via profile'}, null, 2));\"",
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('profile.txt', process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_AGENT_CAPABILITIES);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Implemented via profile',stage_output:{plan:{goals:['define auth work'],constraints:['keep beta stable'],risks:['missing coverage'],implementation_steps:['inspect task','prepare implementation notes']}}}, null, 2));\"",
     capabilities: ["implementation", "code_editing"],
   };
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
@@ -214,11 +216,11 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   const configPath = path.join(repoDir, ".admiral", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
   config.agent_profiles.planner = {
-    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Planned via stage assignment'}, null, 2));\"",
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Planned via stage assignment',stage_output:{plan:{goals:['define plan'],constraints:['respect scope'],risks:['missing context'],implementation_steps:['analyze repo','write plan']}}}, null, 2));\"",
     capabilities: ["planning"],
   };
   config.agent_profiles.reviewer = {
-    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Reviewed via stage assignment'}, null, 2));\"",
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Reviewed via stage assignment',stage_output:{verification:{checks:{unit:'pass',integration:'pass',e2e:'not_required'},issues:[],recommendation:'ready_for_release'}}}, null, 2));\"",
     capabilities: ["verification"],
   };
   config.agent_profiles.implementer = {
@@ -257,6 +259,7 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   assert.equal(contract.command.profile, "reviewer");
   assert.equal(contract.command.task_profile, "implementer");
   assert.equal(contract.command.stage_profile, "reviewer");
+  assert.equal(contract.command.result_contract.key, "verification");
   assert.equal(taskContext.assignment.active_profile, "reviewer");
 });
 
@@ -397,7 +400,7 @@ serialTest("review task can be manually marked done", async () => {
 
   const configPath = path.join(repoDir, ".admiral", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
-  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Ready for review',next_task_status:'review'}, null, 2));\"";
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Ready for review',next_task_status:'review',stage_output:{plan:{goals:['prepare review'],constraints:['keep current scope'],risks:['missing validation'],implementation_steps:['record summary','request review']}}}, null, 2));\"";
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);

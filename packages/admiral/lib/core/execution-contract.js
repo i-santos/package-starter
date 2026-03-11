@@ -6,6 +6,7 @@ const { writeJson, readJsonIfExists } = require("../utils/fs");
 const { getTaskContextPath, getTaskHandoffPath } = require("./context-store");
 const { resolveTaskAssignment } = require("./agent-profiles");
 const { readTaskRecord } = require("@i-santos/workflow");
+const { getStageResultContract } = require("./task-result");
 
 function createExecutionId(taskId, now = new Date()) {
   const stamp = now.toISOString().replace(/[:.]/g, "-");
@@ -30,6 +31,7 @@ function buildExecutionContract(project, task, now = new Date()) {
   const previousStageHandoff = previousStage && workflow.stage_handoffs
     ? workflow.stage_handoffs[previousStage] || null
     : null;
+  const stageResultContract = getStageResultContract(assignment.workflowStatus);
   const runtimeRecordPath = path.join(project.paths.runtimeExecutionsDir, `${task.id}.json`);
   const workspaceDir = path.join(workspace, ".admiral");
   const workspaceContractPath = path.join(workspaceDir, "task-execution.json");
@@ -67,6 +69,7 @@ function buildExecutionContract(project, task, now = new Date()) {
       workflow_status: assignment.workflowStatus,
       task_profile: assignment.taskProfile,
       stage_profile: assignment.stageProfile,
+      result_contract: stageResultContract,
       pre_run: task.hooks && task.hooks["pre-run"] ? task.hooks["pre-run"] : "",
       post_run: task.hooks && task.hooks["post-run"] ? task.hooks["post-run"] : "",
     },

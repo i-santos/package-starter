@@ -176,6 +176,9 @@ Workflow transitions now also persist structured stage handoffs inside the task 
 - `artifacts`
 - `handoff`
 - `next_task_status`: `review` | `blocked` | `done`
+- `stage_output`: validated against the active workflow stage
+
+The execution contract also exposes the required result shape for the active stage through `command.result_contract` in `.admiral/task-execution.json`.
 
 Scheduler policy after execution:
 
