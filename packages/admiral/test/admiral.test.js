@@ -148,6 +148,9 @@ serialTest("scheduler moves a successful task to review", async () => {
   assert.equal(task.status, "review");
   assert.ok(task.workspace);
   assert.equal(task.metadata.execution.last_status, "succeeded");
+  assert.equal(task.metadata.workflow.status, "planned");
+  assert.equal(task.metadata.execution.last_workflow_action, "advance");
+  assert.equal(task.metadata.execution.last_workflow_status, "planned");
   assert.ok(task.metadata.execution.contract_file);
   assert.ok(task.metadata.execution.result_file);
 
@@ -260,7 +263,63 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   assert.equal(contract.command.task_profile, "implementer");
   assert.equal(contract.command.stage_profile, "reviewer");
   assert.equal(contract.command.result_contract.key, "verification");
+  assert.equal(task.metadata.workflow.status, "verified");
   assert.equal(taskContext.assignment.active_profile, "reviewer");
+});
+
+serialTest("verified stage can automatically advance to publish_ready from release readiness output", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_profiles.reviewer = {
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Release readiness confirmed',stage_output:{release_readiness:{status:'ready',reasons:['checks passed']}},next_task_status:'review'}, null, 2));\"",
+    capabilities: ["verification"],
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "release-task"], repoDir);
+  await runCli(["task", "plan", "release-task"], repoDir);
+  await runCli(["task", "tdd", "release-task"], repoDir);
+  await runCli(["task", "implement", "release-task"], repoDir);
+  await runCli(["task", "verify", "release-task"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "release-task");
+  assert.equal(task.metadata.workflow.status, "publish_ready");
+  assert.equal(task.metadata.execution.last_workflow_action, "advance");
+  assert.equal(task.metadata.execution.last_workflow_status, "publish_ready");
+});
+
+serialTest("verified stage can request rework and return workflow to implemented", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_profiles.reviewer = {
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Release readiness failed',stage_output:{release_readiness:{status:'changes_required',reasons:['missing release notes']}},next_task_status:'review'}, null, 2));\"",
+    capabilities: ["verification"],
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "rework-task"], repoDir);
+  await runCli(["task", "plan", "rework-task"], repoDir);
+  await runCli(["task", "tdd", "rework-task"], repoDir);
+  await runCli(["task", "implement", "rework-task"], repoDir);
+  await runCli(["task", "verify", "rework-task"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "rework-task");
+  assert.equal(task.status, "review");
+  assert.equal(task.metadata.workflow.status, "implemented");
+  assert.equal(task.metadata.execution.last_workflow_action, "rework");
+  assert.equal(task.metadata.execution.last_workflow_status, "implemented");
 });
 
 serialTest("recovery retries a dead running task", async () => {

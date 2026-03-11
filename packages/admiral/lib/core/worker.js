@@ -7,7 +7,7 @@ const { getTaskById } = require("./task-graph");
 const { appendEvent } = require("./event-bus");
 const { writeHeartbeat, clearHeartbeat } = require("./heartbeat");
 const { prepareExecutionContract, buildExecutionEnv, finalizeExecutionContract } = require("./execution-contract");
-const { resolveCompletedExecution, applyFailedExecutionPolicy } = require("./execution-policy");
+const { evaluateWorkflowDecision, applyWorkflowDecision, resolveCompletedExecution, applyFailedExecutionPolicy } = require("./execution-policy");
 const { syncProjectContext, syncTaskContext, writeTaskHandoff } = require("./context-store");
 const { normalizeTaskResult } = require("./task-result");
 const { execShellCommand } = require("../utils/process");
@@ -130,9 +130,11 @@ async function main() {
 
   try {
     const contract = await runTaskCommand(project, task);
-    const decision = resolveCompletedExecution(contract);
+    const workflowDecision = evaluateWorkflowDecision(task, contract);
+    const decision = resolveCompletedExecution(contract, workflowDecision);
     await withGraphMutation(project, (graph) => {
       const freshTask = getTaskById(graph, taskId);
+      applyWorkflowDecision(freshTask, workflowDecision);
       freshTask.status = decision.schedulerStatus;
       freshTask.metadata = {
         ...(freshTask.metadata || {}),
@@ -149,6 +151,9 @@ async function main() {
           last_next_actions: contract.result.next_actions || [],
           last_stage_output: contract.result.stage_output || {},
           last_decision: decision.schedulerStatus,
+          last_workflow_action: workflowDecision.action,
+          last_workflow_status: workflowDecision.nextStatus,
+          last_workflow_reason: workflowDecision.reason,
         },
       };
       return graph;
@@ -170,7 +175,21 @@ async function main() {
     await appendEvent(project, decision.eventName, taskId, task.agent, {
       scheduler_status: decision.schedulerStatus,
       result_status: contract.result.status,
+      workflow_action: workflowDecision.action,
+      workflow_status: workflowDecision.nextStatus,
+      workflow_reason: workflowDecision.reason,
     });
+    if (workflowDecision.action === "advance") {
+      await appendEvent(project, "TASK_WORKFLOW_AUTO_ADVANCED", taskId, task.agent, {
+        workflow_status: workflowDecision.nextStatus,
+        reason: workflowDecision.reason,
+      });
+    } else if (workflowDecision.action === "rework") {
+      await appendEvent(project, "TASK_WORKFLOW_REWORK_REQUIRED", taskId, task.agent, {
+        workflow_status: workflowDecision.nextStatus,
+        reason: workflowDecision.reason,
+      });
+    }
   } catch (error) {
     const failedAt = new Date().toISOString();
     const executionContract = error.executionContract || null;
