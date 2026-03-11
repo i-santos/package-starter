@@ -4,7 +4,7 @@ const path = require("node:path");
 const { writeFile } = require("node:fs/promises");
 const { loadProject, withGraphMutation, saveBoard } = require("../core/project");
 const { createTask, getTaskById, listTasks, validateGraphIntegrity } = require("../core/task-graph");
-const { appendEvent } = require("../core/event-bus");
+const { appendEvent, readEvents } = require("../core/event-bus");
 const { syncProjectContext, syncTaskContext } = require("../core/context-store");
 const { assertKnownAgentProfile, resolveTaskAssignment } = require("../core/agent-profiles");
 const { attachTaskRecord, createTaskRecord, readTaskRecord, transitionTask } = require("@i-santos/workflow");
@@ -79,6 +79,40 @@ function printTask(payload, flags = {}) {
       console.log(`${task.id}\t${task.scheduler_status}\t${task.workflow.status}\t${task.scope}\tprofile:${task.profile}\tactive:${task.active_profile}\tdeps:${deps}`);
     }
   }
+}
+
+function formatEventSummary(event) {
+  if (event.event.startsWith("TASK_WORKFLOW_") && event.workflow_status) {
+    return `workflow ${event.workflow_status}`;
+  }
+  if (event.event === "TASK_REENQUEUED") {
+    return `re-enqueued (${event.source || "unknown"}): ${event.reason || "-"}`;
+  }
+  if (event.event === "TASK_WORKFLOW_AUTO_ADVANCED") {
+    return `workflow advanced to ${event.workflow_status || "-"}: ${event.reason || "-"}`;
+  }
+  if (event.event === "TASK_WORKFLOW_REWORK_REQUIRED") {
+    return `workflow rework -> ${event.workflow_status || "-"}: ${event.reason || "-"}`;
+  }
+  if (event.event === "TASK_CLAIMED") {
+    return `claimed by ${event.agent_id || "-"} (${event.enqueue_source || "unknown"} queue)`;
+  }
+  if (event.event === "TASK_STARTED") {
+    return `started by ${event.agent_id || "-"} (pid ${event.pid || "-"})`;
+  }
+  if (event.event === "TASK_DONE" || event.event === "TASK_BLOCKED" || event.event === "TASK_COMPLETED") {
+    return `${event.event.toLowerCase()} -> ${event.scheduler_status || "-"} (${event.workflow_action || "-"} -> ${event.workflow_status || "-"})`;
+  }
+  if (event.event === "TASK_RETRIED") {
+    return "manual retry requested";
+  }
+  if (event.event === "TASK_UNBLOCKED") {
+    return "manual unblock requested";
+  }
+  if (event.event === "TASK_DONE_MANUAL") {
+    return "manually marked done";
+  }
+  return event.event.toLowerCase();
 }
 
 async function ensureFile(filePath, content) {
@@ -296,6 +330,36 @@ async function runTaskStatus(taskId, flags = {}) {
       __assignment: resolveTaskAssignment(project, task),
     }),
   }, flags);
+}
+
+async function runTaskHistory(taskId, flags = {}) {
+  const project = await loadProject(process.cwd());
+  const limit = flags.limit ? Number(flags.limit) : null;
+  const events = await readEvents(project, {
+    taskId,
+    limit: Number.isFinite(limit) ? limit : null,
+  });
+
+  if (flags.json) {
+    console.log(JSON.stringify({
+      ok: true,
+      action: "history",
+      task_id: taskId,
+      count: events.length,
+      events,
+    }, null, 2));
+    return;
+  }
+
+  console.log(`History ${taskId}`);
+  if (events.length === 0) {
+    console.log("No events.");
+    return;
+  }
+
+  for (const event of events) {
+    console.log(`- ${event.timestamp} ${formatEventSummary(event)}`);
+  }
 }
 
 async function runTaskPlan(taskId, flags = {}) {
@@ -546,6 +610,7 @@ module.exports = {
   runTaskCreate,
   runTaskList,
   runTaskStatus,
+  runTaskHistory,
   runTaskPlan,
   runTaskTdd,
   runTaskImplement,

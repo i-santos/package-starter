@@ -5,6 +5,7 @@ const {
   runTaskCreate,
   runTaskList,
   runTaskStatus,
+  runTaskHistory,
   runTaskPlan,
   runTaskTdd,
   runTaskImplement,
@@ -59,6 +60,7 @@ Usage:
   admiral task create <id> [--title "..."] [--scope backend] [--profile implementer] [--priority 1] [--depends-on a,b] [--json]
   admiral task list [--json]
   admiral task status <id> [--json]
+  admiral task history <id> [--limit 20] [--json]
   admiral task plan <id> [--json]
   admiral task tdd <id> [--json]
   admiral task implement <id> [--json]
@@ -130,6 +132,15 @@ async function main(argv) {
         throw new Error("task status requires an id");
       }
       await runTaskStatus(taskId, flags);
+      return;
+    }
+
+    if (subcommand === "history") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task history requires an id");
+      }
+      await runTaskHistory(taskId, flags);
       return;
     }
 

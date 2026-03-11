@@ -14,6 +14,7 @@ The current implementation covers the practical core of phases 1 and 2:
 - `admiral task create`
 - `admiral task list`
 - `admiral task status`
+- `admiral task history`
 - `admiral task plan`
 - `admiral task tdd`
 - `admiral task implement`
@@ -65,6 +66,7 @@ Create tasks:
 ```bash
 admiral task create backend-auth --scope backend --profile implementer
 admiral task create frontend-login --scope frontend --depends-on backend-auth
+admiral task history backend-auth --limit 20
 ```
 
 Advance workflow lifecycle:

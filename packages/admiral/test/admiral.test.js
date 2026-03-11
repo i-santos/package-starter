@@ -7,6 +7,7 @@ const path = require("node:path");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { spawn } = require("node:child_process");
 const { execFile } = require("../lib/utils/process");
+const { main } = require("../lib/cli");
 
 const CLI_PATH = path.join(__dirname, "..", "bin", "admiral");
 const serialTest = (name, fn) => test(name, { concurrency: false }, fn);
@@ -52,6 +53,23 @@ async function readEvents(repoDir) {
     .map((line) => JSON.parse(line));
 }
 
+async function captureCliOutput(args, cwd) {
+  const lines = [];
+  const originalLog = console.log;
+  const originalCwd = process.cwd();
+  console.log = (...parts) => {
+    lines.push(parts.join(" "));
+  };
+  process.chdir(cwd);
+  try {
+    await main(args);
+  } finally {
+    process.chdir(originalCwd);
+    console.log = originalLog;
+  }
+  return lines.join("\n");
+}
+
 serialTest("admiral init creates runtime structure", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
@@ -82,6 +100,24 @@ serialTest("admiral can create tasks with dependencies", async () => {
   assert.equal(taskContext.task.id, "backend-auth");
   assert.equal(taskContext.workflow.status, "new");
   assert.equal(taskContext.task.profile, "implementer");
+});
+
+serialTest("task history shows a timeline for a single task", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["task", "plan", "backend-auth"], repoDir);
+
+  const history = await captureCliOutput(["task", "history", "backend-auth", "--limit", "2"], repoDir);
+  assert.match(history, /History backend-auth/);
+  assert.match(history, /workflow planned/);
+
+  const historyJson = await captureCliOutput(["task", "history", "backend-auth", "--limit", "1", "--json"], repoDir);
+  const payload = JSON.parse(historyJson);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.task_id, "backend-auth");
+  assert.equal(payload.count, 1);
+  assert.equal(payload.events[0].event, "TASK_WORKFLOW_PLANNED");
 });
 
 serialTest("admiral task workflow lifecycle persists metadata and artifacts", async () => {
