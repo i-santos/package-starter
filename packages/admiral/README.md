@@ -163,6 +163,8 @@ It also materializes shared context files under `.admiral/context/`:
 - `tasks/<task-id>.json`: current task context, workflow state, and latest execution summary
 - `handoffs/<task-id>.json`: rolling handoff history between executions/agents
 
+Workflow transitions now also persist structured stage handoffs inside the task context and workflow metadata, so each stage can consume the summarized output of the previous one.
+
 `task-result.json` is now treated as a structured contract. Supported fields include:
 
 - `status`: `succeeded` | `failed` | `blocked`

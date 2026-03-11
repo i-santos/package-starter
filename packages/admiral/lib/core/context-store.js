@@ -45,6 +45,16 @@ function buildTaskContext(project, task) {
   const workflow = readTaskRecord(task);
   const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
   const assignment = resolveTaskAssignment(project, task);
+  const stageHandoffs = workflow.stage_handoffs || {};
+  const previousStageMap = {
+    planned: null,
+    tdd_ready: "planned",
+    implemented: "tdd_ready",
+    verified: "implemented",
+    publish_ready: "verified",
+    released: "publish_ready",
+  };
+  const previousStage = previousStageMap[workflow.status] || null;
 
   return {
     version: 1,
@@ -64,6 +74,12 @@ function buildTaskContext(project, task) {
       retries: task.retries,
     },
     workflow,
+    stage_handoffs: {
+      previous_stage: previousStage,
+      previous: previousStage ? (stageHandoffs[previousStage] || null) : null,
+      current_stage: workflow.status,
+      all: stageHandoffs,
+    },
     assignment: {
       workflow_status: assignment.workflowStatus,
       task_profile: assignment.taskProfile,

@@ -37,6 +37,14 @@ const DEFAULT_RELEASE = Object.freeze({
   published: false
 });
 
+const DEFAULT_STAGE_HANDOFFS = Object.freeze({
+  planned: null,
+  tdd_ready: null,
+  implemented: null,
+  verified: null,
+  publish_ready: null
+});
+
 function isTaskState(value) {
   return TASK_STATES.includes(value);
 }
@@ -94,6 +102,10 @@ function createTaskRecord(input = {}, nowIso = new Date().toISOString()) {
     release: {
       ...DEFAULT_RELEASE,
       ...(input.release || {})
+    },
+    stage_handoffs: {
+      ...DEFAULT_STAGE_HANDOFFS,
+      ...(input.stage_handoffs || {})
     }
   };
 }

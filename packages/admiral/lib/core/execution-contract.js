@@ -5,6 +5,7 @@ const { mkdir, writeFile } = require("node:fs/promises");
 const { writeJson, readJsonIfExists } = require("../utils/fs");
 const { getTaskContextPath, getTaskHandoffPath } = require("./context-store");
 const { resolveTaskAssignment } = require("./agent-profiles");
+const { readTaskRecord } = require("@i-santos/workflow");
 
 function createExecutionId(taskId, now = new Date()) {
   const stamp = now.toISOString().replace(/[:.]/g, "-");
@@ -16,6 +17,19 @@ function buildExecutionContract(project, task, now = new Date()) {
   const workspace = task.workspace || project.root;
   const assignment = resolveTaskAssignment(project, task);
   const profile = assignment.resolvedProfile;
+  const workflow = readTaskRecord(task);
+  const previousStage = ({
+    new: "",
+    planned: "",
+    tdd_ready: "planned",
+    implemented: "tdd_ready",
+    verified: "implemented",
+    publish_ready: "verified",
+    released: "publish_ready",
+  }[assignment.workflowStatus] || "");
+  const previousStageHandoff = previousStage && workflow.stage_handoffs
+    ? workflow.stage_handoffs[previousStage] || null
+    : null;
   const runtimeRecordPath = path.join(project.paths.runtimeExecutionsDir, `${task.id}.json`);
   const workspaceDir = path.join(workspace, ".admiral");
   const workspaceContractPath = path.join(workspaceDir, "task-execution.json");
@@ -66,6 +80,8 @@ function buildExecutionContract(project, task, now = new Date()) {
       project_file: project.paths.contextProject,
       task_file: getTaskContextPath(project, task.id),
       handoff_file: getTaskHandoffPath(project, task.id),
+      previous_stage: previousStage,
+      previous_stage_handoff: previousStageHandoff,
     },
   };
 }

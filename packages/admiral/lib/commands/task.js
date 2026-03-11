@@ -98,11 +98,94 @@ function getDocsPaths(project, taskRecord) {
   };
 }
 
+function getStageSummary(project, nextStatus, taskRecord, docs) {
+  if (nextStatus === "planned") {
+    return {
+      stage: "planned",
+      title: taskRecord.title,
+      artifacts: {
+        planFile: path.relative(project.root, docs.planFile),
+      },
+      checklist: ["goals", "constraints", "risks", "implementation steps"],
+      entry_criteria: ["task_created"],
+      exit_criteria: ["plan_documented"],
+    };
+  }
+
+  if (nextStatus === "tdd_ready") {
+    return {
+      stage: "tdd_ready",
+      title: taskRecord.title,
+      artifacts: {
+        tddFile: path.relative(project.root, docs.tddFile),
+      },
+      checklist: ["failing cases", "test strategy", "coverage notes"],
+      entry_criteria: ["plan_documented"],
+      exit_criteria: ["tests_defined"],
+    };
+  }
+
+  if (nextStatus === "implemented") {
+    return {
+      stage: "implemented",
+      title: taskRecord.title,
+      artifacts: {
+        implementationFile: path.relative(project.root, docs.implementationFile),
+      },
+      checklist: ["scope", "changed files", "risks and mitigations", "follow-ups"],
+      entry_criteria: ["tests_defined"],
+      exit_criteria: ["implementation_notes_recorded"],
+    };
+  }
+
+  if (nextStatus === "verified") {
+    return {
+      stage: "verified",
+      title: taskRecord.title,
+      artifacts: {
+        reportFile: path.relative(project.root, docs.reportFile),
+      },
+      checklist: ["unit", "integration", "e2e"],
+      entry_criteria: ["implementation_notes_recorded"],
+      exit_criteria: ["verification_report_recorded"],
+    };
+  }
+
+  if (nextStatus === "publish_ready") {
+    return {
+      stage: "publish_ready",
+      title: taskRecord.title,
+      artifacts: {
+        reportFile: taskRecord.artifacts && taskRecord.artifacts.reportFile ? taskRecord.artifacts.reportFile : "",
+      },
+      checklist: ["unit_pass", "integration_pass"],
+      entry_criteria: ["verification_report_recorded"],
+      exit_criteria: ["release_ready"],
+    };
+  }
+
+  return null;
+}
+
+function assertStagePrerequisites(taskRecord, nextStatus) {
+  const artifacts = taskRecord.artifacts || {};
+  if (nextStatus === "implemented" && !artifacts.tddFile) {
+    throw new Error("cannot move to implemented without a tdd handoff");
+  }
+  if (nextStatus === "verified" && !artifacts.implementationFile) {
+    throw new Error("cannot move to verified without an implementation handoff");
+  }
+  if (nextStatus === "publish_ready" && !artifacts.reportFile) {
+    throw new Error("cannot move to publish_ready without a verification handoff");
+  }
+}
+
 async function mutateWorkflowTask(project, taskId, nextStatus, options = {}) {
   let updatedTask;
   await withGraphMutation(project, async (graph) => {
     const task = getTaskById(graph, taskId);
     const currentRecord = readTaskRecord(task);
+    assertStagePrerequisites(currentRecord, nextStatus);
     const transitioned = transitionTask(currentRecord, nextStatus, new Date().toISOString());
     const nextRecord = {
       ...transitioned,
@@ -118,6 +201,10 @@ async function mutateWorkflowTask(project, taskId, nextStatus, options = {}) {
       release: {
         ...(transitioned.release || {}),
         ...((options.recordPatch && options.recordPatch.release) || {}),
+      },
+      stage_handoffs: {
+        ...(transitioned.stage_handoffs || {}),
+        ...((options.recordPatch && options.recordPatch.stage_handoffs) || {}),
       },
     };
 
@@ -233,6 +320,9 @@ async function runTaskPlan(taskId, flags = {}) {
       artifacts: {
         planFile: path.relative(project.root, docs.planFile),
       },
+      stage_handoffs: {
+        planned: getStageSummary(project, "planned", current, docs),
+      },
     },
   });
   printTask({ ok: true, action: "plan", task: formatTask(updated) }, flags);
@@ -258,6 +348,9 @@ async function runTaskTdd(taskId, flags = {}) {
     recordPatch: {
       artifacts: {
         tddFile: path.relative(project.root, docs.tddFile),
+      },
+      stage_handoffs: {
+        tdd_ready: getStageSummary(project, "tdd_ready", current, docs),
       },
     },
   });
@@ -285,6 +378,9 @@ async function runTaskImplement(taskId, flags = {}) {
     recordPatch: {
       artifacts: {
         implementationFile: path.relative(project.root, docs.implementationFile),
+      },
+      stage_handoffs: {
+        implemented: getStageSummary(project, "implemented", current, docs),
       },
     },
   });
@@ -317,6 +413,9 @@ async function runTaskVerify(taskId, flags = {}) {
         integration: "pass",
         e2e: current.checks && current.checks.e2e ? current.checks.e2e : "not_required",
       },
+      stage_handoffs: {
+        verified: getStageSummary(project, "verified", current, docs),
+      },
     },
   });
   printTask({ ok: true, action: "verify", task: formatTask(updated) }, flags);
@@ -326,6 +425,7 @@ async function runTaskPublishReady(taskId, flags = {}) {
   const project = await loadProject(process.cwd());
   const task = getTaskById(project.graph, taskId);
   const current = readTaskRecord(task);
+  const docs = getDocsPaths(project, current);
   if (current.checks.unit !== "pass" || current.checks.integration !== "pass") {
     throw new Error(
       `Cannot mark task as publish_ready. Expected checks unit=pass and integration=pass but got unit=${current.checks.unit}, integration=${current.checks.integration}.`
@@ -334,6 +434,11 @@ async function runTaskPublishReady(taskId, flags = {}) {
 
   const updated = await mutateWorkflowTask(project, taskId, "publish_ready", {
     eventName: "TASK_WORKFLOW_PUBLISH_READY",
+    recordPatch: {
+      stage_handoffs: {
+        publish_ready: getStageSummary(project, "publish_ready", current, docs),
+      },
+    },
   });
   printTask({ ok: true, action: "publish-ready", task: formatTask(updated) }, flags);
 }

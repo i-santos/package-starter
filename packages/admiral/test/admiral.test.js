@@ -9,6 +9,7 @@ const { spawn } = require("node:child_process");
 const { execFile } = require("../lib/utils/process");
 
 const CLI_PATH = path.join(__dirname, "..", "bin", "admiral");
+const serialTest = (name, fn) => test(name, { concurrency: false }, fn);
 
 async function createTempRepo() {
   const repoDir = await mkdtemp(path.join(os.tmpdir(), "admiral-test-"));
@@ -31,7 +32,18 @@ async function runCli(args, cwd) {
   });
 }
 
-test("admiral init creates runtime structure", async () => {
+async function runCliAllowFailure(args, cwd) {
+  return execFile(process.execPath, [CLI_PATH, ...args], {
+    cwd,
+    env: {
+      ...process.env,
+      SHELL: "/bin/sh",
+    },
+    allowFailure: true,
+  });
+}
+
+serialTest("admiral init creates runtime structure", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -46,7 +58,7 @@ test("admiral init creates runtime structure", async () => {
   assert.equal(typeof JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "project.json"), "utf8")).project.root, "string");
 });
 
-test("admiral can create tasks with dependencies", async () => {
+serialTest("admiral can create tasks with dependencies", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
   await runCli(["task", "create", "backend-auth", "--scope", "backend", "--profile", "implementer"], repoDir);
@@ -63,7 +75,7 @@ test("admiral can create tasks with dependencies", async () => {
   assert.equal(taskContext.task.profile, "implementer");
 });
 
-test("admiral task workflow lifecycle persists metadata and artifacts", async () => {
+serialTest("admiral task workflow lifecycle persists metadata and artifacts", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -74,32 +86,50 @@ test("admiral task workflow lifecycle persists metadata and artifacts", async ()
   let task = graph.tasks.find((item) => item.id === "platform-auth");
   assert.equal(task.metadata.workflow.status, "planned");
   assert.equal(await readFile(path.join(repoDir, task.metadata.workflow.artifacts.planFile), "utf8").then(Boolean), true);
+  assert.equal(task.metadata.workflow.stage_handoffs.planned.stage, "planned");
 
   await runCli(["task", "tdd", "platform-auth"], repoDir);
   graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   task = graph.tasks.find((item) => item.id === "platform-auth");
   assert.equal(task.metadata.workflow.status, "tdd_ready");
   assert.equal(await readFile(path.join(repoDir, task.metadata.workflow.artifacts.tddFile), "utf8").then(Boolean), true);
+  assert.equal(task.metadata.workflow.stage_handoffs.tdd_ready.stage, "tdd_ready");
 
   await runCli(["task", "implement", "platform-auth"], repoDir);
   graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   task = graph.tasks.find((item) => item.id === "platform-auth");
   assert.equal(task.metadata.workflow.status, "implemented");
+  assert.equal(task.metadata.workflow.stage_handoffs.implemented.stage, "implemented");
 
   await runCli(["task", "verify", "platform-auth"], repoDir);
   graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   task = graph.tasks.find((item) => item.id === "platform-auth");
   assert.equal(task.metadata.workflow.status, "verified");
   assert.equal(task.metadata.workflow.checks.unit, "pass");
+  assert.equal(task.metadata.workflow.stage_handoffs.verified.stage, "verified");
 
   await runCli(["task", "publish-ready", "platform-auth"], repoDir);
   graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   task = graph.tasks.find((item) => item.id === "platform-auth");
   assert.equal(task.metadata.workflow.status, "publish_ready");
   assert.equal(task.status, "todo");
+  assert.equal(task.metadata.workflow.stage_handoffs.publish_ready.stage, "publish_ready");
 });
 
-test("scheduler moves a successful task to review", async () => {
+serialTest("workflow stage transitions require prior handoff artifacts", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+  await runCli(["task", "create", "platform-auth"], repoDir);
+
+  const implementResult = await runCliAllowFailure(["task", "implement", "platform-auth"], repoDir);
+  assert.equal(implementResult.code, 1);
+
+  await runCli(["task", "plan", "platform-auth"], repoDir);
+  const verifyResult = await runCliAllowFailure(["task", "verify", "platform-auth"], repoDir);
+  assert.equal(verifyResult.code, 1);
+});
+
+serialTest("scheduler moves a successful task to review", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -132,6 +162,8 @@ test("scheduler moves a successful task to review", async () => {
   assert.equal(contract.files.workspace_result, path.join(task.workspace, ".admiral", "task-result.json"));
   assert.equal(contract.context.project_file, path.join(repoDir, ".admiral", "context", "project.json"));
   assert.equal(contract.context.task_file, path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"));
+  assert.equal(contract.context.previous_stage, "");
+  assert.equal(contract.context.previous_stage_handoff, null);
   assert.equal(result.status, "succeeded");
   assert.equal(result.summary, "Implemented backend auth");
   assert.deepEqual(result.changed_files, ["src/backend/auth.js"]);
@@ -139,12 +171,13 @@ test("scheduler moves a successful task to review", async () => {
   assert.equal(projectContext.project.default_branch, "main");
   assert.equal(taskContext.execution.last_status, "succeeded");
   assert.equal(taskContext.execution.last_summary, "Implemented backend auth");
+  assert.equal(taskContext.stage_handoffs.previous_stage, null);
   assert.deepEqual(taskContext.execution.last_next_actions, ["open pr"]);
   assert.equal(handoff.latest.summary, "Implemented backend auth");
   assert.deepEqual(handoff.latest.tests_run, ["unit"]);
 });
 
-test("task profile selects the profile command and capabilities", async () => {
+serialTest("task profile selects the profile command and capabilities", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -174,7 +207,7 @@ test("task profile selects the profile command and capabilities", async () => {
   assert.equal(contract.command.profile, "implementer");
 });
 
-test("workflow stage assignment overrides the task base profile", async () => {
+serialTest("workflow stage assignment overrides the task base profile", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -227,7 +260,7 @@ test("workflow stage assignment overrides the task base profile", async () => {
   assert.equal(taskContext.assignment.active_profile, "reviewer");
 });
 
-test("recovery retries a dead running task", async () => {
+serialTest("recovery retries a dead running task", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -264,7 +297,7 @@ test("recovery retries a dead running task", async () => {
   assert.equal(task.metadata.execution.last_failure_kind, "stale_agent");
 });
 
-test("failed execution persists contract failure state", async () => {
+serialTest("failed execution persists contract failure state", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -293,7 +326,7 @@ test("failed execution persists contract failure state", async () => {
   assert.match(handoff.latest.blockers[0], /agent command failed with code 7/);
 });
 
-test("invalid structured result fails without scheduling retry", async () => {
+serialTest("invalid structured result fails without scheduling retry", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -314,7 +347,7 @@ test("invalid structured result fails without scheduling retry", async () => {
   assert.match(task.metadata.execution.last_error, /invalid task result field "changed_files"/);
 });
 
-test("structured blocked result moves task to blocked without treating command as failed", async () => {
+serialTest("structured blocked result moves task to blocked without treating command as failed", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -338,7 +371,7 @@ test("structured blocked result moves task to blocked without treating command a
   assert.deepEqual(result.blockers, ["missing API key"]);
 });
 
-test("blocked task can be unblocked back to todo", async () => {
+serialTest("blocked task can be unblocked back to todo", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -358,7 +391,7 @@ test("blocked task can be unblocked back to todo", async () => {
   assert.deepEqual(task.metadata.execution.last_blockers, []);
 });
 
-test("review task can be manually marked done", async () => {
+serialTest("review task can be manually marked done", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
