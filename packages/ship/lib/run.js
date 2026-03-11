@@ -3557,7 +3557,11 @@ function validateNpmPublishedPackages(packageTargets, expectedTag, timeoutMinute
         && !observedTagVersion
         && observedVersion === target.version
         && String(target.version).includes('-');
-      const tagMatches = observedTagVersion === target.version || prereleaseFallbackMatches;
+      const stableLatestFallbackMatches = !isStableTrack
+        && !observedTagVersion
+        && observedVersion === target.version
+        && !String(target.version).includes('-');
+      const tagMatches = observedTagVersion === target.version || prereleaseFallbackMatches || stableLatestFallbackMatches;
       const passed = versionMatches && tagMatches;
       if (!passed) {
         allPass = false;
