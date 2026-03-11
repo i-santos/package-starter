@@ -12,6 +12,24 @@ function assertArrayOfStrings(value, fieldName) {
   }
 }
 
+function readArrayField(raw, defaults, fieldName) {
+  if (typeof raw[fieldName] === "undefined") {
+    return defaults[fieldName] || [];
+  }
+  assertArrayOfStrings(raw[fieldName], fieldName);
+  return raw[fieldName];
+}
+
+function readObjectField(raw, defaults, fieldName) {
+  if (typeof raw[fieldName] === "undefined") {
+    return defaults[fieldName] || {};
+  }
+  if (!raw[fieldName] || typeof raw[fieldName] !== "object" || Array.isArray(raw[fieldName])) {
+    throw new Error(`invalid task result field "${fieldName}": expected object`);
+  }
+  return raw[fieldName];
+}
+
 function normalizeTaskResult(raw = {}, defaults = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("task result must be an object");
@@ -20,11 +38,11 @@ function normalizeTaskResult(raw = {}, defaults = {}) {
   const result = {
     status: raw.status || defaults.status || "succeeded",
     summary: typeof raw.summary === "string" && raw.summary.trim() ? raw.summary.trim() : (defaults.summary || ""),
-    changed_files: Array.isArray(raw.changed_files) ? raw.changed_files : (defaults.changed_files || []),
-    blockers: Array.isArray(raw.blockers) ? raw.blockers : (defaults.blockers || []),
-    next_actions: Array.isArray(raw.next_actions) ? raw.next_actions : (defaults.next_actions || []),
-    tests_run: Array.isArray(raw.tests_run) ? raw.tests_run : (defaults.tests_run || []),
-    artifacts: raw.artifacts && typeof raw.artifacts === "object" && !Array.isArray(raw.artifacts) ? raw.artifacts : (defaults.artifacts || {}),
+    changed_files: readArrayField(raw, defaults, "changed_files"),
+    blockers: readArrayField(raw, defaults, "blockers"),
+    next_actions: readArrayField(raw, defaults, "next_actions"),
+    tests_run: readArrayField(raw, defaults, "tests_run"),
+    artifacts: readObjectField(raw, defaults, "artifacts"),
     next_task_status: typeof raw.next_task_status === "string" ? raw.next_task_status : (defaults.next_task_status || ""),
     handoff: typeof raw.handoff === "string" ? raw.handoff : (defaults.handoff || ""),
   };
@@ -37,19 +55,11 @@ function normalizeTaskResult(raw = {}, defaults = {}) {
     throw new Error(`invalid task result next_task_status: ${result.next_task_status}`);
   }
 
-  assertArrayOfStrings(result.changed_files, "changed_files");
-  assertArrayOfStrings(result.blockers, "blockers");
-  assertArrayOfStrings(result.next_actions, "next_actions");
-  assertArrayOfStrings(result.tests_run, "tests_run");
-
   if (typeof result.summary !== "string") {
     throw new Error('invalid task result field "summary": expected string');
   }
   if (typeof result.handoff !== "string") {
     throw new Error('invalid task result field "handoff": expected string');
-  }
-  if (!result.artifacts || typeof result.artifacts !== "object" || Array.isArray(result.artifacts)) {
-    throw new Error('invalid task result field "artifacts": expected object');
   }
 
   return result;

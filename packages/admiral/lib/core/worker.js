@@ -6,8 +6,8 @@ const { loadProject, withGraphMutation, reloadGraph, saveBoard } = require("./pr
 const { getTaskById } = require("./task-graph");
 const { appendEvent } = require("./event-bus");
 const { writeHeartbeat, clearHeartbeat } = require("./heartbeat");
-const { applyRetry } = require("./retry-policy");
 const { prepareExecutionContract, buildExecutionEnv, finalizeExecutionContract } = require("./execution-contract");
+const { resolveCompletedExecution, applyFailedExecutionPolicy } = require("./execution-policy");
 const { syncProjectContext, syncTaskContext, writeTaskHandoff } = require("./context-store");
 const { normalizeTaskResult } = require("./task-result");
 const { execShellCommand } = require("../utils/process");
@@ -127,10 +127,10 @@ async function main() {
 
   try {
     const contract = await runTaskCommand(project, task);
+    const decision = resolveCompletedExecution(contract);
     await withGraphMutation(project, (graph) => {
       const freshTask = getTaskById(graph, taskId);
-      const nextSchedulerStatus = contract.result.next_task_status || (contract.result.status === "blocked" || (contract.result.blockers || []).length > 0 ? "blocked" : "review");
-      freshTask.status = nextSchedulerStatus;
+      freshTask.status = decision.schedulerStatus;
       freshTask.metadata = {
         ...(freshTask.metadata || {}),
         execution: {
@@ -144,6 +144,7 @@ async function main() {
           last_summary: contract.result.summary,
           last_blockers: contract.result.blockers || [],
           last_next_actions: contract.result.next_actions || [],
+          last_decision: decision.schedulerStatus,
         },
       };
       return graph;
@@ -161,12 +162,17 @@ async function main() {
       handoff: contract.result.handoff || "",
       result_file: contract.files.workspace_result,
     });
-    await appendEvent(project, "TASK_DONE", taskId, task.agent);
+    await appendEvent(project, decision.eventName, taskId, task.agent, {
+      scheduler_status: decision.schedulerStatus,
+      result_status: contract.result.status,
+    });
   } catch (error) {
     const failedAt = new Date().toISOString();
     const executionContract = error.executionContract || null;
+    let failureDecision;
     await withGraphMutation(project, (graph) => {
       const freshTask = getTaskById(graph, taskId);
+      failureDecision = applyFailedExecutionPolicy(freshTask, project.config, error, executionContract);
       const lastExecution = freshTask.metadata && freshTask.metadata.execution ? freshTask.metadata.execution : {};
       freshTask.metadata = {
         ...(freshTask.metadata || {}),
@@ -174,24 +180,29 @@ async function main() {
           ...lastExecution,
           last_status: executionContract && executionContract.result ? executionContract.result.status : "failed",
           last_completed_at: failedAt,
-          last_summary: executionContract && executionContract.result ? executionContract.result.summary : "Execution failed.",
-          last_blockers: executionContract && executionContract.result ? executionContract.result.blockers || [error.message] : [error.message],
+          last_summary: failureDecision.summary,
+          last_blockers: failureDecision.blockers,
+          last_next_actions: failureDecision.nextActions,
           last_error: error.message,
+          last_failure_kind: failureDecision.failureKind,
+          last_decision: failureDecision.finalStatus,
         },
       };
-      applyRetry(freshTask, project.config);
       return graph;
     });
     await reloadGraph(project);
     task = getTaskById(project.graph, taskId);
     await syncTaskContext(project, task);
     await writeTaskHandoff(project, task, {
-      summary: executionContract && executionContract.result ? executionContract.result.summary : "Execution failed.",
-      blockers: executionContract && executionContract.result ? executionContract.result.blockers || [error.message] : [error.message],
-      next_actions: executionContract && executionContract.result ? executionContract.result.next_actions || [] : [],
+      summary: failureDecision.summary,
+      blockers: failureDecision.blockers,
+      next_actions: failureDecision.nextActions,
     });
-    await appendEvent(project, "TASK_FAILED", taskId, task.agent, {
+    await appendEvent(project, failureDecision.eventName, taskId, task.agent, {
       error: error.message,
+      failure_kind: failureDecision.failureKind,
+      retryable: failureDecision.retryable,
+      scheduler_status: failureDecision.finalStatus,
     });
     process.exitCode = 1;
   } finally {

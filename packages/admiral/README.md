@@ -154,6 +154,14 @@ It also materializes shared context files under `.admiral/context/`:
 - `handoff`
 - `next_task_status`: `review` | `blocked` | `done`
 
+Scheduler policy after execution:
+
+- successful executions go to `review` by default
+- executions with `blockers` or `next_task_status: blocked` go to `blocked`
+- executions with `next_task_status: done` can complete directly as `done`
+- agent crashes and non-zero exits schedule `retry_wait` until retries are exhausted
+- invalid result contracts fail immediately without retry
+
 ## Development
 
 Run tests:

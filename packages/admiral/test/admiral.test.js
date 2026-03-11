@@ -173,6 +173,7 @@ test("recovery retries a dead running task", async () => {
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.ok(["todo", "claimed", "running", "review"].includes(task.status));
   assert.equal(task.retries, 1);
+  assert.equal(task.metadata.execution.last_failure_kind, "stale_agent");
 });
 
 test("failed execution persists contract failure state", async () => {
@@ -190,6 +191,8 @@ test("failed execution persists contract failure state", async () => {
 
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   const task = graph.tasks.find((item) => item.id === "backend-auth");
+  assert.equal(task.status, "retry_wait");
+  assert.equal(task.metadata.execution.last_failure_kind, "agent_exit");
   assert.equal(task.metadata.execution.last_status, "failed");
   assert.match(task.metadata.execution.last_error, /agent command failed with code 7/);
 
@@ -200,6 +203,27 @@ test("failed execution persists contract failure state", async () => {
   assert.match(runtimeRecord.result.error, /agent command failed with code 7/);
   assert.equal(taskContext.execution.last_status, "failed");
   assert.match(handoff.latest.blockers[0], /agent command failed with code 7/);
+});
+
+test("invalid structured result fails without scheduling retry", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',changed_files:'src/backend/auth.js'}, null, 2));\"";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "backend-auth");
+  assert.equal(task.status, "failed");
+  assert.equal(task.retries, 1);
+  assert.equal(task.metadata.execution.last_failure_kind, "contract_invalid");
+  assert.match(task.metadata.execution.last_error, /invalid task result field "changed_files"/);
 });
 
 test("structured blocked result moves task to blocked without treating command as failed", async () => {

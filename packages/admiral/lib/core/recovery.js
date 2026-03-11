@@ -38,9 +38,22 @@ async function runRecovery(project) {
       const previousAgent = task.agent;
       const previousWorkspace = task.workspace;
       applyRetry(task, project.config);
+      const lastExecution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
+      task.metadata = {
+        ...(task.metadata || {}),
+        execution: {
+          ...lastExecution,
+          last_status: "failed",
+          last_summary: "Worker became unavailable during execution.",
+          last_blockers: ["worker heartbeat expired or process is no longer alive"],
+          last_failure_kind: "stale_agent",
+          last_decision: task.status,
+        },
+      };
       await appendEvent(project, "AGENT_DEAD", task.id, previousAgent, {
         pid: pidRecord ? pidRecord.pid : null,
         workspace: previousWorkspace,
+        scheduler_status: task.status,
       });
       await removeFileIfExists(path.join(project.paths.runtimePidsDir, `${task.id}.json`));
       staleTasks.push({
