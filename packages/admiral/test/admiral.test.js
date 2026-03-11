@@ -284,6 +284,7 @@ serialTest("scheduler automatically re-enqueues the next workflow stage after su
   const artifact = await readFile(path.join(task.workspace, "done.txt"), "utf8");
   assert.equal(artifact, "backend-auth");
   const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
+  const instructions = await readFile(path.join(task.workspace, ".admiral", "agent-instructions.md"), "utf8");
   const result = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-result.json"), "utf8"));
   const projectContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "project.json"), "utf8"));
   const taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"), "utf8"));
@@ -295,6 +296,10 @@ serialTest("scheduler automatically re-enqueues the next workflow stage after su
   assert.equal(contract.context.previous_stage, "");
   assert.equal(contract.context.previous_stage_handoff, null);
   assert.equal(contract.command.result_contract.key, "plan");
+  assert.equal(contract.command.instructions.mode, "single-agent-assisted");
+  assert.equal(contract.files.workspace_instructions, path.join(task.workspace, ".admiral", "agent-instructions.md"));
+  assert.match(instructions, /Workflow status: new/);
+  assert.match(instructions, /Result key: plan/);
   assert.equal(result.status, "succeeded");
   assert.equal(result.summary, "Implemented backend auth");
   assert.deepEqual(result.stage_output.plan.goals, ["Implement backend auth"]);
@@ -393,12 +398,15 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   task = graph.tasks.find((item) => item.id === "backend-auth-review");
   stageArtifact = await readFile(path.join(task.workspace, "stage.txt"), "utf8");
   const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
+  const instructions = await readFile(path.join(task.workspace, ".admiral", "agent-instructions.md"), "utf8");
   taskContext = JSON.parse(await readFile(path.join(reviewRepoDir, ".admiral", "context", "tasks", "backend-auth-review.json"), "utf8"));
   assert.equal(stageArtifact, "implemented:reviewer:implementer:reviewer");
   assert.equal(contract.command.profile, "reviewer");
   assert.equal(contract.command.task_profile, "implementer");
   assert.equal(contract.command.stage_profile, "reviewer");
   assert.equal(contract.command.result_contract.key, "verification");
+  assert.match(instructions, /Workflow status: implemented/);
+  assert.match(instructions, /Result key: verification/);
   assert.equal(task.metadata.workflow.status, "verified");
   assert.equal(taskContext.assignment.active_profile, "reviewer");
 });

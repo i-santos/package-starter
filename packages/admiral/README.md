@@ -159,9 +159,11 @@ Before running the agent command, `admiral` now materializes an execution contra
 
 - workspace contract file: `.admiral/task-execution.json`
 - workspace result file: `.admiral/task-result.json`
+- workspace stage instructions: `.admiral/agent-instructions.md`
 - runtime execution record: `runtime/executions/<task-id>.json`
 
 This contract gives the agent a stable interface for reading task context and writing structured execution results.
+For the single-agent assisted MVP, `agent-instructions.md` is the canonical operator-facing prompt scaffold for the current workflow stage.
 
 It also materializes shared context files under `.admiral/context/`:
 

@@ -7,6 +7,7 @@ const { getTaskContextPath, getTaskHandoffPath } = require("./context-store");
 const { resolveTaskAssignment } = require("./agent-profiles");
 const { readTaskRecord } = require("@i-santos/workflow");
 const { getStageResultContract } = require("./task-result");
+const { buildStageInstructions } = require("./stage-instructions");
 
 function createExecutionId(taskId, now = new Date()) {
   const stamp = now.toISOString().replace(/[:.]/g, "-");
@@ -36,6 +37,7 @@ function buildExecutionContract(project, task, now = new Date()) {
   const workspaceDir = path.join(workspace, ".admiral");
   const workspaceContractPath = path.join(workspaceDir, "task-execution.json");
   const workspaceResultPath = path.join(workspaceDir, "task-result.json");
+  const workspaceInstructionsPath = path.join(workspaceDir, "agent-instructions.md");
   const logPath = path.join(project.paths.agentLogsDir, `${task.id}.log`);
 
   return {
@@ -70,6 +72,10 @@ function buildExecutionContract(project, task, now = new Date()) {
       task_profile: assignment.taskProfile,
       stage_profile: assignment.stageProfile,
       result_contract: stageResultContract,
+      instructions: {
+        file: workspaceInstructionsPath,
+        mode: "single-agent-assisted",
+      },
       pre_run: task.hooks && task.hooks["pre-run"] ? task.hooks["pre-run"] : "",
       post_run: task.hooks && task.hooks["post-run"] ? task.hooks["post-run"] : "",
     },
@@ -77,6 +83,7 @@ function buildExecutionContract(project, task, now = new Date()) {
       runtime_record: runtimeRecordPath,
       workspace_contract: workspaceContractPath,
       workspace_result: workspaceResultPath,
+      workspace_instructions: workspaceInstructionsPath,
       log: logPath,
     },
     context: {
@@ -108,6 +115,7 @@ async function prepareExecutionContract(project, task, now = new Date()) {
   await mkdir(path.dirname(contract.files.workspace_contract), { recursive: true });
   await writeJson(contract.files.runtime_record, contract);
   await writeJson(contract.files.workspace_contract, contract);
+  await writeFile(contract.files.workspace_instructions, `${buildStageInstructions(contract)}\n`, "utf8");
   return contract;
 }
 
