@@ -3,6 +3,7 @@
 const path = require("node:path");
 const { writeJson, readJsonIfExists } = require("../utils/fs");
 const { readTaskRecord } = require("@i-santos/workflow");
+const { resolveTaskAssignment } = require("./agent-profiles");
 
 function getTaskContextPath(project, taskId) {
   return path.join(project.paths.contextTasksDir, `${taskId}.json`);
@@ -30,6 +31,7 @@ async function syncProjectContext(project) {
       default_branch: project.config.default_branch,
       max_agents: project.config.max_agents,
       default_agent_profile: project.config.default_agent_profile,
+      workflow_stage_profiles: project.config.workflow_stage_profiles || {},
       agent_profiles: agentProfiles,
       scopes: project.config.scopes,
     },
@@ -42,6 +44,7 @@ async function syncProjectContext(project) {
 function buildTaskContext(project, task) {
   const workflow = readTaskRecord(task);
   const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
+  const assignment = resolveTaskAssignment(project, task);
 
   return {
     version: 1,
@@ -61,6 +64,13 @@ function buildTaskContext(project, task) {
       retries: task.retries,
     },
     workflow,
+    assignment: {
+      workflow_status: assignment.workflowStatus,
+      task_profile: assignment.taskProfile,
+      stage_profile: assignment.stageProfile,
+      active_profile: assignment.resolvedProfile.name,
+      active_capabilities: assignment.resolvedProfile.capabilities,
+    },
     execution,
     refs: {
       handoff: getTaskHandoffPath(project, task.id),

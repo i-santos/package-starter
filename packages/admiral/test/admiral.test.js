@@ -40,6 +40,7 @@ test("admiral init creates runtime structure", async () => {
 
   assert.equal(config.default_branch, "main");
   assert.equal(config.default_agent_profile, "default");
+  assert.equal(config.workflow_stage_profiles.new, "planner");
   assert.deepEqual(config.agent_profiles.implementer.capabilities, ["implementation", "refactoring"]);
   assert.deepEqual(graph.tasks, []);
   assert.equal(typeof JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "project.json"), "utf8")).project.root, "string");
@@ -150,6 +151,7 @@ test("task profile selects the profile command and capabilities", async () => {
   const configPath = path.join(repoDir, ".admiral", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
   config.agent_command = "node -e \"process.exit(9)\"";
+  config.workflow_stage_profiles.new = "implementer";
   config.agent_profiles.implementer = {
     command: "node -e \"const fs=require('node:fs');fs.writeFileSync('profile.txt', process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_AGENT_CAPABILITIES);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Implemented via profile'}, null, 2));\"",
     capabilities: ["implementation", "code_editing"],
@@ -170,6 +172,59 @@ test("task profile selects the profile command and capabilities", async () => {
   assert.equal(contract.task.profile, "implementer");
   assert.deepEqual(contract.task.capabilities, ["implementation", "code_editing"]);
   assert.equal(contract.command.profile, "implementer");
+});
+
+test("workflow stage assignment overrides the task base profile", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_profiles.planner = {
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Planned via stage assignment'}, null, 2));\"",
+    capabilities: ["planning"],
+  };
+  config.agent_profiles.reviewer = {
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Reviewed via stage assignment'}, null, 2));\"",
+    capabilities: ["verification"],
+  };
+  config.agent_profiles.implementer = {
+    command: "node -e \"process.exit(9)\"",
+    capabilities: ["implementation"],
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth-plan", "--profile", "implementer"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  let graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  let task = graph.tasks.find((item) => item.id === "backend-auth-plan");
+  let stageArtifact = await readFile(path.join(task.workspace, "stage.txt"), "utf8");
+  let taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth-plan.json"), "utf8"));
+  assert.equal(task.status, "review");
+  assert.equal(stageArtifact, "new:planner:implementer:planner");
+  assert.equal(taskContext.assignment.active_profile, "planner");
+  assert.equal(taskContext.assignment.task_profile, "implementer");
+  assert.equal(taskContext.assignment.stage_profile, "planner");
+
+  await runCli(["task", "create", "backend-auth-review", "--profile", "implementer"], repoDir);
+  await runCli(["task", "plan", "backend-auth-review"], repoDir);
+  await runCli(["task", "tdd", "backend-auth-review"], repoDir);
+  await runCli(["task", "implement", "backend-auth-review"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  task = graph.tasks.find((item) => item.id === "backend-auth-review");
+  stageArtifact = await readFile(path.join(task.workspace, "stage.txt"), "utf8");
+  const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
+  taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth-review.json"), "utf8"));
+  assert.equal(stageArtifact, "implemented:reviewer:implementer:reviewer");
+  assert.equal(contract.command.profile, "reviewer");
+  assert.equal(contract.command.task_profile, "implementer");
+  assert.equal(contract.command.stage_profile, "reviewer");
+  assert.equal(taskContext.assignment.active_profile, "reviewer");
 });
 
 test("recovery retries a dead running task", async () => {

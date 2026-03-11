@@ -1,7 +1,22 @@
 "use strict";
 
+const { readTaskRecord } = require("@i-santos/workflow");
+
 function getTaskProfileName(project, task) {
   return task.profile || project.config.default_agent_profile || "default";
+}
+
+function getWorkflowStageProfileName(project, task) {
+  const workflow = readTaskRecord(task);
+  const workflowStatus = workflow.status;
+  const stageProfile = project.config.workflow_stage_profiles
+    ? project.config.workflow_stage_profiles[workflowStatus]
+    : "";
+
+  return {
+    workflowStatus,
+    stageProfile: typeof stageProfile === "string" && stageProfile ? stageProfile : "",
+  };
 }
 
 function getAgentProfile(project, profileName) {
@@ -31,8 +46,23 @@ function assertKnownAgentProfile(project, profileName) {
   }
 }
 
+function resolveTaskAssignment(project, task) {
+  const taskProfile = getTaskProfileName(project, task);
+  const { workflowStatus, stageProfile } = getWorkflowStageProfileName(project, task);
+  const resolvedProfileName = stageProfile || taskProfile;
+
+  return {
+    workflowStatus,
+    taskProfile,
+    stageProfile,
+    resolvedProfile: getAgentProfile(project, resolvedProfileName),
+  };
+}
+
 module.exports = {
   getTaskProfileName,
+  getWorkflowStageProfileName,
   getAgentProfile,
   assertKnownAgentProfile,
+  resolveTaskAssignment,
 };

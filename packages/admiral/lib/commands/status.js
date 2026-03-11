@@ -2,6 +2,7 @@
 
 const { loadProject, readHeartbeats } = require("../core/project");
 const { readTaskRecord } = require("@i-santos/workflow");
+const { resolveTaskAssignment } = require("../core/agent-profiles");
 
 async function runStatus() {
   const project = await loadProject(process.cwd());
@@ -30,10 +31,12 @@ async function runStatus() {
   for (const task of project.graph.tasks) {
     const workflow = readTaskRecord(task);
     const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
+    const assignment = resolveTaskAssignment(project, task);
     console.log([
       task.id.padEnd(20, " "),
       task.status.padEnd(12, " "),
       workflow.status.padEnd(14, " "),
+      assignment.resolvedProfile.name.padEnd(12, " "),
       String(task.agent || "-").padEnd(18, " "),
       String(task.workspace || "-"),
     ].join(" "));

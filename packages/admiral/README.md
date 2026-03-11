@@ -115,6 +115,7 @@ ship release --task-id backend-auth --yes
 - `default_branch`
 - `agent_command`
 - `default_agent_profile`
+- `workflow_stage_profiles`
 - `agent_profiles`
 - `scopes`
 
@@ -138,6 +139,15 @@ Default profiles currently include:
 - `planner`
 - `implementer`
 - `reviewer`
+
+By default, the active execution profile is resolved from the workflow stage first and falls back to the task profile. The default mapping is:
+
+- `new` -> `planner`
+- `planned` -> `planner`
+- `tdd_ready` -> `implementer`
+- `implemented` -> `reviewer`
+- `verified` -> `reviewer`
+- `publish_ready` -> `reviewer`
 
 Before running the agent command, `admiral` now materializes an execution contract:
 

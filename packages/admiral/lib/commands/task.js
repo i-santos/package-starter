@@ -6,7 +6,7 @@ const { loadProject, withGraphMutation, saveBoard } = require("../core/project")
 const { createTask, getTaskById, listTasks, validateGraphIntegrity } = require("../core/task-graph");
 const { appendEvent } = require("../core/event-bus");
 const { syncProjectContext, syncTaskContext } = require("../core/context-store");
-const { assertKnownAgentProfile } = require("../core/agent-profiles");
+const { assertKnownAgentProfile, resolveTaskAssignment } = require("../core/agent-profiles");
 const { attachTaskRecord, createTaskRecord, readTaskRecord, transitionTask } = require("@i-santos/workflow");
 const { ensureDir, pathExists } = require("../utils/fs");
 
@@ -21,11 +21,14 @@ function sanitizeTaskTitle(title) {
 function formatTask(task) {
   const workflow = readTaskRecord(task);
   const execution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
+  const assignment = task.__assignment || null;
   return {
     id: task.id,
     title: task.title,
     scope: task.scope,
     profile: task.profile || "default",
+    stage_profile: assignment ? assignment.stageProfile : "",
+    active_profile: assignment ? assignment.resolvedProfile.name : (task.profile || "default"),
     scheduler_status: task.status,
     priority: task.priority,
     depends_on: task.depends_on,
@@ -50,6 +53,8 @@ function printTask(payload, flags = {}) {
     console.log(`- workflow_status: ${payload.task.workflow.status}`);
     console.log(`- scope: ${payload.task.scope}`);
     console.log(`- profile: ${payload.task.profile}`);
+    console.log(`- stage_profile: ${payload.task.stage_profile || "-"}`);
+    console.log(`- active_profile: ${payload.task.active_profile || payload.task.profile}`);
     console.log(`- branch: ${payload.task.branch || "-"}`);
     console.log(`- workspace: ${payload.task.workspace || "-"}`);
     if (payload.task.execution.last_summary) {
@@ -71,7 +76,7 @@ function printTask(payload, flags = {}) {
     }
     for (const task of payload.tasks) {
       const deps = task.depends_on.length > 0 ? task.depends_on.join(",") : "-";
-      console.log(`${task.id}\t${task.scheduler_status}\t${task.workflow.status}\t${task.scope}\tprofile:${task.profile}\tdeps:${deps}`);
+      console.log(`${task.id}\t${task.scheduler_status}\t${task.workflow.status}\t${task.scope}\tprofile:${task.profile}\tactive:${task.active_profile}\tdeps:${deps}`);
     }
   }
 }
@@ -171,7 +176,14 @@ async function runTaskCreate(taskId, flags = {}) {
   await saveBoard(project);
   await syncProjectContext(project);
   await syncTaskContext(project, createdTask);
-  printTask({ ok: true, action: "create", task: formatTask(createdTask) }, flags);
+  printTask({
+    ok: true,
+    action: "create",
+    task: formatTask({
+      ...createdTask,
+      __assignment: resolveTaskAssignment(project, createdTask),
+    }),
+  }, flags);
 }
 
 async function runTaskList(flags = {}) {
@@ -179,7 +191,10 @@ async function runTaskList(flags = {}) {
   printTask({
     ok: true,
     action: "list",
-    tasks: listTasks(project.graph).map(formatTask),
+    tasks: listTasks(project.graph).map((task) => formatTask({
+      ...task,
+      __assignment: resolveTaskAssignment(project, task),
+    })),
   }, flags);
 }
 
@@ -189,7 +204,10 @@ async function runTaskStatus(taskId, flags = {}) {
   printTask({
     ok: true,
     action: "status",
-    task: formatTask(task),
+    task: formatTask({
+      ...task,
+      __assignment: resolveTaskAssignment(project, task),
+    }),
   }, flags);
 }
 

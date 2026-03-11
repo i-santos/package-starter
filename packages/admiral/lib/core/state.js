@@ -11,6 +11,15 @@ function defaultConfig() {
     default_branch: "main",
     agent_command: defaultAgentCommand,
     default_agent_profile: "default",
+    workflow_stage_profiles: {
+      new: "planner",
+      planned: "planner",
+      tdd_ready: "implementer",
+      implemented: "reviewer",
+      verified: "reviewer",
+      publish_ready: "reviewer",
+      released: "reviewer",
+    },
     agent_profiles: {
       default: {
         command: defaultAgentCommand,
@@ -52,13 +61,13 @@ function normalizeConfig(config = {}) {
     const candidate = rawProfiles[profileName] && typeof rawProfiles[profileName] === "object" && !Array.isArray(rawProfiles[profileName])
       ? rawProfiles[profileName]
       : {};
-    const fallbackCommand = profileName === "default"
-      ? (typeof config.agent_command === "string" && config.agent_command ? config.agent_command : profileDefaults.command)
+    const inheritedAgentCommand = typeof config.agent_command === "string" && config.agent_command
+      ? config.agent_command
       : profileDefaults.command;
+    const fallbackCommand = inheritedAgentCommand;
     const command = typeof candidate.command === "string" && candidate.command
       ? (
-        profileName === "default"
-        && candidate.command === profileDefaults.command
+        candidate.command === profileDefaults.command
         && typeof config.agent_command === "string"
         && config.agent_command
           ? config.agent_command
@@ -87,6 +96,12 @@ function normalizeConfig(config = {}) {
     ...config,
     agent_command: typeof config.agent_command === "string" && config.agent_command ? config.agent_command : defaults.agent_command,
     default_agent_profile: normalizedProfiles[defaultAgentProfile] ? defaultAgentProfile : defaults.default_agent_profile,
+    workflow_stage_profiles: {
+      ...defaults.workflow_stage_profiles,
+      ...((config.workflow_stage_profiles && typeof config.workflow_stage_profiles === "object" && !Array.isArray(config.workflow_stage_profiles))
+        ? config.workflow_stage_profiles
+        : {}),
+    },
     agent_profiles: normalizedProfiles,
     scopes: {
       ...defaults.scopes,
