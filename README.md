@@ -1,13 +1,14 @@
-# ship monorepo
+# navy
 
-Monorepo for the ship ecosystem.
+Monorepo for the navy product-development ecosystem.
 
 ## Packages
 
-- `@i-santos/ship`: CLI orchestrator (PR/release/setup + adapter runtime)
-- `@i-santos/agent`: deterministic task lifecycle FSM engine
+- `@i-santos/ship`: delivery CLI for repository bootstrap, PR orchestration, release flows, and publishing automation.
+- `@i-santos/admiral`: task-orchestration CLI for multi-agent execution, scheduling, and project runtime management.
+- `@i-santos/workflow`: deterministic workflow core for task lifecycle states and shared task metadata contracts.
 
-## Workspace commands
+## Workspace Commands
 
 ```bash
 npm run test
@@ -16,7 +17,9 @@ npm run changeset
 npm run release
 ```
 
-## Ship package docs
+## Documentation
 
-- [packages/ship/README.md](./packages/ship/README.md)
-- [docs/ship-api.md](./docs/ship-api.md)
+- [ship README](./packages/ship/README.md)
+- [admiral README](./packages/admiral/README.md)
+- [workflow README](./packages/workflow/README.md)
+- [ship API](./docs/ship-api.md)

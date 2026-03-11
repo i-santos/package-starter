@@ -1,6 +1,6 @@
 # ship
 
-[![CI](https://github.com/i-santos/ship/actions/workflows/ci.yml/badge.svg)](https://github.com/i-santos/ship/actions/workflows/ci.yml)
+[![CI](https://github.com/i-santos/navy/actions/workflows/ci.yml/badge.svg)](https://github.com/i-santos/navy/actions/workflows/ci.yml)
 [![npm ship](https://img.shields.io/npm/v/@i-santos/ship)](https://www.npmjs.com/package/@i-santos/ship)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
 
@@ -8,9 +8,9 @@ Starter workspace to standardize npm package creation and migration with Changes
 
 ## Documentation
 
-- Complete API and usage guide: [docs/ship-api.md](https://github.com/i-santos/ship/blob/main/docs/ship-api.md)
-- PR orchestration deep dive: [docs/pr-orchestration.md](https://github.com/i-santos/ship/blob/main/docs/pr-orchestration.md)
-- Release auth (GitHub App): [docs/release-auth-github-app.md](https://github.com/i-santos/ship/blob/main/docs/release-auth-github-app.md)
+- Complete API and usage guide: [docs/ship-api.md](https://github.com/i-santos/navy/blob/main/docs/ship-api.md)
+- PR orchestration deep dive: [docs/pr-orchestration.md](https://github.com/i-santos/navy/blob/main/docs/pr-orchestration.md)
+- Release auth (GitHub App): [docs/release-auth-github-app.md](https://github.com/i-santos/navy/blob/main/docs/release-auth-github-app.md)
 
 ## What This Solves
 
