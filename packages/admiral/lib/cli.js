@@ -1,7 +1,17 @@
 "use strict";
 
 const { runInit } = require("./commands/init");
-const { runTaskCreate, runTaskList, runTaskRetry } = require("./commands/task");
+const {
+  runTaskCreate,
+  runTaskList,
+  runTaskStatus,
+  runTaskPlan,
+  runTaskTdd,
+  runTaskImplement,
+  runTaskVerify,
+  runTaskPublishReady,
+  runTaskRetry,
+} = require("./commands/task");
 const { runStatus } = require("./commands/status");
 const { runRun } = require("./commands/run");
 const { runCleanup } = require("./commands/cleanup");
@@ -44,8 +54,14 @@ Usage:
   admiral init
   admiral run [--once]
   admiral status
-  admiral task create <id> [--title "..."] [--scope backend] [--priority 1] [--depends-on a,b]
-  admiral task list
+  admiral task create <id> [--title "..."] [--scope backend] [--priority 1] [--depends-on a,b] [--json]
+  admiral task list [--json]
+  admiral task status <id> [--json]
+  admiral task plan <id> [--json]
+  admiral task tdd <id> [--json]
+  admiral task implement <id> [--json]
+  admiral task verify <id> [--json]
+  admiral task publish-ready <id> [--json]
   admiral task retry <id>
   admiral merge <id>
   admiral cleanup [task-id]
@@ -101,6 +117,60 @@ async function main(argv) {
 
     if (subcommand === "list") {
       await runTaskList(flags);
+      return;
+    }
+
+    if (subcommand === "status") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task status requires an id");
+      }
+      await runTaskStatus(taskId, flags);
+      return;
+    }
+
+    if (subcommand === "plan") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task plan requires an id");
+      }
+      await runTaskPlan(taskId, flags);
+      return;
+    }
+
+    if (subcommand === "tdd") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task tdd requires an id");
+      }
+      await runTaskTdd(taskId, flags);
+      return;
+    }
+
+    if (subcommand === "implement") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task implement requires an id");
+      }
+      await runTaskImplement(taskId, flags);
+      return;
+    }
+
+    if (subcommand === "verify") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task verify requires an id");
+      }
+      await runTaskVerify(taskId, flags);
+      return;
+    }
+
+    if (subcommand === "publish-ready") {
+      const taskId = rest[0];
+      if (!taskId) {
+        throw new Error("task publish-ready requires an id");
+      }
+      await runTaskPublishReady(taskId, flags);
       return;
     }
 

@@ -1,6 +1,7 @@
 "use strict";
 
 const { loadProject, readHeartbeats } = require("../core/project");
+const { readTaskRecord } = require("@i-santos/workflow");
 
 async function runStatus() {
   const project = await loadProject(process.cwd());
@@ -27,9 +28,11 @@ async function runStatus() {
   }
 
   for (const task of project.graph.tasks) {
+    const workflow = readTaskRecord(task);
     console.log([
       task.id.padEnd(20, " "),
       task.status.padEnd(12, " "),
+      workflow.status.padEnd(14, " "),
       String(task.agent || "-").padEnd(18, " "),
       String(task.workspace || "-"),
     ].join(" "));

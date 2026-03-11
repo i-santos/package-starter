@@ -13,6 +13,12 @@ The current implementation covers the practical core of phases 1 and 2:
 - `admiral status`
 - `admiral task create`
 - `admiral task list`
+- `admiral task status`
+- `admiral task plan`
+- `admiral task tdd`
+- `admiral task implement`
+- `admiral task verify`
+- `admiral task publish-ready`
 - `admiral task retry`
 - `admiral merge`
 - `admiral cleanup`
@@ -47,6 +53,16 @@ Create tasks:
 ```bash
 admiral task create backend-auth --scope backend
 admiral task create frontend-login --scope frontend --depends-on backend-auth
+```
+
+Advance workflow lifecycle:
+
+```bash
+admiral task plan backend-auth
+admiral task tdd backend-auth
+admiral task implement backend-auth
+admiral task verify backend-auth
+admiral task publish-ready backend-auth
 ```
 
 Run the scheduler once:

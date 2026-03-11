@@ -6,7 +6,7 @@ const os = require("node:os");
 const path = require("node:path");
 const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { spawn } = require("node:child_process");
-const { execFile, execShellCommand } = require("../lib/utils/process");
+const { execFile } = require("../lib/utils/process");
 
 const CLI_PATH = path.join(__dirname, "..", "bin", "admiral");
 
@@ -22,8 +22,7 @@ async function createTempRepo() {
 }
 
 async function runCli(args, cwd) {
-  const command = [process.execPath, CLI_PATH, ...args].map((token) => JSON.stringify(token)).join(" ");
-  return execShellCommand(command, {
+  return execFile(process.execPath, [CLI_PATH, ...args], {
     cwd,
     env: {
       ...process.env,
@@ -52,6 +51,43 @@ test("admiral can create tasks with dependencies", async () => {
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   assert.equal(graph.tasks.length, 2);
   assert.deepEqual(graph.tasks.find((task) => task.id === "frontend-login").depends_on, ["backend-auth"]);
+  assert.equal(graph.tasks.find((task) => task.id === "backend-auth").metadata.workflow.status, "new");
+});
+
+test("admiral task workflow lifecycle persists metadata and artifacts", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  await runCli(["task", "create", "platform-auth", "--title", "Platform auth"], repoDir);
+
+  await runCli(["task", "plan", "platform-auth"], repoDir);
+  let graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  let task = graph.tasks.find((item) => item.id === "platform-auth");
+  assert.equal(task.metadata.workflow.status, "planned");
+  assert.equal(await readFile(path.join(repoDir, task.metadata.workflow.artifacts.planFile), "utf8").then(Boolean), true);
+
+  await runCli(["task", "tdd", "platform-auth"], repoDir);
+  graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  task = graph.tasks.find((item) => item.id === "platform-auth");
+  assert.equal(task.metadata.workflow.status, "tdd_ready");
+  assert.equal(await readFile(path.join(repoDir, task.metadata.workflow.artifacts.tddFile), "utf8").then(Boolean), true);
+
+  await runCli(["task", "implement", "platform-auth"], repoDir);
+  graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  task = graph.tasks.find((item) => item.id === "platform-auth");
+  assert.equal(task.metadata.workflow.status, "implemented");
+
+  await runCli(["task", "verify", "platform-auth"], repoDir);
+  graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  task = graph.tasks.find((item) => item.id === "platform-auth");
+  assert.equal(task.metadata.workflow.status, "verified");
+  assert.equal(task.metadata.workflow.checks.unit, "pass");
+
+  await runCli(["task", "publish-ready", "platform-auth"], repoDir);
+  graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  task = graph.tasks.find((item) => item.id === "platform-auth");
+  assert.equal(task.metadata.workflow.status, "publish_ready");
+  assert.equal(task.status, "todo");
 });
 
 test("scheduler moves a successful task to review", async () => {
