@@ -16,6 +16,7 @@ function buildPaths(root) {
     logsDir: path.join(root, "logs"),
     agentLogsDir: path.join(root, "logs", "agents"),
     runtimeDir: path.join(root, "runtime"),
+    runtimeExecutionsDir: path.join(root, "runtime", "executions"),
     runtimeHeartbeatsDir: path.join(root, "runtime", "heartbeats"),
     runtimePidsDir: path.join(root, "runtime", "pids"),
     locksDir: path.join(root, ".admiral", "locks"),

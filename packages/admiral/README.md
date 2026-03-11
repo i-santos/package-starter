@@ -113,6 +113,18 @@ The runner is provider-agnostic. `admiral` executes the configured `agent_comman
 - `ADMIRAL_TASK_SCOPE`
 - `ADMIRAL_TASK_BRANCH`
 - `ADMIRAL_TASK_WORKSPACE`
+- `ADMIRAL_EXECUTION_ID`
+- `ADMIRAL_EXECUTION_FILE`
+- `ADMIRAL_RESULT_FILE`
+- `ADMIRAL_LOG_FILE`
+
+Before running the agent command, `admiral` now materializes an execution contract:
+
+- workspace contract file: `.admiral/task-execution.json`
+- workspace result file: `.admiral/task-result.json`
+- runtime execution record: `runtime/executions/<task-id>.json`
+
+This contract gives the agent a stable interface for reading task context and writing structured execution results.
 
 ## Development
 

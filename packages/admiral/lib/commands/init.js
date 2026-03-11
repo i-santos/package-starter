@@ -19,6 +19,7 @@ async function runInit(flags = {}) {
     path.join("logs", "agents"),
     "events",
     "runtime",
+    path.join("runtime", "executions"),
     path.join("runtime", "heartbeats"),
     path.join("runtime", "pids"),
   ];

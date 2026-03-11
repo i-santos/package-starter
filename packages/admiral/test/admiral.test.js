@@ -96,7 +96,7 @@ test("scheduler moves a successful task to review", async () => {
 
   const configPath = path.join(repoDir, ".admiral", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
-  config.agent_command = "node -e \"require('node:fs').writeFileSync('done.txt', process.env.ADMIRAL_TASK_ID)\"";
+  config.agent_command = "node -e \"const fs=require('node:fs');fs.writeFileSync('done.txt', process.env.ADMIRAL_TASK_ID);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({ok:true, taskId:process.env.ADMIRAL_TASK_ID}, null, 2));\"";
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth", "--scope", "general"], repoDir);
@@ -108,9 +108,18 @@ test("scheduler moves a successful task to review", async () => {
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "review");
   assert.ok(task.workspace);
+  assert.equal(task.metadata.execution.last_status, "succeeded");
+  assert.ok(task.metadata.execution.contract_file);
+  assert.ok(task.metadata.execution.result_file);
 
   const artifact = await readFile(path.join(task.workspace, "done.txt"), "utf8");
   assert.equal(artifact, "backend-auth");
+  const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
+  const result = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-result.json"), "utf8"));
+  assert.equal(contract.task.id, "backend-auth");
+  assert.equal(contract.files.workspace_result, path.join(task.workspace, ".admiral", "task-result.json"));
+  assert.equal(result.status, "succeeded");
+  assert.equal(result.ok, true);
 });
 
 test("recovery retries a dead running task", async () => {
@@ -147,4 +156,27 @@ test("recovery retries a dead running task", async () => {
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.ok(["todo", "claimed", "running", "review"].includes(task.status));
   assert.equal(task.retries, 1);
+});
+
+test("failed execution persists contract failure state", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"process.exit(7)\"";
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "backend-auth");
+  assert.equal(task.metadata.execution.last_status, "failed");
+  assert.match(task.metadata.execution.last_error, /agent command failed with code 7/);
+
+  const runtimeRecord = JSON.parse(await readFile(path.join(repoDir, "runtime", "executions", "backend-auth.json"), "utf8"));
+  assert.equal(runtimeRecord.result.status, "failed");
+  assert.match(runtimeRecord.result.error, /agent command failed with code 7/);
 });

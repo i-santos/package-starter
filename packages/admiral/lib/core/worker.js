@@ -7,11 +7,13 @@ const { getTaskById } = require("./task-graph");
 const { appendEvent } = require("./event-bus");
 const { writeHeartbeat, clearHeartbeat } = require("./heartbeat");
 const { applyRetry } = require("./retry-policy");
+const { prepareExecutionContract, buildExecutionEnv, finalizeExecutionContract } = require("./execution-contract");
 const { execShellCommand } = require("../utils/process");
 const { removeFileIfExists, appendText } = require("../utils/fs");
 
 async function runTaskCommand(project, task) {
   const logPath = path.join(project.paths.agentLogsDir, `${task.id}.log`);
+  const contract = await prepareExecutionContract(project, task);
   const env = {
     ...process.env,
     ADMIRAL_ROOT: project.root,
@@ -20,37 +22,58 @@ async function runTaskCommand(project, task) {
     ADMIRAL_TASK_SCOPE: task.scope,
     ADMIRAL_TASK_BRANCH: task.branch || "",
     ADMIRAL_TASK_WORKSPACE: task.workspace || "",
+    ...buildExecutionEnv(contract),
   };
 
-  if (task.hooks && task.hooks["pre-run"]) {
-    await execShellCommand(task.hooks["pre-run"], {
+  try {
+    if (task.hooks && task.hooks["pre-run"]) {
+      await execShellCommand(task.hooks["pre-run"], {
+        cwd: task.workspace || project.root,
+        env,
+      });
+    }
+
+    const result = await execShellCommand(project.config.agent_command, {
       cwd: task.workspace || project.root,
       env,
+      allowFailure: true,
     });
-  }
 
-  const result = await execShellCommand(project.config.agent_command, {
-    cwd: task.workspace || project.root,
-    env,
-    allowFailure: true,
-  });
+    if (result.stdout) {
+      await appendText(logPath, result.stdout);
+    }
+    if (result.stderr) {
+      await appendText(logPath, result.stderr);
+    }
 
-  if (result.stdout) {
-    await appendText(logPath, result.stdout);
-  }
-  if (result.stderr) {
-    await appendText(logPath, result.stderr);
-  }
+    if (result.code !== 0) {
+      throw new Error(`agent command failed with code ${result.code}`);
+    }
 
-  if (result.code !== 0) {
-    throw new Error(`agent command failed with code ${result.code}`);
-  }
+    if (task.hooks && task.hooks["post-run"]) {
+      await execShellCommand(task.hooks["post-run"], {
+        cwd: task.workspace || project.root,
+        env,
+      });
+    }
 
-  if (task.hooks && task.hooks["post-run"]) {
-    await execShellCommand(task.hooks["post-run"], {
-      cwd: task.workspace || project.root,
-      env,
+    await finalizeExecutionContract(contract, {
+      status: "succeeded",
+      completed_at: new Date().toISOString(),
+      exit_code: result.code,
+      stdout_present: Boolean(result.stdout),
+      stderr_present: Boolean(result.stderr),
     });
+
+    return contract;
+  } catch (error) {
+    await finalizeExecutionContract(contract, {
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      exit_code: typeof error.code === "number" ? error.code : 1,
+      error: error.message,
+    });
+    throw error;
   }
 }
 
@@ -86,16 +109,39 @@ async function main() {
   }, Math.max(1000, Math.floor(project.config.heartbeat_timeout_ms / 3)));
 
   try {
-    await runTaskCommand(project, task);
+    const contract = await runTaskCommand(project, task);
     await withGraphMutation(project, (graph) => {
       const freshTask = getTaskById(graph, taskId);
       freshTask.status = "review";
+      freshTask.metadata = {
+        ...(freshTask.metadata || {}),
+        execution: {
+          last_execution_id: contract.execution_id,
+          last_status: "succeeded",
+          last_started_at: contract.started_at,
+          last_completed_at: new Date().toISOString(),
+          contract_file: contract.files.workspace_contract,
+          result_file: contract.files.workspace_result,
+          runtime_record: contract.files.runtime_record,
+        },
+      };
       return graph;
     });
     await appendEvent(project, "TASK_DONE", taskId, task.agent);
   } catch (error) {
+    const failedAt = new Date().toISOString();
     await withGraphMutation(project, (graph) => {
       const freshTask = getTaskById(graph, taskId);
+      const lastExecution = freshTask.metadata && freshTask.metadata.execution ? freshTask.metadata.execution : {};
+      freshTask.metadata = {
+        ...(freshTask.metadata || {}),
+        execution: {
+          ...lastExecution,
+          last_status: "failed",
+          last_completed_at: failedAt,
+          last_error: error.message,
+        },
+      };
       applyRetry(freshTask, project.config);
       return graph;
     });
