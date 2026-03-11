@@ -13,6 +13,15 @@ function getTaskHandoffPath(project, taskId) {
 }
 
 async function syncProjectContext(project) {
+  const agentProfiles = Object.fromEntries(
+    Object.entries(project.config.agent_profiles || {}).map(([name, profile]) => [
+      name,
+      {
+        capabilities: Array.isArray(profile.capabilities) ? profile.capabilities : [],
+      },
+    ])
+  );
+
   const payload = {
     version: 1,
     generated_at: new Date().toISOString(),
@@ -20,6 +29,8 @@ async function syncProjectContext(project) {
       root: project.root,
       default_branch: project.config.default_branch,
       max_agents: project.config.max_agents,
+      default_agent_profile: project.config.default_agent_profile,
+      agent_profiles: agentProfiles,
       scopes: project.config.scopes,
     },
   };
@@ -40,6 +51,7 @@ function buildTaskContext(project, task) {
       id: task.id,
       title: task.title,
       scope: task.scope,
+      profile: task.profile || project.config.default_agent_profile || "default",
       scheduler_status: task.status,
       priority: task.priority,
       depends_on: task.depends_on || [],

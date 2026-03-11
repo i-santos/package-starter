@@ -37,7 +37,7 @@ async function runTaskCommand(project, task) {
       });
     }
 
-    const result = await execShellCommand(project.config.agent_command, {
+    const result = await execShellCommand(contract.command.agent_command, {
       cwd: task.workspace || project.root,
       env,
       allowFailure: true,

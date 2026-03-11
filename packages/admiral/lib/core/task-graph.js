@@ -23,6 +23,7 @@ function createTask(graph, input) {
     id: input.id,
     title: input.title || input.id,
     scope: input.scope || "general",
+    profile: input.profile || "default",
     status: "todo",
     priority: input.priority || 1,
     depends_on: Array.isArray(input.depends_on) ? input.depends_on : [],

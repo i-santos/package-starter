@@ -4,7 +4,7 @@ const path = require("node:path");
 const { writeFile } = require("node:fs/promises");
 const { ensureDir, pathExists, writeJson, readJson } = require("../utils/fs");
 const { ensureGitRepository, getRepoRoot } = require("../utils/git");
-const { defaultConfig, emptyBoard, emptyGraph } = require("../core/state");
+const { defaultConfig, emptyBoard, emptyGraph, normalizeConfig } = require("../core/state");
 const { buildPaths } = require("../core/project");
 const { syncProjectContext } = require("../core/context-store");
 
@@ -57,7 +57,7 @@ async function runInit(flags = {}) {
   await syncProjectContext({
     root: repoRoot,
     paths: buildPaths(repoRoot),
-    config: await readJson(configPath),
+    config: normalizeConfig(await readJson(configPath)),
   });
 
   console.log(`Initialized admiral in ${repoRoot}`);

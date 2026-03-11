@@ -39,6 +39,8 @@ test("admiral init creates runtime structure", async () => {
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
 
   assert.equal(config.default_branch, "main");
+  assert.equal(config.default_agent_profile, "default");
+  assert.deepEqual(config.agent_profiles.implementer.capabilities, ["implementation", "refactoring"]);
   assert.deepEqual(graph.tasks, []);
   assert.equal(typeof JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "project.json"), "utf8")).project.root, "string");
 });
@@ -46,16 +48,18 @@ test("admiral init creates runtime structure", async () => {
 test("admiral can create tasks with dependencies", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
-  await runCli(["task", "create", "backend-auth", "--scope", "backend"], repoDir);
+  await runCli(["task", "create", "backend-auth", "--scope", "backend", "--profile", "implementer"], repoDir);
   await runCli(["task", "create", "frontend-login", "--scope", "frontend", "--depends-on", "backend-auth"], repoDir);
 
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   assert.equal(graph.tasks.length, 2);
   assert.deepEqual(graph.tasks.find((task) => task.id === "frontend-login").depends_on, ["backend-auth"]);
   assert.equal(graph.tasks.find((task) => task.id === "backend-auth").metadata.workflow.status, "new");
+  assert.equal(graph.tasks.find((task) => task.id === "backend-auth").profile, "implementer");
   const taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"), "utf8"));
   assert.equal(taskContext.task.id, "backend-auth");
   assert.equal(taskContext.workflow.status, "new");
+  assert.equal(taskContext.task.profile, "implementer");
 });
 
 test("admiral task workflow lifecycle persists metadata and artifacts", async () => {
@@ -137,6 +141,35 @@ test("scheduler moves a successful task to review", async () => {
   assert.deepEqual(taskContext.execution.last_next_actions, ["open pr"]);
   assert.equal(handoff.latest.summary, "Implemented backend auth");
   assert.deepEqual(handoff.latest.tests_run, ["unit"]);
+});
+
+test("task profile selects the profile command and capabilities", async () => {
+  const repoDir = await createTempRepo();
+  await runCli(["init"], repoDir);
+
+  const configPath = path.join(repoDir, ".admiral", "config.json");
+  const config = JSON.parse(await readFile(configPath, "utf8"));
+  config.agent_command = "node -e \"process.exit(9)\"";
+  config.agent_profiles.implementer = {
+    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('profile.txt', process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_AGENT_CAPABILITIES);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Implemented via profile'}, null, 2));\"",
+    capabilities: ["implementation", "code_editing"],
+  };
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+  await runCli(["task", "create", "backend-auth", "--profile", "implementer"], repoDir);
+  await runCli(["run", "--once"], repoDir);
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const task = graph.tasks.find((item) => item.id === "backend-auth");
+  const profileArtifact = await readFile(path.join(task.workspace, "profile.txt"), "utf8");
+  const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
+  assert.equal(task.status, "review");
+  assert.equal(task.profile, "implementer");
+  assert.equal(profileArtifact, "implementer:implementation,code_editing");
+  assert.equal(contract.task.profile, "implementer");
+  assert.deepEqual(contract.task.capabilities, ["implementation", "code_editing"]);
+  assert.equal(contract.command.profile, "implementer");
 });
 
 test("recovery retries a dead running task", async () => {

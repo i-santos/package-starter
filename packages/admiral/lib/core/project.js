@@ -3,7 +3,7 @@
 const path = require("node:path");
 const { readJson, writeJson, readDirSafe, readJsonIfExists } = require("../utils/fs");
 const { getRepoRoot } = require("../utils/git");
-const { emptyBoard } = require("./state");
+const { emptyBoard, normalizeConfig } = require("./state");
 const { withLock } = require("./locks");
 
 function buildPaths(root) {
@@ -40,7 +40,7 @@ async function loadProject(cwd) {
   return {
     root,
     paths,
-    config,
+    config: normalizeConfig(config),
     graph,
     board,
   };

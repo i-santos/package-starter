@@ -4,6 +4,7 @@ const path = require("node:path");
 const { mkdir, writeFile } = require("node:fs/promises");
 const { writeJson, readJsonIfExists } = require("../utils/fs");
 const { getTaskContextPath, getTaskHandoffPath } = require("./context-store");
+const { getTaskProfileName, getAgentProfile } = require("./agent-profiles");
 
 function createExecutionId(taskId, now = new Date()) {
   const stamp = now.toISOString().replace(/[:.]/g, "-");
@@ -13,6 +14,8 @@ function createExecutionId(taskId, now = new Date()) {
 function buildExecutionContract(project, task, now = new Date()) {
   const executionId = createExecutionId(task.id, now);
   const workspace = task.workspace || project.root;
+  const profileName = getTaskProfileName(project, task);
+  const profile = getAgentProfile(project, profileName);
   const runtimeRecordPath = path.join(project.paths.runtimeExecutionsDir, `${task.id}.json`);
   const workspaceDir = path.join(workspace, ".admiral");
   const workspaceContractPath = path.join(workspaceDir, "task-execution.json");
@@ -31,15 +34,19 @@ function buildExecutionContract(project, task, now = new Date()) {
       id: task.id,
       title: task.title,
       scope: task.scope,
+      profile: profile.name,
       scheduler_status: task.status,
       branch: task.branch || "",
       workspace,
       agent: task.agent,
+      capabilities: profile.capabilities,
       depends_on: Array.isArray(task.depends_on) ? [...task.depends_on] : [],
       metadata: task.metadata || {},
     },
     command: {
-      agent_command: project.config.agent_command,
+      agent_command: profile.command,
+      profile: profile.name,
+      capabilities: profile.capabilities,
       pre_run: task.hooks && task.hooks["pre-run"] ? task.hooks["pre-run"] : "",
       post_run: task.hooks && task.hooks["post-run"] ? task.hooks["post-run"] : "",
     },
@@ -63,6 +70,8 @@ function buildExecutionEnv(contract) {
     ADMIRAL_EXECUTION_FILE: contract.files.workspace_contract,
     ADMIRAL_RESULT_FILE: contract.files.workspace_result,
     ADMIRAL_LOG_FILE: contract.files.log,
+    ADMIRAL_AGENT_PROFILE: contract.command.profile,
+    ADMIRAL_AGENT_CAPABILITIES: Array.isArray(contract.command.capabilities) ? contract.command.capabilities.join(",") : "",
   };
 }
 

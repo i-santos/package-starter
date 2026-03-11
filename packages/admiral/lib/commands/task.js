@@ -6,6 +6,7 @@ const { loadProject, withGraphMutation, saveBoard } = require("../core/project")
 const { createTask, getTaskById, listTasks, validateGraphIntegrity } = require("../core/task-graph");
 const { appendEvent } = require("../core/event-bus");
 const { syncProjectContext, syncTaskContext } = require("../core/context-store");
+const { assertKnownAgentProfile } = require("../core/agent-profiles");
 const { attachTaskRecord, createTaskRecord, readTaskRecord, transitionTask } = require("@i-santos/workflow");
 const { ensureDir, pathExists } = require("../utils/fs");
 
@@ -24,6 +25,7 @@ function formatTask(task) {
     id: task.id,
     title: task.title,
     scope: task.scope,
+    profile: task.profile || "default",
     scheduler_status: task.status,
     priority: task.priority,
     depends_on: task.depends_on,
@@ -47,6 +49,7 @@ function printTask(payload, flags = {}) {
     console.log(`- scheduler_status: ${payload.task.scheduler_status}`);
     console.log(`- workflow_status: ${payload.task.workflow.status}`);
     console.log(`- scope: ${payload.task.scope}`);
+    console.log(`- profile: ${payload.task.profile}`);
     console.log(`- branch: ${payload.task.branch || "-"}`);
     console.log(`- workspace: ${payload.task.workspace || "-"}`);
     if (payload.task.execution.last_summary) {
@@ -68,7 +71,7 @@ function printTask(payload, flags = {}) {
     }
     for (const task of payload.tasks) {
       const deps = task.depends_on.length > 0 ? task.depends_on.join(",") : "-";
-      console.log(`${task.id}\t${task.scheduler_status}\t${task.workflow.status}\t${task.scope}\tdeps:${deps}`);
+      console.log(`${task.id}\t${task.scheduler_status}\t${task.workflow.status}\t${task.scope}\tprofile:${task.profile}\tdeps:${deps}`);
     }
   }
 }
@@ -136,6 +139,8 @@ async function mutateWorkflowTask(project, taskId, nextStatus, options = {}) {
 
 async function runTaskCreate(taskId, flags = {}) {
   const project = await loadProject(process.cwd());
+  const profile = flags.profile || project.config.default_agent_profile || "default";
+  assertKnownAgentProfile(project, profile);
   const dependsOn = typeof flags["depends-on"] === "string" && flags["depends-on"].length > 0
     ? flags["depends-on"].split(",").map((item) => item.trim()).filter(Boolean)
     : [];
@@ -147,6 +152,7 @@ async function runTaskCreate(taskId, flags = {}) {
       id: taskId,
       title: flags.title || taskId,
       scope: flags.scope || "general",
+      profile,
       priority: Number.isFinite(priority) ? priority : 1,
       depends_on: dependsOn,
     });

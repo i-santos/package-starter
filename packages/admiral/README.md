@@ -63,7 +63,7 @@ admiral init
 Create tasks:
 
 ```bash
-admiral task create backend-auth --scope backend
+admiral task create backend-auth --scope backend --profile implementer
 admiral task create frontend-login --scope frontend --depends-on backend-auth
 ```
 
@@ -114,19 +114,30 @@ ship release --task-id backend-auth --yes
 - `max_retries_per_task`
 - `default_branch`
 - `agent_command`
+- `default_agent_profile`
+- `agent_profiles`
 - `scopes`
 
-The runner is provider-agnostic. `admiral` executes the configured `agent_command` inside the task workspace and exposes task metadata through environment variables like:
+The runner is provider-agnostic. `admiral` resolves a profile for each task, executes the profile command inside the task workspace, and exposes task metadata through environment variables like:
 
 - `ADMIRAL_TASK_ID`
 - `ADMIRAL_TASK_TITLE`
 - `ADMIRAL_TASK_SCOPE`
 - `ADMIRAL_TASK_BRANCH`
 - `ADMIRAL_TASK_WORKSPACE`
+- `ADMIRAL_AGENT_PROFILE`
+- `ADMIRAL_AGENT_CAPABILITIES`
 - `ADMIRAL_EXECUTION_ID`
 - `ADMIRAL_EXECUTION_FILE`
 - `ADMIRAL_RESULT_FILE`
 - `ADMIRAL_LOG_FILE`
+
+Default profiles currently include:
+
+- `default`
+- `planner`
+- `implementer`
+- `reviewer`
 
 Before running the agent command, `admiral` now materializes an execution contract:
 
