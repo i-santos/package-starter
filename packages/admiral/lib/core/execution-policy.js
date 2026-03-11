@@ -140,8 +140,12 @@ function resolveCompletedExecution(contract, workflowDecision) {
   let schedulerStatus = result.next_task_status
     || (result.status === "blocked" || (result.blockers || []).length > 0 ? "blocked" : "review");
 
-  if (!result.next_task_status && workflowDecision && workflowDecision.action === "rework") {
-    schedulerStatus = "todo";
+  if (!result.next_task_status && workflowDecision) {
+    if (workflowDecision.action === "rework") {
+      schedulerStatus = "todo";
+    } else if (workflowDecision.action === "advance") {
+      schedulerStatus = workflowDecision.nextStatus === "publish_ready" ? "review" : "todo";
+    }
   }
 
   let eventName = "TASK_DONE";
@@ -154,6 +158,7 @@ function resolveCompletedExecution(contract, workflowDecision) {
   return {
     schedulerStatus,
     eventName,
+    recommendedAction: schedulerStatus === "todo" ? "continue" : "wait",
   };
 }
 

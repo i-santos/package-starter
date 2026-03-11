@@ -154,6 +154,7 @@ async function main() {
           last_workflow_action: workflowDecision.action,
           last_workflow_status: workflowDecision.nextStatus,
           last_workflow_reason: workflowDecision.reason,
+          last_recommended_action: decision.recommendedAction,
         },
       };
       return graph;
@@ -174,6 +175,7 @@ async function main() {
     });
     await appendEvent(project, decision.eventName, taskId, task.agent, {
       scheduler_status: decision.schedulerStatus,
+      recommended_action: decision.recommendedAction,
       result_status: contract.result.status,
       workflow_action: workflowDecision.action,
       workflow_status: workflowDecision.nextStatus,

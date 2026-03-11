@@ -129,7 +129,7 @@ serialTest("workflow stage transitions require prior handoff artifacts", async (
   assert.equal(verifyResult.code, 1);
 });
 
-serialTest("scheduler moves a successful task to review", async () => {
+serialTest("scheduler automatically re-enqueues the next workflow stage after success", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
 
@@ -145,12 +145,13 @@ serialTest("scheduler moves a successful task to review", async () => {
 
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   const task = graph.tasks.find((item) => item.id === "backend-auth");
-  assert.equal(task.status, "review");
+  assert.equal(task.status, "todo");
   assert.ok(task.workspace);
   assert.equal(task.metadata.execution.last_status, "succeeded");
   assert.equal(task.metadata.workflow.status, "planned");
   assert.equal(task.metadata.execution.last_workflow_action, "advance");
   assert.equal(task.metadata.execution.last_workflow_status, "planned");
+  assert.equal(task.metadata.execution.last_recommended_action, "continue");
   assert.ok(task.metadata.execution.contract_file);
   assert.ok(task.metadata.execution.result_file);
 
@@ -204,7 +205,7 @@ serialTest("task profile selects the profile command and capabilities", async ()
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   const profileArtifact = await readFile(path.join(task.workspace, "profile.txt"), "utf8");
   const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
-  assert.equal(task.status, "review");
+  assert.equal(task.status, "todo");
   assert.equal(task.profile, "implementer");
   assert.equal(profileArtifact, "implementer:implementation,code_editing");
   assert.equal(contract.task.profile, "implementer");
@@ -213,24 +214,27 @@ serialTest("task profile selects the profile command and capabilities", async ()
 });
 
 serialTest("workflow stage assignment overrides the task base profile", async () => {
-  const repoDir = await createTempRepo();
-  await runCli(["init"], repoDir);
+  const configureRepo = async (repoDir) => {
+    await runCli(["init"], repoDir);
+    const configPath = path.join(repoDir, ".admiral", "config.json");
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    config.agent_profiles.planner = {
+      command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Planned via stage assignment',stage_output:{plan:{goals:['define plan'],constraints:['respect scope'],risks:['missing context'],implementation_steps:['analyze repo','write plan']}}}, null, 2));\"",
+      capabilities: ["planning"],
+    };
+    config.agent_profiles.reviewer = {
+      command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Reviewed via stage assignment',stage_output:{verification:{checks:{unit:'pass',integration:'pass',e2e:'not_required'},issues:[],recommendation:'ready_for_release'}}}, null, 2));\"",
+      capabilities: ["verification"],
+    };
+    config.agent_profiles.implementer = {
+      command: "node -e \"process.exit(9)\"",
+      capabilities: ["implementation"],
+    };
+    await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  };
 
-  const configPath = path.join(repoDir, ".admiral", "config.json");
-  const config = JSON.parse(await readFile(configPath, "utf8"));
-  config.agent_profiles.planner = {
-    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Planned via stage assignment',stage_output:{plan:{goals:['define plan'],constraints:['respect scope'],risks:['missing context'],implementation_steps:['analyze repo','write plan']}}}, null, 2));\"",
-    capabilities: ["planning"],
-  };
-  config.agent_profiles.reviewer = {
-    command: "node -e \"const fs=require('node:fs');fs.writeFileSync('stage.txt', process.env.ADMIRAL_WORKFLOW_STATUS + ':' + process.env.ADMIRAL_AGENT_PROFILE + ':' + process.env.ADMIRAL_TASK_PROFILE + ':' + process.env.ADMIRAL_STAGE_PROFILE);fs.writeFileSync(process.env.ADMIRAL_RESULT_FILE, JSON.stringify({status:'succeeded',summary:'Reviewed via stage assignment',stage_output:{verification:{checks:{unit:'pass',integration:'pass',e2e:'not_required'},issues:[],recommendation:'ready_for_release'}}}, null, 2));\"",
-    capabilities: ["verification"],
-  };
-  config.agent_profiles.implementer = {
-    command: "node -e \"process.exit(9)\"",
-    capabilities: ["implementation"],
-  };
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const repoDir = await createTempRepo();
+  await configureRepo(repoDir);
 
   await runCli(["task", "create", "backend-auth-plan", "--profile", "implementer"], repoDir);
   await runCli(["run", "--once"], repoDir);
@@ -240,24 +244,26 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   let task = graph.tasks.find((item) => item.id === "backend-auth-plan");
   let stageArtifact = await readFile(path.join(task.workspace, "stage.txt"), "utf8");
   let taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth-plan.json"), "utf8"));
-  assert.equal(task.status, "review");
+  assert.equal(task.status, "todo");
   assert.equal(stageArtifact, "new:planner:implementer:planner");
   assert.equal(taskContext.assignment.active_profile, "planner");
   assert.equal(taskContext.assignment.task_profile, "implementer");
   assert.equal(taskContext.assignment.stage_profile, "planner");
 
-  await runCli(["task", "create", "backend-auth-review", "--profile", "implementer"], repoDir);
-  await runCli(["task", "plan", "backend-auth-review"], repoDir);
-  await runCli(["task", "tdd", "backend-auth-review"], repoDir);
-  await runCli(["task", "implement", "backend-auth-review"], repoDir);
-  await runCli(["run", "--once"], repoDir);
+  const reviewRepoDir = await createTempRepo();
+  await configureRepo(reviewRepoDir);
+  await runCli(["task", "create", "backend-auth-review", "--profile", "implementer"], reviewRepoDir);
+  await runCli(["task", "plan", "backend-auth-review"], reviewRepoDir);
+  await runCli(["task", "tdd", "backend-auth-review"], reviewRepoDir);
+  await runCli(["task", "implement", "backend-auth-review"], reviewRepoDir);
+  await runCli(["run", "--once"], reviewRepoDir);
   await new Promise((resolve) => setTimeout(resolve, 1200));
 
-  graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  graph = JSON.parse(await readFile(path.join(reviewRepoDir, "kanban", "graph.json"), "utf8"));
   task = graph.tasks.find((item) => item.id === "backend-auth-review");
   stageArtifact = await readFile(path.join(task.workspace, "stage.txt"), "utf8");
   const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
-  taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth-review.json"), "utf8"));
+  taskContext = JSON.parse(await readFile(path.join(reviewRepoDir, ".admiral", "context", "tasks", "backend-auth-review.json"), "utf8"));
   assert.equal(stageArtifact, "implemented:reviewer:implementer:reviewer");
   assert.equal(contract.command.profile, "reviewer");
   assert.equal(contract.command.task_profile, "implementer");
@@ -289,9 +295,11 @@ serialTest("verified stage can automatically advance to publish_ready from relea
 
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   const task = graph.tasks.find((item) => item.id === "release-task");
+  assert.equal(task.status, "review");
   assert.equal(task.metadata.workflow.status, "publish_ready");
   assert.equal(task.metadata.execution.last_workflow_action, "advance");
   assert.equal(task.metadata.execution.last_workflow_status, "publish_ready");
+  assert.equal(task.metadata.execution.last_recommended_action, "wait");
 });
 
 serialTest("verified stage can request rework and return workflow to implemented", async () => {
@@ -320,6 +328,7 @@ serialTest("verified stage can request rework and return workflow to implemented
   assert.equal(task.metadata.workflow.status, "implemented");
   assert.equal(task.metadata.execution.last_workflow_action, "rework");
   assert.equal(task.metadata.execution.last_workflow_status, "implemented");
+  assert.equal(task.metadata.execution.last_recommended_action, "wait");
 });
 
 serialTest("recovery retries a dead running task", async () => {

@@ -55,6 +55,9 @@ async function runStatus() {
     if (execution.last_workflow_reason) {
       console.log(`  reason: ${execution.last_workflow_reason}`);
     }
+    if (execution.last_recommended_action) {
+      console.log(`  next: ${execution.last_recommended_action}`);
+    }
   }
 
   console.log("");
