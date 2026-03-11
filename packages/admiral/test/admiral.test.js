@@ -43,6 +43,15 @@ async function runCliAllowFailure(args, cwd) {
   });
 }
 
+async function readEvents(repoDir) {
+  const contents = await readFile(path.join(repoDir, "events", "events.log"), "utf8");
+  return contents
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
 serialTest("admiral init creates runtime structure", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
@@ -152,6 +161,8 @@ serialTest("scheduler automatically re-enqueues the next workflow stage after su
   assert.equal(task.metadata.execution.last_workflow_action, "advance");
   assert.equal(task.metadata.execution.last_workflow_status, "planned");
   assert.equal(task.metadata.execution.last_recommended_action, "continue");
+  assert.equal(task.metadata.execution.last_enqueue_source, "auto");
+  assert.equal(task.metadata.execution.last_enqueue_reason, "Planning output captured for a new task.");
   assert.ok(task.metadata.execution.contract_file);
   assert.ok(task.metadata.execution.result_file);
 
@@ -181,6 +192,10 @@ serialTest("scheduler automatically re-enqueues the next workflow stage after su
   assert.deepEqual(taskContext.execution.last_next_actions, ["open pr"]);
   assert.equal(handoff.latest.summary, "Implemented backend auth");
   assert.deepEqual(handoff.latest.tests_run, ["unit"]);
+  const events = await readEvents(repoDir);
+  const reenqueued = events.find((event) => event.event === "TASK_REENQUEUED" && event.task_id === "backend-auth");
+  assert.equal(reenqueued.source, "auto");
+  assert.equal(reenqueued.reason, "Planning output captured for a new task.");
 });
 
 serialTest("task profile selects the profile command and capabilities", async () => {
@@ -300,6 +315,7 @@ serialTest("verified stage can automatically advance to publish_ready from relea
   assert.equal(task.metadata.execution.last_workflow_action, "advance");
   assert.equal(task.metadata.execution.last_workflow_status, "publish_ready");
   assert.equal(task.metadata.execution.last_recommended_action, "wait");
+  assert.equal(task.metadata.execution.last_enqueue_source, null);
 });
 
 serialTest("verified stage can request rework and return workflow to implemented", async () => {
@@ -329,6 +345,7 @@ serialTest("verified stage can request rework and return workflow to implemented
   assert.equal(task.metadata.execution.last_workflow_action, "rework");
   assert.equal(task.metadata.execution.last_workflow_status, "implemented");
   assert.equal(task.metadata.execution.last_recommended_action, "wait");
+  assert.equal(task.metadata.execution.last_enqueue_source, null);
 });
 
 serialTest("recovery retries a dead running task", async () => {
@@ -460,6 +477,12 @@ serialTest("blocked task can be unblocked back to todo", async () => {
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "todo");
   assert.deepEqual(task.metadata.execution.last_blockers, []);
+  assert.equal(task.metadata.execution.last_enqueue_source, "manual");
+  assert.equal(task.metadata.execution.last_enqueue_reason, "Manual unblock requested.");
+  const events = await readEvents(repoDir);
+  const reenqueued = events.find((event) => event.event === "TASK_REENQUEUED" && event.task_id === "backend-auth");
+  assert.equal(reenqueued.source, "manual");
+  assert.equal(reenqueued.reason, "Manual unblock requested.");
 });
 
 serialTest("review task can be manually marked done", async () => {

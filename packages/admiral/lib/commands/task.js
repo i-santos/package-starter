@@ -446,12 +446,26 @@ async function runTaskPublishReady(taskId, flags = {}) {
 async function runTaskRetry(taskId) {
   const project = await loadProject(process.cwd());
   let retried = false;
+  let updatedTask;
   await withGraphMutation(project, (graph) => {
     const task = getTaskById(graph, taskId);
+    const previousExecution = task.metadata && task.metadata.execution ? task.metadata.execution : {};
     task.status = "todo";
     task.agent = null;
     task.branch = null;
     task.workspace = null;
+    task.metadata = {
+      ...(task.metadata || {}),
+      execution: {
+        ...previousExecution,
+        last_decision: "todo",
+        last_recommended_action: "continue",
+        last_enqueue_source: "manual",
+        last_enqueue_reason: "Manual retry requested.",
+        last_enqueue_at: new Date().toISOString(),
+      },
+    };
+    updatedTask = task;
     retried = true;
     return graph;
   });
@@ -461,9 +475,13 @@ async function runTaskRetry(taskId) {
   }
 
   await appendEvent(project, "TASK_RETRIED", taskId, null);
+  await appendEvent(project, "TASK_REENQUEUED", taskId, null, {
+    source: "manual",
+    reason: "Manual retry requested.",
+  });
   await saveBoard(project);
   await syncProjectContext(project);
-  await syncTaskContext(project, getTaskById(project.graph, taskId));
+  await syncTaskContext(project, updatedTask);
   console.log(`Retried task ${taskId}`);
 }
 
@@ -482,6 +500,11 @@ async function runTaskUnblock(taskId, flags = {}) {
       execution: {
         ...previousExecution,
         last_blockers: [],
+        last_decision: "todo",
+        last_recommended_action: "continue",
+        last_enqueue_source: "manual",
+        last_enqueue_reason: "Manual unblock requested.",
+        last_enqueue_at: new Date().toISOString(),
       },
     };
     updatedTask = task;
@@ -489,6 +512,10 @@ async function runTaskUnblock(taskId, flags = {}) {
   });
 
   await appendEvent(project, "TASK_UNBLOCKED", taskId, null);
+  await appendEvent(project, "TASK_REENQUEUED", taskId, null, {
+    source: "manual",
+    reason: "Manual unblock requested.",
+  });
   await saveBoard(project);
   await syncProjectContext(project);
   await syncTaskContext(project, updatedTask);

@@ -159,6 +159,8 @@ function resolveCompletedExecution(contract, workflowDecision) {
     schedulerStatus,
     eventName,
     recommendedAction: schedulerStatus === "todo" ? "continue" : "wait",
+    enqueueSource: schedulerStatus === "todo" ? "auto" : null,
+    enqueueReason: schedulerStatus === "todo" && workflowDecision ? workflowDecision.reason : null,
   };
 }
 

@@ -155,6 +155,9 @@ async function main() {
           last_workflow_status: workflowDecision.nextStatus,
           last_workflow_reason: workflowDecision.reason,
           last_recommended_action: decision.recommendedAction,
+          last_enqueue_source: decision.enqueueSource,
+          last_enqueue_reason: decision.enqueueReason,
+          last_enqueue_at: decision.enqueueSource ? new Date().toISOString() : null,
         },
       };
       return graph;
@@ -176,11 +179,21 @@ async function main() {
     await appendEvent(project, decision.eventName, taskId, task.agent, {
       scheduler_status: decision.schedulerStatus,
       recommended_action: decision.recommendedAction,
+      enqueue_source: decision.enqueueSource,
+      enqueue_reason: decision.enqueueReason,
       result_status: contract.result.status,
       workflow_action: workflowDecision.action,
       workflow_status: workflowDecision.nextStatus,
       workflow_reason: workflowDecision.reason,
     });
+    if (decision.schedulerStatus === "todo") {
+      await appendEvent(project, "TASK_REENQUEUED", taskId, task.agent, {
+        source: decision.enqueueSource,
+        reason: decision.enqueueReason,
+        workflow_action: workflowDecision.action,
+        workflow_status: workflowDecision.nextStatus,
+      });
+    }
     if (workflowDecision.action === "advance") {
       await appendEvent(project, "TASK_WORKFLOW_AUTO_ADVANCED", taskId, task.agent, {
         workflow_status: workflowDecision.nextStatus,

@@ -58,6 +58,9 @@ async function runStatus() {
     if (execution.last_recommended_action) {
       console.log(`  next: ${execution.last_recommended_action}`);
     }
+    if (execution.last_enqueue_source || execution.last_enqueue_reason) {
+      console.log(`  queue: ${(execution.last_enqueue_source || "-")} | ${execution.last_enqueue_reason || "-"}`);
+    }
   }
 
   console.log("");

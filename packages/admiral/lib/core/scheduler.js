@@ -34,6 +34,8 @@ async function claimReadyTasks(project) {
       await appendEvent(project, "TASK_CLAIMED", task.id, agentId, {
         workspace: workspaceInfo.workspace,
         branch: workspaceInfo.branch,
+        enqueue_source: task.metadata && task.metadata.execution ? task.metadata.execution.last_enqueue_source || null : null,
+        enqueue_reason: task.metadata && task.metadata.execution ? task.metadata.execution.last_enqueue_reason || null : null,
       });
       claimedTaskIds.push(task.id);
       claimedCount += 1;
