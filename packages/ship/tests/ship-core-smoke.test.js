@@ -7,6 +7,15 @@ const path = require('node:path');
 const { run, loadShipConfig, validateShipConfig, resolveReleaseAdapterName, resolveReleaseTargetPlan, runReleaseByTargets, resolveAdapter } = require('../lib/run');
 const { firebaseAdapter } = require('../lib/adapters/firebase');
 
+function loadWorkflowTask(workDir, taskId) {
+  const graph = JSON.parse(fs.readFileSync(path.join(workDir, 'kanban', 'graph.json'), 'utf8'));
+  const task = graph.tasks.find((entry) => entry.id === taskId);
+  if (!task) {
+    throw new Error(`task not found: ${taskId}`);
+  }
+  return task;
+}
+
 test('ship loads default config when .ship.json is missing', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-default-'));
   const config = loadShipConfig(workDir);
@@ -418,19 +427,14 @@ test('ship task new creates canonical task state files', async () => {
   try {
     await run(['task', 'new', '--type', 'feature', '--title', 'Critical API integration coverage']);
 
-    const agentsDir = path.join(workDir, '.agents');
-    const stateDir = path.join(agentsDir, 'state');
-    const tasksDir = path.join(stateDir, 'tasks');
-    const taskFiles = fs.readdirSync(tasksDir).filter((entry) => entry.endsWith('.json'));
-    assert.equal(taskFiles.length, 1);
+    const graph = JSON.parse(fs.readFileSync(path.join(workDir, 'kanban', 'graph.json'), 'utf8'));
+    assert.equal(graph.tasks.length, 1);
 
-    const task = JSON.parse(fs.readFileSync(path.join(tasksDir, taskFiles[0]), 'utf8'));
+    const task = graph.tasks[0].metadata.workflow;
     assert.equal(task.status, 'new');
     assert.equal(task.type, 'feature');
     assert.match(task.taskId, /^tsk_\d{8}_\d{6}$/);
-
-    const opsLog = fs.readFileSync(path.join(stateDir, 'ops.log'), 'utf8');
-    assert.match(opsLog, /"action":"task.new"/);
+    assert.equal(fs.existsSync(path.join(workDir, '.admiral', 'config.json')), true);
   } finally {
     process.chdir(previousCwd);
   }
@@ -514,10 +518,9 @@ test('ship task verify transitions implemented task to verified and writes repor
   try {
     await run(['task', 'new', '--type', 'feature', '--title', 'Verify fixture', '--json']);
     const created = JSON.parse(outputs[0]);
-    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
-    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
-    existing.status = 'implemented';
-    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    const task = loadWorkflowTask(workDir, created.task.taskId);
+    task.metadata.workflow.status = 'implemented';
+    fs.writeFileSync(path.join(workDir, 'kanban', 'graph.json'), JSON.stringify({ version: 1, tasks: [task] }, null, 2));
     outputs.length = 0;
 
     await run(['task', 'verify', '--id', created.task.taskId, '--json']);
@@ -543,10 +546,9 @@ test('ship task implement transitions tdd_ready task to implemented and writes i
   try {
     await run(['task', 'new', '--type', 'feature', '--title', 'Implement fixture', '--json']);
     const created = JSON.parse(outputs[0]);
-    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
-    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
-    existing.status = 'tdd_ready';
-    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    const task = loadWorkflowTask(workDir, created.task.taskId);
+    task.metadata.workflow.status = 'tdd_ready';
+    fs.writeFileSync(path.join(workDir, 'kanban', 'graph.json'), JSON.stringify({ version: 1, tasks: [task] }, null, 2));
     outputs.length = 0;
 
     await run(['task', 'implement', '--id', created.task.taskId, '--json']);
@@ -571,11 +573,10 @@ test('ship task publish-ready transitions verified task to publish_ready', async
   try {
     await run(['task', 'new', '--type', 'feature', '--title', 'Publish ready fixture', '--json']);
     const created = JSON.parse(outputs[0]);
-    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
-    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
-    existing.status = 'verified';
-    existing.checks = { unit: 'pass', integration: 'pass', e2e: 'not_required' };
-    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    const task = loadWorkflowTask(workDir, created.task.taskId);
+    task.metadata.workflow.status = 'verified';
+    task.metadata.workflow.checks = { unit: 'pass', integration: 'pass', e2e: 'not_required' };
+    fs.writeFileSync(path.join(workDir, 'kanban', 'graph.json'), JSON.stringify({ version: 1, tasks: [task] }, null, 2));
     outputs.length = 0;
 
     await run(['task', 'publish-ready', '--id', created.task.taskId, '--json']);
@@ -598,11 +599,10 @@ test('ship task publish-ready rejects when required checks did not pass', async 
   try {
     await run(['task', 'new', '--type', 'feature', '--title', 'Publish ready fail fixture', '--json']);
     const created = JSON.parse(outputs[0]);
-    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', `${created.task.taskId}.json`);
-    const existing = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
-    existing.status = 'verified';
-    existing.checks = { unit: 'fail', integration: 'pass', e2e: 'not_required' };
-    fs.writeFileSync(taskPath, JSON.stringify(existing, null, 2));
+    const task = loadWorkflowTask(workDir, created.task.taskId);
+    task.metadata.workflow.status = 'verified';
+    task.metadata.workflow.checks = { unit: 'fail', integration: 'pass', e2e: 'not_required' };
+    fs.writeFileSync(path.join(workDir, 'kanban', 'graph.json'), JSON.stringify({ version: 1, tasks: [task] }, null, 2));
 
     await assert.rejects(
       () => run(['task', 'publish-ready', '--id', created.task.taskId, '--json']),

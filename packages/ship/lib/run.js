@@ -5,6 +5,12 @@ const readline = require('readline/promises');
 const { npmAdapter } = require('./adapters/npm');
 const { firebaseAdapter } = require('./adapters/firebase');
 const { validateAdapterForCapability, validateAdapterShape } = require('./adapters/types');
+const {
+  attachTaskRecord,
+  createTaskRecord,
+  readTaskRecord,
+  transitionTask
+} = require('@i-santos/workflow');
 
 const CHANGESETS_DEP = '@changesets/cli';
 const CHANGESETS_DEP_VERSION = '^2.29.7';
@@ -24,7 +30,7 @@ const RELEASE_AUTH_DOC_LINKS = {
   create: 'https://docs.github.com/apps/creating-github-apps/registering-a-github-app/registering-a-github-app',
   install: 'https://docs.github.com/apps/using-github-apps/installing-your-own-github-app',
   secrets: 'https://docs.github.com/actions/security-guides/using-secrets-in-github-actions',
-  internal: 'https://github.com/i-santos/ship/blob/main/docs/release-auth-github-app.md'
+  internal: 'https://github.com/i-santos/navy/blob/main/docs/release-auth-github-app.md'
 };
 
 const MANAGED_FILE_SPECS = [
@@ -146,7 +152,7 @@ function usage() {
     '  ship task new --type <type> --title <text> [--json] [--dry-run]',
     '  ship task status --id <taskId> [--json]',
     '  ship task doctor [--json] [--dry-run]',
-    '    Manage deterministic task lifecycle state in .agents/.',
+    '    Deprecated compatibility layer over admiral-backed workflow metadata.',
     '',
     '  ship completion <bash|zsh|fish>',
     '    Print shell completion script for ship.',
@@ -1444,9 +1450,9 @@ function renderCompletion(shell) {
 function resolveTaskConfig(config = {}) {
   const task = config.task && typeof config.task === 'object' ? config.task : {};
   return {
-    engine: task.engine || '@i-santos/agent',
-    plansDir: task.plansDir || '.agents/plans',
-    stateDir: task.stateDir || '.agents/state',
+    engine: task.engine || '@i-santos/workflow',
+    plansDir: task.plansDir || 'docs/plans',
+    stateDir: task.stateDir || 'kanban',
     requireCleanTree: task.requireCleanTree !== false
   };
 }
@@ -1481,37 +1487,177 @@ function appendOperationLog(stateDir, op) {
   fs.appendFileSync(opsPath, line, 'utf8');
 }
 
-function readTaskFile(taskFilePath) {
-  if (!fs.existsSync(taskFilePath)) {
-    throw new Error(`Task file not found: ${taskFilePath}`);
-  }
-  return readJsonFile(taskFilePath);
+function resolveAdmiralPaths(cwd = process.cwd()) {
+  return {
+    admiralDir: path.join(cwd, '.admiral'),
+    configPath: path.join(cwd, '.admiral', 'config.json'),
+    graphPath: path.join(cwd, 'kanban', 'graph.json'),
+    boardPath: path.join(cwd, 'kanban', 'board.json'),
+    eventsPath: path.join(cwd, 'events', 'events.log')
+  };
 }
 
-function resolveTaskFilePath(taskId, config = {}, cwd = process.cwd()) {
-  if (!taskId) {
-    return '';
+function createEmptyAdmiralGraph() {
+  return {
+    version: 1,
+    tasks: []
+  };
+}
+
+function createEmptyAdmiralBoard() {
+  return {
+    updated_at: new Date(0).toISOString(),
+    columns: {
+      todo: [],
+      claimed: [],
+      running: [],
+      review: [],
+      done: [],
+      failed: [],
+      blocked: [],
+      retry_wait: [],
+      cancelled: []
+    },
+    active_agents: []
+  };
+}
+
+function createDefaultAdmiralConfig() {
+  return {
+    max_agents: 2,
+    scheduler_interval_ms: 2000,
+    heartbeat_timeout_ms: 15000,
+    max_retries_per_task: 2,
+    auto_merge: false,
+    default_branch: 'main',
+    agent_command: 'node -e "setTimeout(()=>process.exit(0), 250)"',
+    scopes: {
+      general: ['/*']
+    }
+  };
+}
+
+function ensureAdmiralTaskScaffold(workingDir, plansDir) {
+  const paths = resolveAdmiralPaths(workingDir);
+  ensureDirectory(paths.admiralDir);
+  ensureDirectory(path.join(paths.admiralDir, 'locks'));
+  ensureDirectory(path.dirname(paths.graphPath));
+  ensureDirectory(path.dirname(paths.eventsPath));
+  ensureDirectory(path.resolve(workingDir, plansDir));
+  ensureDirectory(path.resolve(workingDir, 'docs/tests'));
+
+  if (!fs.existsSync(paths.configPath)) {
+    writeJsonFile(paths.configPath, createDefaultAdmiralConfig());
   }
+  if (!fs.existsSync(paths.graphPath)) {
+    writeJsonFile(paths.graphPath, createEmptyAdmiralGraph());
+  }
+  if (!fs.existsSync(paths.boardPath)) {
+    writeJsonFile(paths.boardPath, createEmptyAdmiralBoard());
+  }
+  if (!fs.existsSync(paths.eventsPath)) {
+    fs.writeFileSync(paths.eventsPath, '');
+  }
+
+  return paths;
+}
+
+function readAdmiralGraph(workingDir, config = {}) {
   const taskConfig = resolveTaskConfig(config);
-  const stateDir = path.resolve(cwd, taskConfig.stateDir);
-  const tasksDir = path.join(stateDir, 'tasks');
-  return path.join(tasksDir, `${taskId}.json`);
+  const paths = ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
+  return {
+    paths,
+    graph: readJsonFile(paths.graphPath)
+  };
+}
+
+function writeAdmiralGraph(paths, graph) {
+  writeJsonFile(paths.graphPath, graph);
+}
+
+function resolveLegacyTaskFilePath(taskId, cwd = process.cwd()) {
+  return path.join(cwd, '.agents', 'state', 'tasks', `${taskId}.json`);
+}
+
+function buildTaskOutput(task) {
+  const record = readTaskRecord(task);
+  return {
+    ...record,
+    title: record.title || task.title,
+    branch: record.branch || task.branch || '',
+    workspace: record.workspace || task.workspace || '',
+    admiral: {
+      status: task.status,
+      scope: task.scope,
+      priority: task.priority,
+      dependsOn: Array.isArray(task.depends_on) ? [...task.depends_on] : []
+    }
+  };
+}
+
+function importLegacyTaskIfPresent(taskId, graph, cwd = process.cwd()) {
+  if (graph.tasks.some((task) => task.id === taskId)) {
+    return graph.tasks.find((task) => task.id === taskId);
+  }
+
+  const legacyTaskPath = resolveLegacyTaskFilePath(taskId, cwd);
+  if (!fs.existsSync(legacyTaskPath)) {
+    return null;
+  }
+
+  const legacyTask = readJsonFile(legacyTaskPath);
+  const importedTask = {
+    id: legacyTask.taskId,
+    title: legacyTask.title || legacyTask.taskId,
+    scope: 'general',
+    status: 'todo',
+    priority: 1,
+    depends_on: [],
+    agent: null,
+    branch: legacyTask.branch || null,
+    workspace: legacyTask.workspace || null,
+    retries: 0,
+    hooks: {},
+    metadata: attachTaskRecord(
+      { metadata: {} },
+      createTaskRecord(legacyTask)
+    ).metadata
+  };
+  graph.tasks.push(importedTask);
+  return importedTask;
+}
+
+function getTaskContainer(taskId, config = {}, cwd = process.cwd()) {
+  const { paths, graph } = readAdmiralGraph(cwd, config);
+  const importedTask = importLegacyTaskIfPresent(taskId, graph, cwd);
+  if (importedTask) {
+    writeAdmiralGraph(paths, graph);
+  }
+
+  const task = graph.tasks.find((entry) => entry.id === taskId);
+  if (!task) {
+    throw new Error(`Task not found: ${taskId}`);
+  }
+
+  return {
+    paths,
+    graph,
+    task
+  };
 }
 
 function updateTaskRecord(taskId, config, cwd, updater) {
   if (!taskId) {
     return null;
   }
-  const taskFilePath = resolveTaskFilePath(taskId, config, cwd);
-  const taskConfig = resolveTaskConfig(config);
-  const stateDir = path.resolve(cwd, taskConfig.stateDir);
-  const existing = readTaskFile(taskFilePath);
-  const next = updater(existing);
-  writeJsonFile(taskFilePath, next);
+
+  const context = getTaskContainer(taskId, config, cwd);
+  const nextTask = updater(context.task);
+  context.graph.tasks = context.graph.tasks.map((entry) => (entry.id === taskId ? nextTask : entry));
+  writeAdmiralGraph(context.paths, context.graph);
   return {
-    taskFilePath,
-    stateDir,
-    task: next
+    graphPath: context.paths.graphPath,
+    task: buildTaskOutput(nextTask)
   };
 }
 
@@ -1521,20 +1667,16 @@ function attachTaskPrReference(taskId, prNumber, config = {}, cwd = process.cwd(
   }
 
   const nowIso = new Date().toISOString();
-  const result = updateTaskRecord(taskId, config, cwd, (existing) => ({
-    ...existing,
-    updatedAt: nowIso,
-    release: {
-      ...(existing.release || {}),
-      prNumber
-    }
-  }));
-
-  appendOperationLog(result.stateDir, {
-    timestamp: nowIso,
-    action: 'task.link-pr',
-    taskId,
-    prNumber
+  const result = updateTaskRecord(taskId, config, cwd, (existing) => {
+    const workflowTask = readTaskRecord(existing);
+    return attachTaskRecord(existing, {
+      ...workflowTask,
+      updatedAt: nowIso,
+      release: {
+        ...(workflowTask.release || {}),
+        prNumber
+      }
+    });
   });
 
   return result.task;
@@ -1546,20 +1688,16 @@ function markTaskMerged(taskId, mergeCommit, config = {}, cwd = process.cwd(), o
   }
 
   const nowIso = new Date().toISOString();
-  const result = updateTaskRecord(taskId, config, cwd, (existing) => ({
-    ...existing,
-    updatedAt: nowIso,
-    release: {
-      ...(existing.release || {}),
-      mergeCommit
-    }
-  }));
-
-  appendOperationLog(result.stateDir, {
-    timestamp: nowIso,
-    action: 'task.merged',
-    taskId,
-    mergeCommit
+  const result = updateTaskRecord(taskId, config, cwd, (existing) => {
+    const workflowTask = readTaskRecord(existing);
+    return attachTaskRecord(existing, {
+      ...workflowTask,
+      updatedAt: nowIso,
+      release: {
+        ...(workflowTask.release || {}),
+        mergeCommit
+      }
+    });
   });
 
   return result.task;
@@ -1571,65 +1709,54 @@ function markTaskReleased(taskId, config = {}, cwd = process.cwd(), options = {}
   }
 
   const nowIso = new Date().toISOString();
-  const result = updateTaskRecord(taskId, config, cwd, (existing) => ({
-    ...existing,
-    status: 'released',
-    updatedAt: nowIso,
-    release: {
-      ...(existing.release || {}),
-      published: true
-    }
-  }));
-
-  appendOperationLog(result.stateDir, {
-    timestamp: nowIso,
-    action: 'task.released',
-    taskId,
-    status: 'released'
+  const result = updateTaskRecord(taskId, config, cwd, (existing) => {
+    const workflowTask = readTaskRecord(existing);
+    return attachTaskRecord(existing, {
+      ...workflowTask,
+      status: 'released',
+      updatedAt: nowIso,
+      release: {
+        ...(workflowTask.release || {}),
+        published: true
+      }
+    });
   });
 
   return result.task;
 }
 
-function ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir) {
-  const contextDir = path.resolve(workingDir, '.agents/context');
-  const docsDir = path.resolve(workingDir, 'docs');
-
-  ensureDirectory(stateDir);
-  ensureDirectory(tasksDir);
-  ensureDirectory(plansDir);
-  ensureDirectory(path.resolve(workingDir, '.agents/commands'));
-  ensureDirectory(contextDir);
-  ensureDirectory(docsDir);
-
-  const contextIndexPath = path.join(contextDir, 'index.json');
-  if (!fs.existsSync(contextIndexPath)) {
-    fs.writeFileSync(contextIndexPath, JSON.stringify({ version: 1, tasks: [] }, null, 2));
-  }
-  const handoffPath = path.join(contextDir, 'HANDOFF.md');
-  if (!fs.existsSync(handoffPath)) {
-    fs.writeFileSync(handoffPath, '# HANDOFF\n\n');
-  }
-  const projectStatePath = path.join(docsDir, 'PROJECT_STATE.md');
-  if (!fs.existsSync(projectStatePath)) {
-    fs.writeFileSync(projectStatePath, '# Project State\n\n');
-  }
+function createTaskContainer(taskRecord, scope = 'general') {
+  return attachTaskRecord({
+    id: taskRecord.taskId,
+    title: taskRecord.title,
+    scope,
+    status: 'todo',
+    priority: 1,
+    depends_on: [],
+    agent: null,
+    branch: taskRecord.branch || null,
+    workspace: taskRecord.workspace || null,
+    retries: 0,
+    hooks: {},
+    metadata: {}
+  }, taskRecord);
 }
 
 function runTaskCommand(args, config = {}, dependencies = {}) {
   const nowIso = new Date().toISOString();
   const workingDir = path.resolve(args.dir || process.cwd());
   const taskConfig = resolveTaskConfig(config);
-  const stateDir = path.resolve(workingDir, taskConfig.stateDir);
-  const tasksDir = path.join(stateDir, 'tasks');
   const plansDir = path.resolve(workingDir, taskConfig.plansDir);
 
-  let agentApi;
-  if (taskConfig.engine === '@i-santos/agent') {
-    // eslint-disable-next-line global-require, import/no-dynamic-require
-    agentApi = require('@i-santos/agent');
+  let workflowApi;
+  if (taskConfig.engine === '@i-santos/workflow') {
+    workflowApi = {
+      createTaskRecord,
+      readTaskRecord,
+      transitionTask
+    };
   } else if (typeof dependencies.resolveTaskEngine === 'function') {
-    agentApi = dependencies.resolveTaskEngine(taskConfig.engine);
+    workflowApi = dependencies.resolveTaskEngine(taskConfig.engine);
   } else {
     throw new Error(`Unsupported task engine "${taskConfig.engine}".`);
   }
@@ -1641,18 +1768,21 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
   };
 
   if (args.action === 'doctor') {
+    const admiralPaths = resolveAdmiralPaths(workingDir);
     const checks = [
-      { name: 'engine', status: agentApi ? 'pass' : 'fail', detail: taskConfig.engine },
+      { name: 'engine', status: workflowApi ? 'pass' : 'fail', detail: taskConfig.engine },
       { name: 'cwd', status: fs.existsSync(workingDir) ? 'pass' : 'fail', detail: workingDir },
-      { name: 'stateDir', status: fs.existsSync(stateDir) ? 'pass' : 'warn', detail: stateDir },
-      { name: 'tasksDir', status: fs.existsSync(tasksDir) ? 'pass' : 'warn', detail: tasksDir },
-      { name: 'opsLog', status: fs.existsSync(path.join(stateDir, 'ops.log')) ? 'pass' : 'warn', detail: path.join(stateDir, 'ops.log') }
+      { name: 'admiralDir', status: fs.existsSync(admiralPaths.admiralDir) ? 'pass' : 'warn', detail: admiralPaths.admiralDir },
+      { name: 'graph', status: fs.existsSync(admiralPaths.graphPath) ? 'pass' : 'warn', detail: admiralPaths.graphPath },
+      { name: 'legacyState', status: fs.existsSync(path.join(workingDir, '.agents', 'state')) ? 'warn' : 'pass', detail: path.join(workingDir, '.agents', 'state') }
     ];
     output.checks = checks;
+    output.deprecated = true;
     if (args.json) {
       console.log(JSON.stringify(output, null, 2));
       return;
     }
+    console.log('ship task is deprecated; use admiral task/create/status/run for canonical orchestration.');
     console.log(`task doctor (${taskConfig.engine})`);
     for (const check of checks) {
       console.log(`- ${check.name}: ${check.status} (${check.detail})`);
@@ -1664,50 +1794,31 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     const taskId = createTaskId(new Date());
     const title = args.title;
     const branch = args.branch || `${args.type}/${sanitizeTaskTitle(title)}`;
-    const taskRecord = {
+    const taskRecord = workflowApi.createTaskRecord({
       taskId,
       title,
       type: args.type,
       branch,
-      status: 'new',
-      createdAt: nowIso,
-      updatedAt: nowIso,
-      artifacts: {
-        planFile: '',
-        tddFile: '',
-        reportFile: ''
-      },
-      checks: {
-        unit: 'pending',
-        integration: 'pending',
-        e2e: 'not_required'
-      },
-      release: {
-        prNumber: 0,
-        mergeCommit: '',
-        published: false
-      }
-    };
+      status: 'new'
+    }, nowIso);
 
     output.task = taskRecord;
+    output.deprecated = true;
 
     if (!args.dryRun) {
-      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
-
-      const taskFilePath = path.join(tasksDir, `${taskId}.json`);
-      writeJsonFile(taskFilePath, taskRecord);
-      appendOperationLog(stateDir, {
-        timestamp: nowIso,
-        action: 'task.new',
-        taskId,
-        status: 'new'
-      });
+      const { paths, graph } = readAdmiralGraph(workingDir, config);
+      if (graph.tasks.some((task) => task.id === taskId)) {
+        throw new Error(`Task already exists: ${taskId}`);
+      }
+      graph.tasks.push(createTaskContainer(taskRecord));
+      writeAdmiralGraph(paths, graph);
     }
 
     if (args.json) {
       console.log(JSON.stringify(output, null, 2));
       return;
     }
+    console.log('ship task is deprecated; use admiral task create for canonical orchestration.');
     console.log(`task created: ${taskId}`);
     console.log(`- title: ${title}`);
     console.log(`- type: ${args.type}`);
@@ -1720,22 +1831,27 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
   }
 
   if (args.action === 'plan') {
-    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
-    const existing = readTaskFile(taskFilePath);
-    const transitioned = agentApi.transitionTask(existing, 'planned', nowIso);
+    const context = getTaskContainer(args.id, config, workingDir);
+    const existing = workflowApi.readTaskRecord(context.task);
+    const transitioned = workflowApi.transitionTask(existing, 'planned', nowIso);
     const planFileRelative = path.join(taskConfig.plansDir, `${transitioned.taskId}-${sanitizeTaskTitle(transitioned.title)}.plan.md`);
     const planFileAbsolute = path.resolve(workingDir, planFileRelative);
-
-    transitioned.artifacts = transitioned.artifacts || {};
-    transitioned.artifacts.planFile = planFileRelative;
-    output.task = transitioned;
+    const transitionedWithArtifacts = {
+      ...transitioned,
+      artifacts: {
+        ...(transitioned.artifacts || {}),
+        planFile: planFileRelative
+      }
+    };
+    output.task = transitionedWithArtifacts;
     output.artifacts = {
       planFile: planFileRelative
     };
+    output.deprecated = true;
 
     if (!args.dryRun) {
-      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
-      writeJsonFile(taskFilePath, transitioned);
+      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
+      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitionedWithArtifacts));
       if (!fs.existsSync(planFileAbsolute)) {
         fs.writeFileSync(
           planFileAbsolute,
@@ -1752,18 +1868,13 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
           'utf8'
         );
       }
-      appendOperationLog(stateDir, {
-        timestamp: nowIso,
-        action: 'task.plan',
-        taskId: transitioned.taskId,
-        status: transitioned.status
-      });
     }
 
     if (args.json) {
       console.log(JSON.stringify(output, null, 2));
       return;
     }
+    console.log('ship task is deprecated; use admiral for canonical orchestration.');
     console.log(`task planned: ${transitioned.taskId}`);
     console.log(`- status: ${transitioned.status}`);
     console.log(`- planFile: ${planFileRelative}`);
@@ -1774,22 +1885,27 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
   }
 
   if (args.action === 'implement') {
-    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
-    const existing = readTaskFile(taskFilePath);
-    const transitioned = agentApi.transitionTask(existing, 'implemented', nowIso);
+    const context = getTaskContainer(args.id, config, workingDir);
+    const existing = workflowApi.readTaskRecord(context.task);
+    const transitioned = workflowApi.transitionTask(existing, 'implemented', nowIso);
     const implementationFileRelative = path.join(taskConfig.plansDir, `${transitioned.taskId}-${sanitizeTaskTitle(transitioned.title)}.implementation.md`);
     const implementationFileAbsolute = path.resolve(workingDir, implementationFileRelative);
-
-    transitioned.artifacts = transitioned.artifacts || {};
-    transitioned.artifacts.implementationFile = implementationFileRelative;
-    output.task = transitioned;
+    const transitionedWithArtifacts = {
+      ...transitioned,
+      artifacts: {
+        ...(transitioned.artifacts || {}),
+        implementationFile: implementationFileRelative
+      }
+    };
+    output.task = transitionedWithArtifacts;
     output.artifacts = {
       implementationFile: implementationFileRelative
     };
+    output.deprecated = true;
 
     if (!args.dryRun) {
-      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
-      writeJsonFile(taskFilePath, transitioned);
+      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
+      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitionedWithArtifacts));
       if (!fs.existsSync(implementationFileAbsolute)) {
         fs.writeFileSync(
           implementationFileAbsolute,
@@ -1806,18 +1922,13 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
           'utf8'
         );
       }
-      appendOperationLog(stateDir, {
-        timestamp: nowIso,
-        action: 'task.implement',
-        taskId: transitioned.taskId,
-        status: transitioned.status
-      });
     }
 
     if (args.json) {
       console.log(JSON.stringify(output, null, 2));
       return;
     }
+    console.log('ship task is deprecated; use admiral for canonical orchestration.');
     console.log(`task implemented: ${transitioned.taskId}`);
     console.log(`- status: ${transitioned.status}`);
     console.log(`- implementationFile: ${implementationFileRelative}`);
@@ -1828,28 +1939,34 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
   }
 
   if (args.action === 'verify') {
-    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
-    const existing = readTaskFile(taskFilePath);
-    const transitioned = agentApi.transitionTask(existing, 'verified', nowIso);
+    const context = getTaskContainer(args.id, config, workingDir);
+    const existing = workflowApi.readTaskRecord(context.task);
+    const transitioned = workflowApi.transitionTask(existing, 'verified', nowIso);
     const reportFileRelative = path.join('docs/tests', `${transitioned.taskId}-verification.local.md`);
     const reportFileAbsolute = path.resolve(workingDir, reportFileRelative);
 
-    transitioned.artifacts = transitioned.artifacts || {};
-    transitioned.artifacts.reportFile = reportFileRelative;
-    transitioned.checks = {
-      unit: 'pass',
-      integration: 'pass',
-      e2e: transitioned.checks && transitioned.checks.e2e ? transitioned.checks.e2e : 'not_required'
+    const transitionedWithArtifacts = {
+      ...transitioned,
+      artifacts: {
+        ...(transitioned.artifacts || {}),
+        reportFile: reportFileRelative
+      },
+      checks: {
+        unit: 'pass',
+        integration: 'pass',
+        e2e: transitioned.checks && transitioned.checks.e2e ? transitioned.checks.e2e : 'not_required'
+      }
     };
-    output.task = transitioned;
+    output.task = transitionedWithArtifacts;
     output.artifacts = {
       reportFile: reportFileRelative
     };
+    output.deprecated = true;
 
     if (!args.dryRun) {
-      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
+      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
       ensureDirectory(path.dirname(reportFileAbsolute));
-      writeJsonFile(taskFilePath, transitioned);
+      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitionedWithArtifacts));
       if (!fs.existsSync(reportFileAbsolute)) {
         fs.writeFileSync(
           reportFileAbsolute,
@@ -1865,18 +1982,13 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
           'utf8'
         );
       }
-      appendOperationLog(stateDir, {
-        timestamp: nowIso,
-        action: 'task.verify',
-        taskId: transitioned.taskId,
-        status: transitioned.status
-      });
     }
 
     if (args.json) {
       console.log(JSON.stringify(output, null, 2));
       return;
     }
+    console.log('ship task is deprecated; use admiral for canonical orchestration.');
     console.log(`task verified: ${transitioned.taskId}`);
     console.log(`- status: ${transitioned.status}`);
     console.log(`- reportFile: ${reportFileRelative}`);
@@ -1887,8 +1999,8 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
   }
 
   if (args.action === 'publish-ready') {
-    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
-    const existing = readTaskFile(taskFilePath);
+    const context = getTaskContainer(args.id, config, workingDir);
+    const existing = workflowApi.readTaskRecord(context.task);
     const checks = existing.checks || {};
     if (checks.unit !== 'pass' || checks.integration !== 'pass') {
       throw new Error(
@@ -1899,24 +2011,20 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
       );
     }
 
-    const transitioned = agentApi.transitionTask(existing, 'publish_ready', nowIso);
+    const transitioned = workflowApi.transitionTask(existing, 'publish_ready', nowIso);
     output.task = transitioned;
+    output.deprecated = true;
 
     if (!args.dryRun) {
-      ensureTaskScaffold(workingDir, stateDir, tasksDir, plansDir);
-      writeJsonFile(taskFilePath, transitioned);
-      appendOperationLog(stateDir, {
-        timestamp: nowIso,
-        action: 'task.publish-ready',
-        taskId: transitioned.taskId,
-        status: transitioned.status
-      });
+      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
+      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitioned));
     }
 
     if (args.json) {
       console.log(JSON.stringify(output, null, 2));
       return;
     }
+    console.log('ship task is deprecated; use admiral for canonical orchestration.');
     console.log(`task publish-ready: ${transitioned.taskId}`);
     console.log(`- status: ${transitioned.status}`);
     if (args.dryRun) {
@@ -1926,13 +2034,14 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
   }
 
   if (args.action === 'status') {
-    const taskFilePath = path.join(tasksDir, `${args.id}.json`);
-    const taskRecord = readTaskFile(taskFilePath);
+    const taskRecord = buildTaskOutput(getTaskContainer(args.id, config, workingDir).task);
     output.task = taskRecord;
+    output.deprecated = true;
     if (args.json) {
       console.log(JSON.stringify(output, null, 2));
       return;
     }
+    console.log('ship task is deprecated; use admiral for canonical orchestration.');
     console.log(`task status: ${taskRecord.taskId}`);
     console.log(`- title: ${taskRecord.title}`);
     console.log(`- status: ${taskRecord.status}`);
@@ -1941,7 +2050,7 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     return;
   }
 
-  throw new Error(`Task action "${args.action}" is planned but not implemented yet. Current implemented actions: new, plan, verify, status, doctor.`);
+  throw new Error(`Task action "${args.action}" is planned but not implemented yet. Current implemented actions: new, plan, implement, verify, publish-ready, status, doctor.`);
 }
 
 function loadShipConfig(cwd = process.cwd()) {

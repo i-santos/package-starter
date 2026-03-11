@@ -217,7 +217,7 @@ Main flags:
 
 ## `ship task`
 
-Task lifecycle entrypoint (v1 bootstrap).
+Task lifecycle compatibility entrypoint.
 
 Current implemented actions:
 
@@ -238,8 +238,16 @@ Common flags:
 
 State files are managed under:
 
-- `.agents/state/tasks/*.json`
-- `.agents/state/ops.log`
+- `kanban/graph.json` task records with `metadata.workflow`
+- `.admiral/config.json` and related admiral runtime files
+
+`ship task` is deprecated. The canonical task flow is owned by `admiral`:
+
+- `admiral task create`
+- `admiral run`
+- `admiral status`
+
+`ship` still accepts `--task-id` on delivery and release commands and links release metadata to the admiral task record.
 
 ## Agent-Focused Non-Interactive Usage
 
