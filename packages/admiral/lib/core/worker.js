@@ -8,11 +8,14 @@ const { appendEvent } = require("./event-bus");
 const { writeHeartbeat, clearHeartbeat } = require("./heartbeat");
 const { applyRetry } = require("./retry-policy");
 const { prepareExecutionContract, buildExecutionEnv, finalizeExecutionContract } = require("./execution-contract");
+const { syncProjectContext, syncTaskContext, writeTaskHandoff } = require("./context-store");
 const { execShellCommand } = require("../utils/process");
 const { removeFileIfExists, appendText } = require("../utils/fs");
 
 async function runTaskCommand(project, task) {
   const logPath = path.join(project.paths.agentLogsDir, `${task.id}.log`);
+  await syncProjectContext(project);
+  await syncTaskContext(project, task);
   const contract = await prepareExecutionContract(project, task);
   const env = {
     ...process.env,
@@ -94,6 +97,8 @@ async function main() {
   });
   await reloadGraph(project);
   task = getTaskById(project.graph, taskId);
+  await syncProjectContext(project);
+  await syncTaskContext(project, task);
 
   const heartbeatTick = async () => {
     await writeHeartbeat(project, {
@@ -127,6 +132,17 @@ async function main() {
       };
       return graph;
     });
+    await reloadGraph(project);
+    task = getTaskById(project.graph, taskId);
+    await syncTaskContext(project, task);
+    await writeTaskHandoff(project, task, {
+      execution_id: contract.execution_id,
+      summary: contract.result && contract.result.summary ? contract.result.summary : "Execution completed successfully.",
+      changed_files: contract.result && Array.isArray(contract.result.changed_files) ? contract.result.changed_files : [],
+      next_actions: contract.result && Array.isArray(contract.result.next_actions) ? contract.result.next_actions : [],
+      blockers: contract.result && Array.isArray(contract.result.blockers) ? contract.result.blockers : [],
+      result_file: contract.files.workspace_result,
+    });
     await appendEvent(project, "TASK_DONE", taskId, task.agent);
   } catch (error) {
     const failedAt = new Date().toISOString();
@@ -144,6 +160,13 @@ async function main() {
       };
       applyRetry(freshTask, project.config);
       return graph;
+    });
+    await reloadGraph(project);
+    task = getTaskById(project.graph, taskId);
+    await syncTaskContext(project, task);
+    await writeTaskHandoff(project, task, {
+      summary: "Execution failed.",
+      blockers: [error.message],
     });
     await appendEvent(project, "TASK_FAILED", taskId, task.agent, {
       error: error.message,

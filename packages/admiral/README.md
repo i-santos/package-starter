@@ -126,6 +126,12 @@ Before running the agent command, `admiral` now materializes an execution contra
 
 This contract gives the agent a stable interface for reading task context and writing structured execution results.
 
+It also materializes shared context files under `.admiral/context/`:
+
+- `project.json`: global project context for all executions
+- `tasks/<task-id>.json`: current task context, workflow state, and latest execution summary
+- `handoffs/<task-id>.json`: rolling handoff history between executions/agents
+
 ## Development
 
 Run tests:

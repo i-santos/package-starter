@@ -3,6 +3,7 @@
 const path = require("node:path");
 const { mkdir, writeFile } = require("node:fs/promises");
 const { writeJson, readJsonIfExists } = require("../utils/fs");
+const { getTaskContextPath, getTaskHandoffPath } = require("./context-store");
 
 function createExecutionId(taskId, now = new Date()) {
   const stamp = now.toISOString().replace(/[:.]/g, "-");
@@ -48,6 +49,11 @@ function buildExecutionContract(project, task, now = new Date()) {
       workspace_result: workspaceResultPath,
       log: logPath,
     },
+    context: {
+      project_file: project.paths.contextProject,
+      task_file: getTaskContextPath(project, task.id),
+      handoff_file: getTaskHandoffPath(project, task.id),
+    },
   };
 }
 
@@ -69,20 +75,19 @@ async function prepareExecutionContract(project, task, now = new Date()) {
 }
 
 async function finalizeExecutionContract(contract, update) {
+  const existingResult = await readJsonIfExists(contract.files.workspace_result, {});
   const next = {
     ...contract,
     result: {
       ...(contract.result || {}),
+      ...existingResult,
       ...update,
     },
   };
 
   await writeJson(contract.files.runtime_record, next);
   await writeJson(contract.files.workspace_contract, next);
-
-  const existingResult = await readJsonIfExists(contract.files.workspace_result, {});
   await writeJson(contract.files.workspace_result, {
-    ...existingResult,
     execution_id: contract.execution_id,
     ...next.result,
   });

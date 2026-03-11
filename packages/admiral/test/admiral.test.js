@@ -40,6 +40,7 @@ test("admiral init creates runtime structure", async () => {
 
   assert.equal(config.default_branch, "main");
   assert.deepEqual(graph.tasks, []);
+  assert.equal(typeof JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "project.json"), "utf8")).project.root, "string");
 });
 
 test("admiral can create tasks with dependencies", async () => {
@@ -52,6 +53,9 @@ test("admiral can create tasks with dependencies", async () => {
   assert.equal(graph.tasks.length, 2);
   assert.deepEqual(graph.tasks.find((task) => task.id === "frontend-login").depends_on, ["backend-auth"]);
   assert.equal(graph.tasks.find((task) => task.id === "backend-auth").metadata.workflow.status, "new");
+  const taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"), "utf8"));
+  assert.equal(taskContext.task.id, "backend-auth");
+  assert.equal(taskContext.workflow.status, "new");
 });
 
 test("admiral task workflow lifecycle persists metadata and artifacts", async () => {
@@ -116,10 +120,18 @@ test("scheduler moves a successful task to review", async () => {
   assert.equal(artifact, "backend-auth");
   const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
   const result = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-result.json"), "utf8"));
+  const projectContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "project.json"), "utf8"));
+  const taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"), "utf8"));
+  const handoff = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "handoffs", "backend-auth.json"), "utf8"));
   assert.equal(contract.task.id, "backend-auth");
   assert.equal(contract.files.workspace_result, path.join(task.workspace, ".admiral", "task-result.json"));
+  assert.equal(contract.context.project_file, path.join(repoDir, ".admiral", "context", "project.json"));
+  assert.equal(contract.context.task_file, path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"));
   assert.equal(result.status, "succeeded");
   assert.equal(result.ok, true);
+  assert.equal(projectContext.project.default_branch, "main");
+  assert.equal(taskContext.execution.last_status, "succeeded");
+  assert.equal(handoff.latest.summary, "Execution completed successfully.");
 });
 
 test("recovery retries a dead running task", async () => {
@@ -177,6 +189,10 @@ test("failed execution persists contract failure state", async () => {
   assert.match(task.metadata.execution.last_error, /agent command failed with code 7/);
 
   const runtimeRecord = JSON.parse(await readFile(path.join(repoDir, "runtime", "executions", "backend-auth.json"), "utf8"));
+  const taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth.json"), "utf8"));
+  const handoff = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "handoffs", "backend-auth.json"), "utf8"));
   assert.equal(runtimeRecord.result.status, "failed");
   assert.match(runtimeRecord.result.error, /agent command failed with code 7/);
+  assert.equal(taskContext.execution.last_status, "failed");
+  assert.match(handoff.latest.blockers[0], /agent command failed with code 7/);
 });

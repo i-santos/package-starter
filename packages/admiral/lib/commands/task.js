@@ -5,6 +5,7 @@ const { writeFile } = require("node:fs/promises");
 const { loadProject, withGraphMutation, saveBoard } = require("../core/project");
 const { createTask, getTaskById, listTasks, validateGraphIntegrity } = require("../core/task-graph");
 const { appendEvent } = require("../core/event-bus");
+const { syncProjectContext, syncTaskContext } = require("../core/context-store");
 const { attachTaskRecord, createTaskRecord, readTaskRecord, transitionTask } = require("@i-santos/workflow");
 const { ensureDir, pathExists } = require("../utils/fs");
 
@@ -112,11 +113,13 @@ async function mutateWorkflowTask(project, taskId, nextStatus, options = {}) {
   });
 
   await saveBoard(project);
+  await syncProjectContext(project);
   if (options.eventName) {
     await appendEvent(project, options.eventName, taskId, null, {
       workflow_status: nextStatus,
     });
   }
+  await syncTaskContext(project, updatedTask);
   return updatedTask;
 }
 
@@ -149,6 +152,8 @@ async function runTaskCreate(taskId, flags = {}) {
 
   await appendEvent(project, "TASK_CREATED", createdTask.id, null);
   await saveBoard(project);
+  await syncProjectContext(project);
+  await syncTaskContext(project, createdTask);
   printTask({ ok: true, action: "create", task: formatTask(createdTask) }, flags);
 }
 
@@ -317,6 +322,8 @@ async function runTaskRetry(taskId) {
 
   await appendEvent(project, "TASK_RETRIED", taskId, null);
   await saveBoard(project);
+  await syncProjectContext(project);
+  await syncTaskContext(project, getTaskById(project.graph, taskId));
   console.log(`Retried task ${taskId}`);
 }
 
