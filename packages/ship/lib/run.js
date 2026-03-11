@@ -149,10 +149,9 @@ function usage() {
     '               [--track auto|beta|stable] [--promote-stable] [--yes] [--dry-run]',
     '    Orchestrate end-to-end release flow (PRs, checks, merge, npm validation).',
     '',
-    '  ship task new --type <type> --title <text> [--json] [--dry-run]',
     '  ship task status --id <taskId> [--json]',
     '  ship task doctor [--json] [--dry-run]',
-    '    Deprecated compatibility layer over admiral-backed workflow metadata.',
+    '    Deprecated compatibility layer. Use admiral for task creation and lifecycle.',
     '',
     '  ship completion <bash|zsh|fish>',
     '    Print shell completion script for ship.',
@@ -171,7 +170,6 @@ function usage() {
     '  ship open-pr --auto-merge --watch-checks',
     '  ship release --yes',
     '  ship release --targets auto --yes',
-    '  ship task new --type feature --title "critical api integration coverage" --json',
     '  ship task status --id tsk_20260303_001 --json',
     '  ship release --promote-stable --promote-type minor --yes',
     '  ship completion zsh',
@@ -1767,6 +1765,25 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     dryRun: Boolean(args.dryRun)
   };
 
+  const deprecatedActionMap = {
+    new: 'admiral task create <id>',
+    plan: 'admiral task plan <id>',
+    tdd: 'admiral task tdd <id>',
+    implement: 'admiral task implement <id>',
+    verify: 'admiral task verify <id>',
+    'publish-ready': 'admiral task publish-ready <id>'
+  };
+
+  if (deprecatedActionMap[args.action]) {
+    throw new Error(
+      [
+        `ship task ${args.action} is no longer supported.`,
+        `Use "${deprecatedActionMap[args.action]}" instead.`,
+        'ship only keeps task status/doctor as temporary compatibility commands.'
+      ].join('\n')
+    );
+  }
+
   if (args.action === 'doctor') {
     const admiralPaths = resolveAdmiralPaths(workingDir);
     const checks = [
@@ -1790,249 +1807,6 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     return;
   }
 
-  if (args.action === 'new') {
-    const taskId = createTaskId(new Date());
-    const title = args.title;
-    const branch = args.branch || `${args.type}/${sanitizeTaskTitle(title)}`;
-    const taskRecord = workflowApi.createTaskRecord({
-      taskId,
-      title,
-      type: args.type,
-      branch,
-      status: 'new'
-    }, nowIso);
-
-    output.task = taskRecord;
-    output.deprecated = true;
-
-    if (!args.dryRun) {
-      const { paths, graph } = readAdmiralGraph(workingDir, config);
-      if (graph.tasks.some((task) => task.id === taskId)) {
-        throw new Error(`Task already exists: ${taskId}`);
-      }
-      graph.tasks.push(createTaskContainer(taskRecord));
-      writeAdmiralGraph(paths, graph);
-    }
-
-    if (args.json) {
-      console.log(JSON.stringify(output, null, 2));
-      return;
-    }
-    console.log('ship task is deprecated; use admiral task create for canonical orchestration.');
-    console.log(`task created: ${taskId}`);
-    console.log(`- title: ${title}`);
-    console.log(`- type: ${args.type}`);
-    console.log(`- branch: ${branch}`);
-    console.log(`- state: new`);
-    if (args.dryRun) {
-      console.log('- dry-run: no files were written');
-    }
-    return;
-  }
-
-  if (args.action === 'plan') {
-    const context = getTaskContainer(args.id, config, workingDir);
-    const existing = workflowApi.readTaskRecord(context.task);
-    const transitioned = workflowApi.transitionTask(existing, 'planned', nowIso);
-    const planFileRelative = path.join(taskConfig.plansDir, `${transitioned.taskId}-${sanitizeTaskTitle(transitioned.title)}.plan.md`);
-    const planFileAbsolute = path.resolve(workingDir, planFileRelative);
-    const transitionedWithArtifacts = {
-      ...transitioned,
-      artifacts: {
-        ...(transitioned.artifacts || {}),
-        planFile: planFileRelative
-      }
-    };
-    output.task = transitionedWithArtifacts;
-    output.artifacts = {
-      planFile: planFileRelative
-    };
-    output.deprecated = true;
-
-    if (!args.dryRun) {
-      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
-      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitionedWithArtifacts));
-      if (!fs.existsSync(planFileAbsolute)) {
-        fs.writeFileSync(
-          planFileAbsolute,
-          [
-            `# Plan: ${transitioned.title}`,
-            '',
-            `- taskId: ${transitioned.taskId}`,
-            '- goals:',
-            '- constraints:',
-            '- risks:',
-            '- implementation steps:',
-            ''
-          ].join('\n'),
-          'utf8'
-        );
-      }
-    }
-
-    if (args.json) {
-      console.log(JSON.stringify(output, null, 2));
-      return;
-    }
-    console.log('ship task is deprecated; use admiral for canonical orchestration.');
-    console.log(`task planned: ${transitioned.taskId}`);
-    console.log(`- status: ${transitioned.status}`);
-    console.log(`- planFile: ${planFileRelative}`);
-    if (args.dryRun) {
-      console.log('- dry-run: no files were written');
-    }
-    return;
-  }
-
-  if (args.action === 'implement') {
-    const context = getTaskContainer(args.id, config, workingDir);
-    const existing = workflowApi.readTaskRecord(context.task);
-    const transitioned = workflowApi.transitionTask(existing, 'implemented', nowIso);
-    const implementationFileRelative = path.join(taskConfig.plansDir, `${transitioned.taskId}-${sanitizeTaskTitle(transitioned.title)}.implementation.md`);
-    const implementationFileAbsolute = path.resolve(workingDir, implementationFileRelative);
-    const transitionedWithArtifacts = {
-      ...transitioned,
-      artifacts: {
-        ...(transitioned.artifacts || {}),
-        implementationFile: implementationFileRelative
-      }
-    };
-    output.task = transitionedWithArtifacts;
-    output.artifacts = {
-      implementationFile: implementationFileRelative
-    };
-    output.deprecated = true;
-
-    if (!args.dryRun) {
-      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
-      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitionedWithArtifacts));
-      if (!fs.existsSync(implementationFileAbsolute)) {
-        fs.writeFileSync(
-          implementationFileAbsolute,
-          [
-            `# Implementation Notes: ${transitioned.title}`,
-            '',
-            `- taskId: ${transitioned.taskId}`,
-            '- scope:',
-            '- changed files:',
-            '- risks and mitigations:',
-            '- follow-ups:',
-            ''
-          ].join('\n'),
-          'utf8'
-        );
-      }
-    }
-
-    if (args.json) {
-      console.log(JSON.stringify(output, null, 2));
-      return;
-    }
-    console.log('ship task is deprecated; use admiral for canonical orchestration.');
-    console.log(`task implemented: ${transitioned.taskId}`);
-    console.log(`- status: ${transitioned.status}`);
-    console.log(`- implementationFile: ${implementationFileRelative}`);
-    if (args.dryRun) {
-      console.log('- dry-run: no files were written');
-    }
-    return;
-  }
-
-  if (args.action === 'verify') {
-    const context = getTaskContainer(args.id, config, workingDir);
-    const existing = workflowApi.readTaskRecord(context.task);
-    const transitioned = workflowApi.transitionTask(existing, 'verified', nowIso);
-    const reportFileRelative = path.join('docs/tests', `${transitioned.taskId}-verification.local.md`);
-    const reportFileAbsolute = path.resolve(workingDir, reportFileRelative);
-
-    const transitionedWithArtifacts = {
-      ...transitioned,
-      artifacts: {
-        ...(transitioned.artifacts || {}),
-        reportFile: reportFileRelative
-      },
-      checks: {
-        unit: 'pass',
-        integration: 'pass',
-        e2e: transitioned.checks && transitioned.checks.e2e ? transitioned.checks.e2e : 'not_required'
-      }
-    };
-    output.task = transitionedWithArtifacts;
-    output.artifacts = {
-      reportFile: reportFileRelative
-    };
-    output.deprecated = true;
-
-    if (!args.dryRun) {
-      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
-      ensureDirectory(path.dirname(reportFileAbsolute));
-      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitionedWithArtifacts));
-      if (!fs.existsSync(reportFileAbsolute)) {
-        fs.writeFileSync(
-          reportFileAbsolute,
-          [
-            `# Verification Report: ${transitioned.title}`,
-            '',
-            `- taskId: ${transitioned.taskId}`,
-            '- unit: pass',
-            '- integration: pass',
-            `- e2e: ${transitioned.checks.e2e}`,
-            ''
-          ].join('\n'),
-          'utf8'
-        );
-      }
-    }
-
-    if (args.json) {
-      console.log(JSON.stringify(output, null, 2));
-      return;
-    }
-    console.log('ship task is deprecated; use admiral for canonical orchestration.');
-    console.log(`task verified: ${transitioned.taskId}`);
-    console.log(`- status: ${transitioned.status}`);
-    console.log(`- reportFile: ${reportFileRelative}`);
-    if (args.dryRun) {
-      console.log('- dry-run: no files were written');
-    }
-    return;
-  }
-
-  if (args.action === 'publish-ready') {
-    const context = getTaskContainer(args.id, config, workingDir);
-    const existing = workflowApi.readTaskRecord(context.task);
-    const checks = existing.checks || {};
-    if (checks.unit !== 'pass' || checks.integration !== 'pass') {
-      throw new Error(
-        [
-          'Cannot mark task as publish_ready.',
-          `Expected checks unit=pass and integration=pass but got unit=${checks.unit || 'n/a'}, integration=${checks.integration || 'n/a'}.`
-        ].join('\n')
-      );
-    }
-
-    const transitioned = workflowApi.transitionTask(existing, 'publish_ready', nowIso);
-    output.task = transitioned;
-    output.deprecated = true;
-
-    if (!args.dryRun) {
-      ensureAdmiralTaskScaffold(workingDir, taskConfig.plansDir);
-      updateTaskRecord(args.id, config, workingDir, (task) => attachTaskRecord(task, transitioned));
-    }
-
-    if (args.json) {
-      console.log(JSON.stringify(output, null, 2));
-      return;
-    }
-    console.log('ship task is deprecated; use admiral for canonical orchestration.');
-    console.log(`task publish-ready: ${transitioned.taskId}`);
-    console.log(`- status: ${transitioned.status}`);
-    if (args.dryRun) {
-      console.log('- dry-run: no files were written');
-    }
-    return;
-  }
-
   if (args.action === 'status') {
     const taskRecord = buildTaskOutput(getTaskContainer(args.id, config, workingDir).task);
     output.task = taskRecord;
@@ -2050,7 +1824,7 @@ function runTaskCommand(args, config = {}, dependencies = {}) {
     return;
   }
 
-  throw new Error(`Task action "${args.action}" is planned but not implemented yet. Current implemented actions: new, plan, implement, verify, publish-ready, status, doctor.`);
+  throw new Error(`Task action "${args.action}" is not supported in ship. Use admiral for task creation and lifecycle management.`);
 }
 
 function loadShipConfig(cwd = process.cwd()) {

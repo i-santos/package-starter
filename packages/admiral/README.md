@@ -34,6 +34,16 @@ It also includes:
 
 Inside the `navy` monorepo, `admiral` is the canonical owner of task orchestration and runtime state.
 
+## Product Role
+
+Inside `navy`, `admiral` is the system of record for:
+
+- task creation
+- workflow lifecycle progression
+- task graph dependencies
+- scheduler ownership and agent execution
+- shared task metadata consumed later by `ship`
+
 ## Installation
 
 ```bash
@@ -75,6 +85,13 @@ Check status:
 
 ```bash
 admiral status
+```
+
+Delivery and release still happen through `ship`, using the same task identifier:
+
+```bash
+ship open-pr --task-id backend-auth --yes
+ship release --task-id backend-auth --yes
 ```
 
 ## Configuration

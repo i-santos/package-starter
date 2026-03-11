@@ -25,6 +25,27 @@ Starter workspace to standardize npm package creation and migration with Changes
 - Adapter model: `open-pr` and `release` run on adapter capabilities (`npm` built-in, external via `.ship.json` + `adapterModule`).
 - `template/`: managed scaffold baseline used by the CLI.
 
+## Role In Navy
+
+Inside the `navy` monorepo, `ship` is the delivery layer, not the task orchestrator.
+
+- `admiral` owns task creation, lifecycle, scheduler state, and runtime files.
+- `ship` owns PR orchestration, release progression, publishing validation, and promotion flows.
+- `ship` integrates with `admiral` tasks via `--task-id`.
+
+Official flow:
+
+```bash
+admiral task create backend-auth --scope backend
+admiral task plan backend-auth
+admiral task tdd backend-auth
+admiral task implement backend-auth
+admiral task verify backend-auth
+admiral task publish-ready backend-auth
+ship open-pr --task-id backend-auth --yes
+ship release --task-id backend-auth --yes
+```
+
 ## Quickstart
 
 ```bash

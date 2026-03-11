@@ -8,6 +8,23 @@ Monorepo for the navy product-development ecosystem.
 - `@i-santos/admiral`: task-orchestration CLI for multi-agent execution, scheduling, and project runtime management.
 - `@i-santos/workflow`: deterministic workflow core for task lifecycle states and shared task metadata contracts.
 
+## Official Flow
+
+`admiral` owns task orchestration and runtime state. `ship` owns delivery and release progression.
+
+```bash
+admiral init
+admiral task create backend-auth --scope backend
+admiral task plan backend-auth
+admiral task tdd backend-auth
+admiral task implement backend-auth
+admiral task verify backend-auth
+admiral task publish-ready backend-auth
+admiral run --once
+ship open-pr --task-id backend-auth --yes
+ship release --task-id backend-auth --yes
+```
+
 ## Workspace Commands
 
 ```bash
