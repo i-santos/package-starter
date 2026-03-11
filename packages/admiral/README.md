@@ -92,6 +92,8 @@ admiral status
 admiral task status backend-auth
 ```
 
+`admiral status` now also surfaces recent task activity, automatic re-enqueue behavior, and tasks waiting for human intervention.
+
 Resolve operational states:
 
 ```bash
