@@ -237,8 +237,8 @@ test('ship resolves external adapter via adapterModule path', () => {
     [
       'module.exports = {',
       '  name: "custom",',
-      '  capabilities: { openPr: true, release: true },',
-      '  detectReleaseMode: () => "open-pr",',
+      '  capabilities: { release: true },',
+      '  detectReleaseMode: () => "code",',
       '  resolveReleaseContext: () => ({}),',
       '  findReleaseCandidates: () => [],',
       '  selectReleaseCandidate: () => null,',
@@ -257,7 +257,6 @@ test('ship resolves external adapter via adapterModule path', () => {
 test('ship resolves builtin firebase adapter', () => {
   const adapter = resolveAdapter('firebase');
   assert.equal(adapter.name, 'firebase');
-  assert.equal(Boolean(adapter.capabilities && adapter.capabilities.openPr), true);
   assert.equal(Boolean(adapter.capabilities && adapter.capabilities.release), true);
 });
 
@@ -370,33 +369,13 @@ test('firebase adapter verifyPostMerge fails when healthcheck URL is down', () =
   assert.match((verification.diagnostics || []).join('\n'), /Healthcheck failed/);
 });
 
-test('ship fails fast when adapter does not implement openPr capability', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-adapter-openpr-cap-'));
-  fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
-    adapter: 'custom',
-    adapterModule: './adapter.js'
-  }, null, 2));
-  fs.writeFileSync(path.join(workDir, 'adapter.js'), 'module.exports = { name: "custom", capabilities: { release: true } };');
-
-  const previousCwd = process.cwd();
-  process.chdir(workDir);
-  try {
-    await assert.rejects(
-      () => run(['open-pr']),
-      /does not implement openPr capability/
-    );
-  } finally {
-    process.chdir(previousCwd);
-  }
-});
-
 test('ship fails fast when adapter does not implement release capability', async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-adapter-release-cap-'));
   fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
     adapter: 'custom',
     adapterModule: './adapter.js'
   }, null, 2));
-  fs.writeFileSync(path.join(workDir, 'adapter.js'), 'module.exports = { name: "custom", capabilities: { openPr: true } };');
+  fs.writeFileSync(path.join(workDir, 'adapter.js'), 'module.exports = { name: "custom", capabilities: {} };');
 
   const previousCwd = process.cwd();
   process.chdir(workDir);

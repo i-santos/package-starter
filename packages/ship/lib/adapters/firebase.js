@@ -106,7 +106,6 @@ function getLatestWorkflowRun(repo, workflow, branch, deps) {
 const firebaseAdapter = {
   name: 'firebase',
   capabilities: {
-    openPr: true,
     release: true
   },
 
@@ -138,7 +137,7 @@ const firebaseAdapter = {
       return 'publish';
     }
 
-    return 'open-pr';
+    return 'code';
   },
 
   resolveReleaseContext(context) {

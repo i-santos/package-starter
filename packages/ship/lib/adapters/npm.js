@@ -1,5 +1,5 @@
 /**
- * npm domain adapter for ship release/open-pr orchestration.
+ * npm domain adapter for ship release orchestration.
  * The core passes runtime primitives via context.primitives so this module stays focused on domain rules.
  */
 
@@ -26,7 +26,6 @@ const npmAdapter = {
     setupGithub: true,
     setupBeta: true,
     setupNpm: true,
-    openPr: true,
     release: true,
     promoteStable: true
   },
@@ -47,7 +46,7 @@ const npmAdapter = {
   detectReleaseMode(context) {
     const { args, gitContext, releaseContext, primitives } = context;
     if (args.promoteStable) {
-      return 'open-pr';
+      return 'code';
     }
 
     if (args.mode && args.mode !== 'auto') {
@@ -59,7 +58,7 @@ const npmAdapter = {
     }
 
     if (gitContext.head !== context.constants.DEFAULT_BETA_BRANCH) {
-      return 'open-pr';
+      return 'code';
     }
 
     const releasePrs = primitives.findReleaseCandidates({
@@ -74,7 +73,7 @@ const npmAdapter = {
       throw new Error(`Multiple candidate release PRs detected: ${releasePrs.map((item) => item.url).join(', ')}`);
     }
 
-    return 'open-pr';
+    return 'code';
   },
 
   resolveReleaseContext(context) {

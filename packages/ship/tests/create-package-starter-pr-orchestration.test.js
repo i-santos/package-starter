@@ -69,7 +69,7 @@ function baseHandlers() {
   ];
 }
 
-test('open-pr creates PR, enables auto-merge, and watches checks', async () => {
+test('release --phase code creates PR, enables auto-merge, and watches checks', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/test\n' } : null),
@@ -113,7 +113,7 @@ test('open-pr creates PR, enables auto-merge, and watches checks', async () => {
     return originalExec(command, args, options);
   };
 
-  await run(['open-pr', '--repo', 'i-santos/firestack', '--auto-merge', '--watch-checks', '--yes'], { exec: stub.exec });
+  await run(['release', '--phase', 'code', '--repo', 'i-santos/firestack', '--auto-merge', '--watch-checks', '--yes'], { exec: stub.exec });
 
   const createCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'create');
   assert.ok(createCall, 'expected gh pr create');
@@ -127,13 +127,19 @@ test('open-pr creates PR, enables auto-merge, and watches checks', async () => {
   assert.ok(autoMergeCall.args.includes('--merge'), 'expected merge method to default to merge');
 });
 
-test('open-pr accepts --merge-method and forwards rebase auto-merge', async () => {
+test('release --phase code accepts --merge-method and forwards rebase auto-merge', async () => {
   let listCall = 0;
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/rebase-test\n' } : null),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
-    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'upstream-set' } : null)
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'upstream-set' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+      ? { status: 0, stdout: 'auto-merge enabled' }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+      : null)
   ]);
 
   const originalExec = stub.exec;
@@ -158,14 +164,14 @@ test('open-pr accepts --merge-method and forwards rebase auto-merge', async () =
     return originalExec(command, args, options);
   };
 
-  await run(['open-pr', '--repo', 'i-santos/firestack', '--auto-merge', '--merge-method', 'rebase', '--yes'], { exec: stub.exec });
+  await run(['release', '--phase', 'code', '--repo', 'i-santos/firestack', '--auto-merge', '--merge-method', 'rebase', '--yes'], { exec: stub.exec });
 
   const autoMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--auto'));
   assert.ok(autoMergeCall, 'expected gh pr merge --auto');
   assert.ok(autoMergeCall.args.includes('--rebase'), 'expected rebase merge method');
 });
 
-test('open-pr updates existing PR when head/base already has one', async () => {
+test('release --phase code updates existing PR when head/base already has one', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
     (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/existing\n' } : null),
@@ -185,10 +191,16 @@ test('open-pr updates existing PR when head/base already has one', async () => {
       : null),
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'edit'
       ? { status: 0, stdout: 'updated' }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+      ? { status: 0, stdout: 'auto-merge enabled' }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
       : null)
   ]);
 
-  await run(['open-pr', '--repo', 'i-santos/firestack', '--pr-description', 'custom body', '--yes'], { exec: stub.exec });
+  await run(['release', '--phase', 'code', '--repo', 'i-santos/firestack', '--pr-description', 'custom body', '--yes'], { exec: stub.exec });
 
   const editCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'edit');
   assert.ok(editCall, 'expected gh pr edit');
@@ -196,7 +208,7 @@ test('open-pr updates existing PR when head/base already has one', async () => {
   assert.equal(createCall, undefined);
 });
 
-test('open-pr links PR to task when --task-id is provided', async () => {
+test('release --phase code links PR to task when --task-id is provided', async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-openpr-task-link-'));
   const previousCwd = process.cwd();
   process.chdir(workDir);
@@ -218,10 +230,16 @@ test('open-pr links PR to task when --task-id is provided', async () => {
             baseRefName: 'release/beta'
           }])
         }
+        : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+        ? { status: 0, stdout: 'auto-merge enabled' }
+        : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+        ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
         : null)
     ]);
 
-    await run(['open-pr', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000001', '--yes'], { exec: stub.exec });
+    await run(['release', '--phase', 'code', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000001', '--yes'], { exec: stub.exec });
 
     const graph = JSON.parse(fs.readFileSync(path.join(workDir, 'kanban', 'graph.json'), 'utf8'));
     const updated = graph.tasks.find((task) => task.id === 'tsk_20260303_000001');
@@ -525,7 +543,7 @@ test('deterministic PR body renderer merges template placeholder and changeset m
   const deps = {
     exec(command, args) {
       if (command === 'git' && args[0] === 'log' && args[1] === '-n10') {
-        return { status: 0, stdout: 'abc123 feat: add open-pr\n' };
+        return { status: 0, stdout: 'abc123 feat: add code pr flow\n' };
       }
 
       return { status: 0, stdout: '' };
@@ -533,7 +551,7 @@ test('deterministic PR body renderer merges template placeholder and changeset m
   };
 
   const body = renderPrBodyDeterministic({
-    head: 'feat/open-pr',
+    head: 'feat/code-pr',
     base: 'release/beta'
   }, deps, { cwd: tmpDir });
 
@@ -844,7 +862,7 @@ test('release --phase code stops after code PR merge', async () => {
   const npmViewCall = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'view');
   assert.equal(npmViewCall, undefined, 'expected no npm validation in code-only mode');
   const editCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'edit');
-  assert.equal(editCall, undefined, 'expected existing PR to be reused without edit by default');
+  assert.ok(editCall, 'expected existing code PR to be refreshed by default in code-only mode');
 });
 
 test('release fails when release PR needs approval before merge', async () => {
