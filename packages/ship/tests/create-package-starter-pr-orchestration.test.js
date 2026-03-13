@@ -1075,14 +1075,25 @@ test('release handles direct publish path when no release PR is created', async 
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run([
-    'release',
-    '--repo', 'i-santos/firestack',
-    '--yes',
-    '--phase', 'full',
-    '--check-timeout', '0.05',
-    '--release-pr-timeout', '0.05'
-  ], { exec: stub.exec });
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (value) => outputs.push(String(value));
+  try {
+    await run([
+      'release',
+      '--repo', 'i-santos/firestack',
+      '--yes',
+      '--phase', 'full',
+      '--check-timeout', '0.05',
+      '--release-pr-timeout', '0.05'
+    ], { exec: stub.exec });
+  } finally {
+    console.log = originalLog;
+  }
+
+  const rendered = outputs.join('\n');
+  assert.match(rendered, /No release PR created; successful release workflow detected\./);
+  assert.match(rendered, /No release PR created; release workflow published package versions directly\./);
 });
 
 test('release treats stable latest as satisfied when beta tag is absent and no changeset was produced', async () => {
@@ -1159,14 +1170,25 @@ test('release treats stable latest as satisfied when beta tag is absent and no c
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run([
-    'release',
-    '--repo', 'i-santos/firestack',
-    '--yes',
-    '--phase', 'full',
-    '--check-timeout', '0.05',
-    '--release-pr-timeout', '0.05'
-  ], { exec: stub.exec });
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (value) => outputs.push(String(value));
+  try {
+    await run([
+      'release',
+      '--repo', 'i-santos/firestack',
+      '--yes',
+      '--phase', 'full',
+      '--check-timeout', '0.05',
+      '--release-pr-timeout', '0.05'
+    ], { exec: stub.exec });
+  } finally {
+    console.log = originalLog;
+  }
+
+  const rendered = outputs.join('\n');
+  assert.match(rendered, /No release PR created; successful release workflow detected\./);
+  assert.match(rendered, /No release PR created; release workflow finished without publishing new package versions\./);
 });
 
 test('release with firebase adapter succeeds via deploy workflow direct publish', async () => {
