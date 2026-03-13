@@ -11,6 +11,103 @@ test('ship loads default config when .ship.json is missing', () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-default-'));
   const config = loadShipConfig(workDir);
   assert.equal(config.adapter, 'npm');
+  assert.equal(config.defaults.cleanup, true);
+});
+
+test('ship merges global, repo, and local config layers', () => {
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-home-'));
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-layered-'));
+  fs.mkdirSync(path.join(homeDir, '.config', 'ship'), { recursive: true });
+  fs.writeFileSync(path.join(homeDir, '.config', 'ship', 'config.json'), JSON.stringify({
+    defaults: {
+      cleanup: false,
+      watchChecks: false
+    }
+  }, null, 2));
+  fs.writeFileSync(path.join(workDir, '.ship.json'), JSON.stringify({
+    adapter: 'firebase',
+    defaults: {
+      cleanup: true,
+      mergeMethod: 'rebase'
+    }
+  }, null, 2));
+  fs.writeFileSync(path.join(workDir, '.ship.local.json'), JSON.stringify({
+    defaults: {
+      cleanup: false
+    }
+  }, null, 2));
+
+  const originalConfigHome = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = path.join(homeDir, '.config');
+  try {
+    const config = loadShipConfig(workDir);
+    assert.equal(config.adapter, 'firebase');
+    assert.equal(config.defaults.watchChecks, false);
+    assert.equal(config.defaults.mergeMethod, 'rebase');
+    assert.equal(config.defaults.cleanup, false);
+  } finally {
+    if (originalConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalConfigHome;
+    }
+  }
+});
+
+test('ship config defaults writes project scope defaults', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-project-write-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  const outputs = [];
+  const originalLog = console.log;
+  console.log = (...args) => outputs.push(args.join(' '));
+  try {
+    await run(['config', 'defaults', '--scope', 'project', '--cleanup', 'false', '--merge-method', 'rebase']);
+  } finally {
+    console.log = originalLog;
+    process.chdir(previousCwd);
+  }
+
+  const config = JSON.parse(fs.readFileSync(path.join(workDir, '.ship.json'), 'utf8'));
+  assert.equal(config.defaults.cleanup, false);
+  assert.equal(config.defaults.mergeMethod, 'rebase');
+  assert.match(outputs.join('\n'), /ship config defaults \(project\)/);
+});
+
+test('ship config defaults writes local scope defaults', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-local-write-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    await run(['config', 'defaults', '--scope', 'local', '--watch-checks', 'false', '--json']);
+  } finally {
+    process.chdir(previousCwd);
+  }
+
+  const config = JSON.parse(fs.readFileSync(path.join(workDir, '.ship.local.json'), 'utf8'));
+  assert.equal(config.defaults.watchChecks, false);
+});
+
+test('ship config defaults writes global scope defaults', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-global-write-'));
+  const configHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-config-global-home-'));
+  const previousCwd = process.cwd();
+  const originalConfigHome = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = configHome;
+  process.chdir(workDir);
+  try {
+    await run(['config', 'defaults', '--scope', 'global', '--cleanup', 'false']);
+  } finally {
+    process.chdir(previousCwd);
+    if (originalConfigHome === undefined) {
+      delete process.env.XDG_CONFIG_HOME;
+    } else {
+      process.env.XDG_CONFIG_HOME = originalConfigHome;
+    }
+  }
+
+  const config = JSON.parse(fs.readFileSync(path.join(configHome, 'ship', 'config.json'), 'utf8'));
+  assert.equal(config.defaults.cleanup, false);
 });
 
 test('ship validates firebase adapter config contract', () => {
@@ -63,10 +160,15 @@ test('ship validates releaseTargets and releasePolicy schema', () => {
     () => validateShipConfig({ adapter: 'npm', releasePolicy: { stopOnError: 'yes' } }),
     /releasePolicy\.stopOnError/
   );
+  assert.throws(
+    () => validateShipConfig({ adapter: 'npm', defaults: { cleanup: 'yes' } }),
+    /defaults\.cleanup/
+  );
   assert.doesNotThrow(() => validateShipConfig({
     adapter: 'npm',
     releaseTargets: ['npm', 'firebase'],
     releasePolicy: { stopOnError: true },
+    defaults: { cleanup: false, mergeMethod: 'merge' },
     firebase: {
       projectId: 'demo-project',
       environments: ['local', 'staging', 'production']

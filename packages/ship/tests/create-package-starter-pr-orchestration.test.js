@@ -842,6 +842,80 @@ test('release skips cleanup with --no-cleanup', async () => {
   assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped');
 });
 
+test('release --phase code runs cleanup after merge by default', async () => {
+  const calls = [];
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args, options) => {
+      calls.push({ command, args, options });
+      return null;
+    },
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/phase-code-cleanup\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? { status: 0, stdout: JSON.stringify([{ number: 605, url: 'https://github.com/i-santos/firestack/pull/605', headRefName: 'feat/phase-code-cleanup', baseRefName: 'release/beta' }]) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+
+  const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
+  assert.ok(cleanupDeleteCall, 'expected cleanup delete branch to run after code phase merge');
+});
+
+test('release respects cleanup=false from .ship.local.json defaults', async () => {
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-release-cleanup-config-'));
+  const previousCwd = process.cwd();
+  process.chdir(workDir);
+  try {
+    fs.writeFileSync(path.join(workDir, '.ship.local.json'), JSON.stringify({
+      defaults: {
+        cleanup: false
+      }
+    }, null, 2));
+
+    const calls = [];
+    const stub = createExecStub([
+      ...baseHandlers(),
+      (command, args, options) => {
+        calls.push({ command, args, options });
+        return null;
+      },
+      (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'changeset-release/release/beta\n' } : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+        ? { status: 0, stdout: JSON.stringify([{ number: 202, url: 'https://github.com/i-santos/firestack/pull/202', headRefName: 'changeset-release/release/beta', baseRefName: 'release/beta' }]) }
+        : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view' ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) } : null),
+      (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+      (command, args) => {
+        if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+          const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/ship', version: '2.0.0-beta.1' }), 'utf8').toString('base64');
+          return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+        }
+        return null;
+      },
+      (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
+      (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.0-beta.1"}\n' } : null)
+    ]);
+
+    await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+
+    const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
+    assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped by local config');
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
 test('release --phase code stops after code PR merge', async () => {
   const stub = createExecStub([
     ...baseHandlers(),

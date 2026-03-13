@@ -173,6 +173,7 @@ Main flags:
 - `--merge-release-pr`
 - `--verify-npm`
 - `--confirm-cleanup`
+- `--cleanup`
 - `--sync-base <auto|rebase|merge|off>`
 - `--no-resume`
 - `--no-cleanup`
@@ -186,7 +187,7 @@ Operational behavior:
 - Waits for release PR (`changeset-release/*`) when needed
 - Watches checks and merge readiness
 - Validates npm publication and dist-tags
-- Performs local cleanup after successful flow
+- Performs local cleanup after successful phase when enabled
 - With `--targets auto`, executes all configured `releaseTargets` in order
 - `releasePolicy.stopOnError=true` stops on first target failure (default)
 - `releasePolicy.stopOnError=false` continues remaining targets and fails at end if any target failed
@@ -201,6 +202,42 @@ Main flags:
 - `--type <patch|minor|major>`
 - `--summary <text>`
 - `--dry-run`
+
+## `ship config defaults`
+
+Reads or updates default `ship release` behavior at one of three scopes:
+
+- `global` -> `~/.config/ship/config.json` (or `$XDG_CONFIG_HOME/ship/config.json`)
+- `project` -> `.ship.json`
+- `local` -> `.ship.local.json`
+
+Main flags:
+
+- `--scope <global|project|local>`
+- `--auto-merge <true|false>`
+- `--watch-checks <true|false>`
+- `--check-timeout <minutes>`
+- `--confirm-merges <true|false>`
+- `--sync-base <auto|rebase|merge|off>`
+- `--resume <true|false>`
+- `--merge-when-green <true|false>`
+- `--merge-method <squash|merge|rebase>`
+- `--wait-release-pr <true|false>`
+- `--release-pr-timeout <minutes>`
+- `--merge-release-pr <true|false>`
+- `--verify-npm <true|false>`
+- `--confirm-cleanup <true|false>`
+- `--cleanup <true|false>`
+- `--json`
+- `--dry-run`
+
+Examples:
+
+```bash
+ship config defaults --scope global --merge-method merge --cleanup true
+ship config defaults --scope project --cleanup true --watch-checks true
+ship config defaults --scope local --cleanup false --watch-checks false
+```
 
 ## `ship task`
 
@@ -256,9 +293,21 @@ ship release --repo owner/repo --yes
 ship release --repo owner/repo --targets auto --yes
 ```
 
-## `.ship.json` Configuration
+## Ship Configuration
 
-Optional local config file at repository root:
+`ship` loads configuration in this order:
+
+1. global user config: `~/.config/ship/config.json` (or `$XDG_CONFIG_HOME/ship/config.json`)
+2. repository config: `.ship.json`
+3. repository-local user override: `.ship.local.json`
+4. CLI flags
+
+Recommended usage:
+
+- track `.ship.json` in git for project/team defaults
+- ignore `.ship.local.json` for per-developer overrides in a specific clone
+
+Example repository config:
 
 ```json
 {
@@ -267,6 +316,12 @@ Optional local config file at repository root:
   "releaseTargets": ["npm"],
   "releasePolicy": {
     "stopOnError": true
+  },
+  "defaults": {
+    "autoMerge": true,
+    "watchChecks": true,
+    "mergeMethod": "merge",
+    "cleanup": true
   },
   "baseBranch": "main",
   "betaBranch": "release/beta",
@@ -313,6 +368,23 @@ External adapters can be loaded from local path via `adapterModule` and selected
 `adapterModule` path is resolved relative to current working directory.
 
 For hybrid repositories (for example, npm package + app deploy), configure target priority with `releaseTargets` and select explicitly with `ship release --target <adapter>`.
+
+`defaults` can define operational preferences for `ship release`, including:
+
+- `autoMerge`
+- `watchChecks`
+- `checkTimeout`
+- `confirmMerges`
+- `syncBase`
+- `resume`
+- `mergeWhenGreen`
+- `mergeMethod`
+- `waitReleasePr`
+- `releasePrTimeout`
+- `mergeReleasePr`
+- `verifyNpm`
+- `confirmCleanup`
+- `cleanup`
 
 If you want to execute all targets in sequence, use:
 
