@@ -3199,7 +3199,6 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
   let lastReadiness = null;
   let lastChecks = null;
   const allowBehindTransient = Boolean(options.allowBehindTransient);
-  let behindObservedAt = 0;
   while (nowMs(deps) <= timeoutAt) {
     const mergeState = getPrMergeState(repo, prNumber, deps);
     if (mergeState.state === 'MERGED' || mergeState.mergedAt) {
@@ -3252,7 +3251,6 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
         const runConclusion = String((workflowRun && workflowRun.conclusion) || '').toLowerCase();
         const runCompleted = runStatus === 'completed';
         const runFailed = runCompleted && !['success', 'neutral', 'skipped'].includes(runConclusion);
-        const runInProgress = ['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(runStatus);
 
         if (runFailed) {
           throw new Error(
@@ -3262,25 +3260,6 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
               `status/conclusion: ${workflowRun.status || 'n/a'}/${workflowRun.conclusion || 'n/a'}`,
               workflowRun.url ? `run: ${workflowRun.url}` : '',
               readiness.url ? `PR: ${readiness.url}` : ''
-            ].filter(Boolean).join('\n')
-          );
-        }
-
-        if (!behindObservedAt) {
-          behindObservedAt = nowMs(deps);
-        }
-
-        // Avoid waiting the full global timeout when there is no active workflow progress.
-        const behindElapsedMs = nowMs(deps) - behindObservedAt;
-        const stagnationWindowMs = 10 * 1000;
-        if (!runInProgress && behindElapsedMs >= stagnationWindowMs) {
-          throw new Error(
-            [
-              `${label} remained BEHIND for more than 10s with no active workflow progress.`,
-              runCompleted ? `latest workflow conclusion: ${runConclusion || 'n/a'}` : 'latest workflow status: unavailable',
-              workflowRun && workflowRun.url ? `run: ${workflowRun.url}` : '',
-              readiness.url ? `PR: ${readiness.url}` : '',
-              'If changeset workflow is still updating, rerun release in a moment.'
             ].filter(Boolean).join('\n')
           );
         }

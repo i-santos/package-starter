@@ -939,6 +939,126 @@ test('release --phase code stops after code PR merge', async () => {
   assert.ok(editCall, 'expected existing code PR to be refreshed by default in code-only mode');
 });
 
+test('release waits for transient BEHIND release PR state after code merge', async () => {
+  let simulatedNow = 0;
+  let releaseReadinessCalls = 0;
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/behind-release-pr\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'list') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([
+            {
+              number: 118,
+              url: 'https://github.com/i-santos/firestack/pull/118',
+              headRefName: 'feat/behind-release-pr',
+              baseRefName: 'release/beta'
+            },
+            {
+              number: 115,
+              url: 'https://github.com/i-santos/firestack/pull/115',
+              headRefName: 'changeset-release/release/beta',
+              baseRefName: 'release/beta'
+            }
+          ])
+        };
+      }
+      return null;
+    },
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '118' && args.includes('statusCheckRollup,url,number')) {
+        return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '118' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft,headRefName')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 118,
+            url: 'https://github.com/i-santos/firestack/pull/118',
+            reviewDecision: 'APPROVED',
+            mergeStateStatus: 'CLEAN',
+            isDraft: false,
+            headRefName: 'feat/behind-release-pr'
+          })
+        };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '118' && args.includes('--json') && args.includes('state,mergedAt')) {
+        return { status: 0, stdout: JSON.stringify({ state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('statusCheckRollup,url,number')) {
+        return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft,headRefName')) {
+        releaseReadinessCalls += 1;
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 115,
+            url: 'https://github.com/i-santos/firestack/pull/115',
+            reviewDecision: 'APPROVED',
+            mergeStateStatus: releaseReadinessCalls >= 4 ? 'CLEAN' : 'BEHIND',
+            isDraft: false,
+            headRefName: 'changeset-release/release/beta'
+          })
+        };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('--json') && args.includes('state,mergedAt')) {
+        return { status: 0, stdout: JSON.stringify({ state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) };
+      }
+      return null;
+    },
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'run' && args[1] === 'list') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            databaseId: 23064929241,
+            workflowName: 'Release',
+            status: 'completed',
+            conclusion: 'success',
+            url: 'https://github.com/i-santos/firestack/actions/runs/23064929241',
+            updatedAt: '2026-03-01T00:00:00Z',
+            createdAt: '2026-03-01T00:00:00Z',
+            event: 'push'
+          }])
+        };
+      }
+
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/ship', version: '2.3.0-beta.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.3.0-beta.0"}\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run(
+    ['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.3', '--release-pr-timeout', '0.3'],
+    {
+      exec: stub.exec,
+      now: () => simulatedNow,
+      sleep: (milliseconds) => {
+        simulatedNow += milliseconds;
+      }
+    }
+  );
+
+  const releaseMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args[2] === '115');
+  assert.ok(releaseMergeCall, 'expected release PR merge to proceed after transient BEHIND state');
+});
+
 test('release fails when release PR needs approval before merge', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
