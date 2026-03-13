@@ -54,6 +54,86 @@ async function readEvents(repoDir) {
     .map((line) => JSON.parse(line));
 }
 
+async function readGraph(repoDir) {
+  return JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+}
+
+async function waitForCondition(check, options = {}) {
+  const timeoutMs = options.timeoutMs || 3000;
+  const intervalMs = options.intervalMs || 25;
+  const timeoutAt = Date.now() + timeoutMs;
+  let lastError = null;
+
+  while (Date.now() <= timeoutAt) {
+    try {
+      const result = await check();
+      if (result) {
+        return result;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error(options.message || `Timed out after ${timeoutMs}ms waiting for condition.`);
+}
+
+async function waitForTask(repoDir, taskId, predicate, options = {}) {
+  return waitForCondition(async () => {
+    const graph = await readGraph(repoDir);
+    const task = graph.tasks.find((item) => item.id === taskId);
+    if (!task) {
+      return false;
+    }
+    return predicate(task, graph) ? { task, graph } : false;
+  }, {
+    timeoutMs: options.timeoutMs,
+    intervalMs: options.intervalMs,
+    message: options.message || `Timed out waiting for task ${taskId}.`,
+  });
+}
+
+async function waitForJsonFile(filePath, options = {}) {
+  return waitForCondition(async () => {
+    try {
+      return JSON.parse(await readFile(filePath, "utf8"));
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
+  }, {
+    timeoutMs: options.timeoutMs,
+    intervalMs: options.intervalMs,
+    message: options.message || `Timed out waiting for ${filePath}.`,
+  });
+}
+
+async function waitForProcessExit(pid, options = {}) {
+  return waitForCondition(() => {
+    try {
+      process.kill(pid, 0);
+      return false;
+    } catch (error) {
+      if (error.code === "ESRCH") {
+        return true;
+      }
+      throw error;
+    }
+  }, {
+    timeoutMs: options.timeoutMs || 2000,
+    intervalMs: options.intervalMs || 25,
+    message: options.message || `Timed out waiting for process ${pid} to exit.`,
+  });
+}
+
 async function captureCliOutput(args, cwd) {
   const lines = [];
   const originalLog = console.log;
@@ -76,7 +156,7 @@ serialTest("admiral init creates runtime structure", async () => {
   await runCli(["init"], repoDir);
 
   const config = JSON.parse(await readFile(path.join(repoDir, ".admiral", "config.json"), "utf8"));
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
 
   assert.equal(config.default_branch, "main");
   assert.equal(config.default_agent_profile, "default");
@@ -138,7 +218,7 @@ serialTest("status shows recent activity and operational aggregates", async () =
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
 
   const output = await captureCliOutput(["status"], repoDir);
   assert.match(output, /Summary/);
@@ -159,7 +239,7 @@ serialTest("status supports structured json output", async () => {
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
 
   const output = await captureCliOutput(["status", "--json"], repoDir);
   const payload = JSON.parse(output);
@@ -186,7 +266,7 @@ serialTest("run can target a specific ready task in assisted mode", async () => 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["task", "create", "frontend-login"], repoDir);
   await runCli(["run", "--once", "--task-id", "frontend-login"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "frontend-login", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
 
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   const backend = graph.tasks.find((task) => task.id === "backend-auth");
@@ -272,9 +352,9 @@ serialTest("scheduler automatically re-enqueues the next workflow stage after su
   await runCli(["task", "create", "backend-auth", "--scope", "general"], repoDir);
   await runCli(["run", "--once"], repoDir);
 
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "todo");
   assert.ok(task.workspace);
@@ -341,9 +421,9 @@ serialTest("task profile selects the profile command and capabilities", async ()
 
   await runCli(["task", "create", "backend-auth", "--profile", "implementer"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   const profileArtifact = await readFile(path.join(task.workspace, "profile.txt"), "utf8");
   const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
@@ -380,9 +460,9 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
 
   await runCli(["task", "create", "backend-auth-plan", "--profile", "implementer"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth-plan", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "planned");
 
-  let graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  let graph = await readGraph(repoDir);
   let task = graph.tasks.find((item) => item.id === "backend-auth-plan");
   let stageArtifact = await readFile(path.join(task.workspace, "stage.txt"), "utf8");
   let taskContext = JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "tasks", "backend-auth-plan.json"), "utf8"));
@@ -399,9 +479,9 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   await runCli(["task", "tdd", "backend-auth-review"], reviewRepoDir);
   await runCli(["task", "implement", "backend-auth-review"], reviewRepoDir);
   await runCli(["run", "--once"], reviewRepoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(reviewRepoDir, "backend-auth-review", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "verified");
 
-  graph = JSON.parse(await readFile(path.join(reviewRepoDir, "kanban", "graph.json"), "utf8"));
+  graph = await readGraph(reviewRepoDir);
   task = graph.tasks.find((item) => item.id === "backend-auth-review");
   stageArtifact = await readFile(path.join(task.workspace, "stage.txt"), "utf8");
   const contract = JSON.parse(await readFile(path.join(task.workspace, ".admiral", "task-execution.json"), "utf8"));
@@ -436,9 +516,9 @@ serialTest("verified stage can automatically advance to publish_ready from relea
   await runCli(["task", "implement", "release-task"], repoDir);
   await runCli(["task", "verify", "release-task"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "release-task", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "publish_ready");
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "release-task");
   assert.equal(task.status, "review");
   assert.equal(task.metadata.workflow.status, "publish_ready");
@@ -466,9 +546,9 @@ serialTest("verified stage can request rework and return workflow to implemented
   await runCli(["task", "implement", "rework-task"], repoDir);
   await runCli(["task", "verify", "rework-task"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "rework-task", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "implemented");
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "rework-task");
   assert.equal(task.status, "review");
   assert.equal(task.metadata.workflow.status, "implemented");
@@ -499,16 +579,21 @@ serialTest("recovery retries a dead running task", async () => {
     detached: false,
     stdio: "ignore",
   });
-  await new Promise((resolve) => setTimeout(resolve, 200));
-
-  const pidRecord = JSON.parse(await readFile(path.join(repoDir, "runtime", "pids", "backend-auth.json"), "utf8"));
+  const pidRecord = await waitForJsonFile(path.join(repoDir, "runtime", "pids", "backend-auth.json"));
+  const heartbeatPath = path.join(repoDir, "runtime", "heartbeats", `${pidRecord.agent}.json`);
+  await waitForJsonFile(heartbeatPath);
   process.kill(pidRecord.pid, "SIGKILL");
   runProcess.kill("SIGKILL");
-
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await waitForProcessExit(pidRecord.pid);
+  await writeFile(heartbeatPath, `${JSON.stringify({
+    agent: pidRecord.agent,
+    task_id: "backend-auth",
+    status: "running",
+    updated_at: "2000-01-01T00:00:00.000Z",
+  }, null, 2)}\n`, "utf8");
   await runCli(["run", "--once"], repoDir);
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.ok(["todo", "claimed", "running", "review"].includes(task.status));
   assert.equal(task.retries, 1);
@@ -526,9 +611,9 @@ serialTest("failed execution persists contract failure state", async () => {
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "failed");
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "retry_wait");
   assert.equal(task.metadata.execution.last_failure_kind, "agent_exit");
@@ -555,9 +640,9 @@ serialTest("invalid structured result fails without scheduling retry", async () 
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.status === "failed");
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "failed");
   assert.equal(task.retries, 1);
@@ -576,9 +661,9 @@ serialTest("structured blocked result moves task to blocked without treating com
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.status === "blocked");
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "blocked");
   assert.equal(task.metadata.execution.last_status, "blocked");
@@ -600,10 +685,10 @@ serialTest("blocked task can be unblocked back to todo", async () => {
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.status === "blocked");
   await runCli(["task", "unblock", "backend-auth"], repoDir);
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "todo");
   assert.deepEqual(task.metadata.execution.last_blockers, []);
@@ -626,10 +711,10 @@ serialTest("review task can be manually marked done", async () => {
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["run", "--once"], repoDir);
-  await new Promise((resolve) => setTimeout(resolve, 1200));
+  await waitForTask(repoDir, "backend-auth", (task) => task.status === "review");
   await runCli(["task", "done", "backend-auth"], repoDir);
 
-  const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
+  const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
   assert.equal(task.status, "done");
 });
