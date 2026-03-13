@@ -1,5 +1,6 @@
 "use strict";
 
+const packageJson = require("../package.json");
 const { runInit } = require("./commands/init");
 const {
   runTaskCreate,
@@ -54,6 +55,7 @@ function printHelp() {
   console.log(`admiral
 
 Usage:
+  admiral --version
   admiral init
   admiral run [--once] [--task-id <id>]
   admiral status [--json]
@@ -77,6 +79,11 @@ Usage:
 async function main(argv) {
   const { positionals, flags } = parseFlags(argv);
   const [command, subcommand, ...rest] = positionals;
+
+  if (argv[0] === "--version" || argv[0] === "-v") {
+    console.log(packageJson.version);
+    return;
+  }
 
   if (!command || command === "--help" || command === "-h" || command === "help") {
     printHelp();

@@ -8,6 +8,7 @@ const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
 const { spawn } = require("node:child_process");
 const { execFile } = require("../lib/utils/process");
 const { main } = require("../lib/cli");
+const packageJson = require("../package.json");
 
 const CLI_PATH = path.join(__dirname, "..", "bin", "admiral");
 const serialTest = (name, fn) => test(name, { concurrency: false }, fn);
@@ -83,6 +84,12 @@ serialTest("admiral init creates runtime structure", async () => {
   assert.deepEqual(config.agent_profiles.implementer.capabilities, ["implementation", "refactoring"]);
   assert.deepEqual(graph.tasks, []);
   assert.equal(typeof JSON.parse(await readFile(path.join(repoDir, ".admiral", "context", "project.json"), "utf8")).project.root, "string");
+});
+
+serialTest("admiral --version prints the package version", async () => {
+  const repoDir = await createTempRepo();
+  const output = await captureCliOutput(["--version"], repoDir);
+  assert.equal(output, packageJson.version);
 });
 
 serialTest("admiral can create tasks with dependencies", async () => {
