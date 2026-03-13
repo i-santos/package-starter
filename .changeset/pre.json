@@ -3,20 +3,26 @@
   "tag": "beta",
   "initialVersions": {
     "@i-santos/ship": "0.1.0-beta.0",
-    "@i-santos/workflow": "0.1.0-beta.0"
+    "@i-santos/workflow": "0.1.0-beta.0",
+    "@i-santos/admiral": "0.1.0"
   },
   "changesets": [
     "bright-lobsters-cheer",
     "early-bugs-arrive",
     "fair-snails-cheat",
+    "few-bananas-hear",
     "few-keys-attend",
     "flat-roots-smile",
     "four-bears-jam",
     "fresh-planes-check",
     "green-beers-double",
+    "hungry-schools-jam",
     "metal-gifts-breathe",
+    "neat-cheetahs-bake",
     "nice-buses-build",
     "odd-mice-reply",
-    "odd-wasps-fry"
+    "odd-wasps-fry",
+    "smooth-ducks-promise",
+    "twenty-geckos-check"
   ]
 }

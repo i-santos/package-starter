@@ -1,5 +1,15 @@
 # @i-santos/ship
 
+## 1.0.0-beta.15
+
+### Patch Changes
+
+- 89fbcc0: Improve `ship release` handling when a release PR is temporarily `BEHIND`. The command now keeps waiting when a recent code merge should still trigger the release workflow, including merges that happened just before the current run started, instead of aborting too early.
+- 619ccac: Remove the standalone `ship open-pr` command and consolidate code PR orchestration under `ship release --phase code`. Default auto-merge now uses regular merge commits, and GitHub setup enables squash, merge, and rebase methods so release flows can select the configured merge strategy.
+- aff3b4f: Add layered ship configuration (`global`, repository, and repository-local overrides), introduce `ship config defaults` for managing release behavior preferences, and make release cleanup configurable across both `code` and `full` phases.
+- 9d31a80: Clarify `ship release` messaging when no release PR is created by distinguishing direct package publishes from no-op release workflows that did not publish new versions.
+- 3c7acb2: Fix beta release npm validation so no-op publishes do not wait for npm propagation when the expected stable version is already present without a `beta` dist-tag.
+
 ## 1.0.0-beta.14
 
 ### Patch Changes
