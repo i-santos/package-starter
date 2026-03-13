@@ -18,7 +18,7 @@ Use `open-pr` to push and create/update a PR in one command.
 Example:
 
 ```bash
-ship open-pr --auto-merge --watch-checks
+ship open-pr --auto-merge --merge-method merge --watch-checks
 ```
 
 Default branch mapping:

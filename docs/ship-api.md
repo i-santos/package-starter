@@ -156,6 +156,7 @@ Main flags:
 - `--draft`
 - `--auto-merge`
 - `--watch-checks`
+- `--merge-method <squash|merge|rebase>`
 - `--check-timeout <minutes>`
 - `--yes`
 - `--dry-run`
