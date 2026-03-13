@@ -1,5 +1,5 @@
 /**
- * @typedef {'open-pr'|'publish'} ReleaseMode
+ * @typedef {'code'|'publish'} ReleaseMode
  *
  * @typedef {{
  *   type: 'release_pr',
@@ -12,7 +12,6 @@
  * @typedef {{
  *   name: string,
  *   capabilities?: {
- *     openPr?: boolean,
  *     release?: boolean
  *   },
  *   normalizeArgs?: (args: Record<string, any>, context: { command: string }) => Record<string, any>,

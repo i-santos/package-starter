@@ -80,16 +80,12 @@ const COMMAND_COMPLETION_SPEC = {
       '--release-auth': ['github-token', 'pat', 'app', 'manual-trigger']
     }
   },
-  'open-pr': {
-    options: ['--repo', '--base', '--head', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--template', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--yes', '--dry-run', '--help', '-h'],
-    values: {}
-  },
   release: {
     options: ['--repo', '--target', '--targets', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
     values: {
       '--target': ['npm', 'firebase'],
       '--targets': ['single', 'auto'],
-      '--mode': ['auto', 'open-pr', 'publish'],
+      '--mode': ['auto', 'code', 'publish'],
       '--phase': ['code', 'full'],
       '--track': ['auto', 'beta', 'stable'],
       '--promote-type': ['patch', 'minor', 'major'],
@@ -115,7 +111,7 @@ const COMMAND_COMPLETION_SPEC = {
   }
 };
 
-const ROOT_COMMANDS = ['init', 'setup-github', 'setup-npm', 'setup-beta', 'open-pr', 'release', 'promote-stable', 'task', 'completion'];
+const ROOT_COMMANDS = ['init', 'setup-github', 'setup-npm', 'setup-beta', 'release', 'promote-stable', 'task', 'completion'];
 const ROOT_OPTIONS = ['--help', '-h', '--version', '-v', '--name', '--out', '--default-branch', '--release-auth'];
 
 function usage() {
@@ -139,13 +135,7 @@ function usage() {
     '  ship setup-npm [--dir <directory>] [--publish-first] [--dry-run]',
     '    Check npm auth/package status and optionally run first publish.',
     '',
-    '  ship open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>]',
-    '               [--pr-description <text>|--body <text>]',
-    '               [--pr-description-file <path>|--body-file <path>]',
-    '               [--auto-merge] [--watch-checks] [--yes] [--dry-run]',
-    '    Create/update code PR and optionally watch checks.',
-    '',
-    '  ship release [--repo <owner/repo>] [--target <adapter>] [--targets single|auto] [--mode auto|open-pr|publish] [--phase code|full]',
+    '  ship release [--repo <owner/repo>] [--target <adapter>] [--targets single|auto] [--mode auto|code|publish] [--phase code|full]',
     '               [--track auto|beta|stable] [--promote-stable] [--yes] [--dry-run]',
     '    Orchestrate end-to-end release flow (PRs, checks, merge, npm validation).',
     '',
@@ -167,7 +157,7 @@ function usage() {
     '  ship --name hello-package',
     '  ship init --dir .',
     '  ship init --dir . --with-github --with-beta --with-npm --yes',
-    '  ship open-pr --auto-merge --watch-checks',
+    '  ship release --phase code --auto-merge --merge-method merge --watch-checks',
     '  ship release --yes',
     '  ship release --targets auto --yes',
     '  ship task status --id tsk_20260303_001 --json',
@@ -647,127 +637,6 @@ function parsePromoteStableArgs(argv) {
   return args;
 }
 
-function parseOpenPrArgs(argv) {
-  const args = {
-    repo: '',
-    base: '',
-    head: '',
-    title: '',
-    taskId: '',
-    body: '',
-    bodyFile: '',
-    template: '',
-    draft: false,
-    autoMerge: false,
-    watchChecks: false,
-    checkTimeout: 30,
-    updateExistingPr: true,
-    yes: false,
-    dryRun: false
-  };
-
-  for (let i = 0; i < argv.length; i += 1) {
-    const token = argv[i];
-
-    if (token === '--repo') {
-      args.repo = parseValueFlag(argv, i, '--repo');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--base') {
-      args.base = parseValueFlag(argv, i, '--base');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--head') {
-      args.head = parseValueFlag(argv, i, '--head');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--title') {
-      args.title = parseValueFlag(argv, i, '--title');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--task-id') {
-      args.taskId = parseValueFlag(argv, i, '--task-id');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--body' || token === '--pr-description') {
-      args.body = parseValueFlag(argv, i, token);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--body-file' || token === '--pr-description-file') {
-      args.bodyFile = parseValueFlag(argv, i, token);
-      i += 1;
-      continue;
-    }
-
-    if (token === '--template') {
-      args.template = parseValueFlag(argv, i, '--template');
-      i += 1;
-      continue;
-    }
-
-    if (token === '--check-timeout') {
-      args.checkTimeout = Number.parseFloat(parseValueFlag(argv, i, '--check-timeout'));
-      i += 1;
-      continue;
-    }
-
-    if (token === '--update-pr-description') {
-      args.updateExistingPr = true;
-      continue;
-    }
-
-    if (token === '--draft') {
-      args.draft = true;
-      continue;
-    }
-
-    if (token === '--auto-merge') {
-      args.autoMerge = true;
-      continue;
-    }
-
-    if (token === '--watch-checks') {
-      args.watchChecks = true;
-      continue;
-    }
-
-    if (token === '--yes') {
-      args.yes = true;
-      continue;
-    }
-
-    if (token === '--dry-run') {
-      args.dryRun = true;
-      continue;
-    }
-
-    if (token === '--help' || token === '-h') {
-      args.help = true;
-      continue;
-    }
-
-    throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
-  }
-
-  if (!Number.isFinite(args.checkTimeout) || args.checkTimeout <= 0) {
-    throw new Error('Invalid --check-timeout value. Expected a positive number (minutes).');
-  }
-
-  return args;
-}
-
 function parseReleaseCycleArgs(argv) {
   const args = {
     repo: '',
@@ -796,7 +665,7 @@ function parseReleaseCycleArgs(argv) {
     syncBase: 'auto',
     resume: true,
     mergeWhenGreen: true,
-    mergeMethod: 'squash',
+    mergeMethod: 'merge',
     waitReleasePr: true,
     releasePrTimeout: 30,
     mergeReleasePr: true,
@@ -1008,8 +877,8 @@ function parseReleaseCycleArgs(argv) {
     throw new Error(`Invalid argument: ${token}\n\n${usage()}`);
   }
 
-  if (!['auto', 'open-pr', 'publish'].includes(args.mode)) {
-    throw new Error('Invalid --mode value. Expected auto, open-pr, or publish.');
+  if (!['auto', 'code', 'publish'].includes(args.mode)) {
+    throw new Error('Invalid --mode value. Expected auto, code, or publish.');
   }
 
   if (!['single', 'auto'].includes(args.targets)) {
@@ -1236,13 +1105,6 @@ function parseArgs(argv) {
     return {
       mode: 'promote-stable',
       args: parsePromoteStableArgs(argv.slice(1))
-    };
-  }
-
-  if (argv[0] === 'open-pr') {
-    return {
-      mode: 'open-pr',
-      args: parseOpenPrArgs(argv.slice(1))
     };
   }
 
@@ -2048,11 +1910,10 @@ function resolveAdapter(name, options = {}) {
   throw new Error(`Unsupported adapter "${name}".`);
 }
 
-function runOpenPrCore(args, adapter, dependencies = {}, config = {}) {
-  validateAdapterForCapability(adapter, 'openPr');
-  const normalized = normalizeArgsWithAdapter(adapter, args, 'open-pr');
+function runCodePrCore(args, adapter, dependencies = {}, config = {}) {
+  const normalized = normalizeArgsWithAdapter(adapter, args, 'release');
   const adapted = applyOpenPrAdapterContext(adapter, normalized, config, dependencies);
-  return runOpenPrFlow(adapted, dependencies, config);
+  return runCodePrFlow(adapted, dependencies, config);
 }
 
 function withShipConfigDefaults(args, config = {}) {
@@ -4504,21 +4365,21 @@ function execCommand(command, args, options = {}) {
   });
 }
 
-async function runOpenPrFlow(args, dependencies = {}, config = {}) {
+async function runCodePrFlow(args, dependencies = {}, config = {}) {
   const deps = {
     exec: dependencies.exec || execCommand
   };
   const summary = createOrchestrationSummary();
   const reporter = new StepReporter();
 
-  reporter.start('open-pr-preflight-gh', 'Validating GitHub CLI and authentication...');
+  reporter.start('code-pr-preflight-gh', 'Validating GitHub CLI and authentication...');
   ensureGhAvailable(deps);
-  reporter.ok('open-pr-preflight-gh', 'GitHub CLI available and authenticated.');
+  reporter.ok('code-pr-preflight-gh', 'GitHub CLI available and authenticated.');
 
-  reporter.start('open-pr-preflight-git', 'Resolving git context...');
+  reporter.start('code-pr-preflight-git', 'Resolving git context...');
   const context = resolveGitContext(args, deps);
-  reporter.ok('open-pr-preflight-git', `Using ${context.head} -> ${context.base} in ${context.repo}.`);
-  summary.modeDetected = 'open-pr';
+  reporter.ok('code-pr-preflight-git', `Using ${context.head} -> ${context.base} in ${context.repo}.`);
+  summary.modeDetected = 'code';
   summary.repoResolved = context.repo;
 
   const generatedBody = renderPrBodyDeterministic(context, deps, {
@@ -4543,7 +4404,7 @@ async function runOpenPrFlow(args, dependencies = {}, config = {}) {
       summary.warnings.push('No body inputs provided; deterministic generated body would be used.');
     }
     if (shouldPrintSummary) {
-      printOrchestrationSummary(`open-pr dry-run for ${context.repo}`, summary);
+      printOrchestrationSummary(`release code dry-run for ${context.repo}`, summary);
     }
     return {
       summary,
@@ -4556,9 +4417,9 @@ async function runOpenPrFlow(args, dependencies = {}, config = {}) {
     summary.branchPushed = `skipped (${context.head})`;
     summary.actionsSkipped.push(`push skipped: ${context.head}`);
   } else {
-    reporter.start('open-pr-push', `Pushing branch "${context.head}"...`);
+    reporter.start('code-pr-push', `Pushing branch "${context.head}"...`);
     const pushResult = ensureBranchPushed(context.repo, context.head, deps);
-    reporter.ok('open-pr-push', `Branch "${context.head}" pushed (${pushResult.status}).`);
+    reporter.ok('code-pr-push', `Branch "${context.head}" pushed (${pushResult.status}).`);
     summary.branchPushed = `${context.head} (${pushResult.status})`;
     summary.actionsPerformed.push(`branch pushed: ${context.head}`);
     if (pushResult.status === 'up-to-date') {
@@ -4566,9 +4427,9 @@ async function runOpenPrFlow(args, dependencies = {}, config = {}) {
     }
   }
 
-  reporter.start('open-pr-upsert', 'Creating or updating pull request...');
+  reporter.start('code-pr-upsert', 'Creating or updating pull request...');
   const prResult = createOrUpdatePr(context, generatedBody, args, deps);
-  reporter.ok('open-pr-upsert', `PR ${prResult.action}: #${prResult.number}`);
+  reporter.ok('code-pr-upsert', `PR ${prResult.action}: #${prResult.number}`);
   if (args.taskId) {
     attachTaskPrReference(args.taskId, prResult.number, config, process.cwd(), { dryRun: args.dryRun });
   }
@@ -4580,9 +4441,9 @@ async function runOpenPrFlow(args, dependencies = {}, config = {}) {
   }
 
   if (args.autoMerge) {
-    reporter.start('open-pr-auto-merge', `Enabling auto-merge for PR #${prResult.number}...`);
-    enablePrAutoMerge(context.repo, prResult.number, args.mergeMethod || 'squash', deps);
-    reporter.ok('open-pr-auto-merge', `Auto-merge enabled for PR #${prResult.number}.`);
+    reporter.start('code-pr-auto-merge', `Enabling auto-merge for PR #${prResult.number}...`);
+    enablePrAutoMerge(context.repo, prResult.number, args.mergeMethod || 'merge', deps);
+    reporter.ok('code-pr-auto-merge', `Auto-merge enabled for PR #${prResult.number}.`);
     summary.autoMerge = 'enabled';
     summary.actionsPerformed.push(`auto-merge enabled for #${prResult.number}`);
   } else {
@@ -4591,9 +4452,9 @@ async function runOpenPrFlow(args, dependencies = {}, config = {}) {
   }
 
   if (args.watchChecks) {
-    reporter.start('open-pr-checks', `Watching checks for PR #${prResult.number}...`);
+    reporter.start('code-pr-checks', `Watching checks for PR #${prResult.number}...`);
     watchPrChecks(context.repo, prResult.number, args.checkTimeout, deps);
-    reporter.ok('open-pr-checks', `Checks green for PR #${prResult.number}.`);
+    reporter.ok('code-pr-checks', `Checks green for PR #${prResult.number}.`);
     summary.checks = 'green';
     summary.actionsPerformed.push(`checks watched for #${prResult.number}`);
   } else {
@@ -4607,7 +4468,7 @@ async function runOpenPrFlow(args, dependencies = {}, config = {}) {
   summary.merge = 'skipped';
   summary.releasePr = 'skipped';
   if (shouldPrintSummary) {
-    printOrchestrationSummary(`open-pr completed for ${context.repo}`, summary);
+    printOrchestrationSummary(`release code completed for ${context.repo}`, summary);
   }
 
   return {
@@ -4685,19 +4546,19 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
       }
     });
   } else if (detectedMode === 'auto') {
-    detectedMode = 'open-pr';
+    detectedMode = 'code';
   }
   summary.modeDetected = detectedMode;
 
   await confirmDetectedModeIfNeeded(
     args,
     detectedMode,
-    detectedMode === 'open-pr'
+    detectedMode === 'code'
       ? 'Will create/update code PR, watch checks, merge, then process release candidate.'
       : 'Will operate on release candidate PR, watch checks, and merge when green.'
   );
 
-  if (detectedMode === 'open-pr') {
+  if (detectedMode === 'code') {
     if (args.promoteStable) {
       reporter.start('release-promote-dispatch', `Dispatching ${DEFAULT_PROMOTE_WORKFLOW}...`);
       if (args.dryRun) {
@@ -4780,7 +4641,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
         });
       }
 
-      const openPrResult = await runOpenPrFlow(
+      const codePrResult = await runCodePrFlow(
         {
           ...args,
           head: args.promoteStable ? DEFAULT_BETA_BRANCH : args.head,
@@ -4789,7 +4650,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
           watchChecks: args.watchChecks,
           checkTimeout: args.checkTimeout,
           mergeMethod: args.mergeMethod,
-          updateExistingPr: args.updatePrDescription,
+          updateExistingPr: args.updatePrDescription || effectivePhase === 'code',
           skipPush: args.promoteStable,
           printSummary: false
         },
@@ -4797,15 +4658,15 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
         config
       );
 
-      codePr = openPrResult.pr;
-      summary.prAction = openPrResult.summary.prAction;
-      summary.prUrl = openPrResult.summary.prUrl;
-      summary.branchPushed = openPrResult.summary.branchPushed;
-      summary.autoMerge = openPrResult.summary.autoMerge;
-      summary.checks = openPrResult.summary.checks;
-      summary.actionsPerformed.push(...openPrResult.summary.actionsPerformed);
-      summary.actionsSkipped.push(...openPrResult.summary.actionsSkipped);
-      summary.warnings.push(...openPrResult.summary.warnings);
+      codePr = codePrResult.pr;
+      summary.prAction = codePrResult.summary.prAction;
+      summary.prUrl = codePrResult.summary.prUrl;
+      summary.branchPushed = codePrResult.summary.branchPushed;
+      summary.autoMerge = codePrResult.summary.autoMerge;
+      summary.checks = codePrResult.summary.checks;
+      summary.actionsPerformed.push(...codePrResult.summary.actionsPerformed);
+      summary.actionsSkipped.push(...codePrResult.summary.actionsSkipped);
+      summary.warnings.push(...codePrResult.summary.warnings);
 
       if (args.mergeWhenGreen && codePr && !args.dryRun) {
         reporter.start('release-merge-code-ready', `Checking merge readiness for code PR #${codePr.number}...`);
@@ -4818,7 +4679,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
         );
         await confirmMergeIfNeeded(args, codeReadiness, `Code PR #${codePr.number}`);
         reporter.ok('release-merge-code-ready', `Code PR #${codePr.number} is ready for merge.`);
-        if (openPrResult.summary.autoMerge !== 'enabled') {
+        if (codePrResult.summary.autoMerge !== 'enabled') {
           reporter.start('release-code-auto-merge', `Enabling auto-merge for code PR #${codePr.number}...`);
           enablePrAutoMerge(gitContext.repo, codePr.number, args.mergeMethod, deps);
           reporter.ok('release-code-auto-merge', `Auto-merge enabled for code PR #${codePr.number}.`);
@@ -6196,8 +6057,8 @@ function applyGithubMainSetup(args, dependencies, summary, reporter) {
     delete_branch_on_merge: true,
     allow_auto_merge: true,
     allow_squash_merge: true,
-    allow_merge_commit: false,
-    allow_rebase_merge: false
+    allow_merge_commit: true,
+    allow_rebase_merge: true
   };
 
   const patchRepo = ghApi(deps, 'PATCH', `/repos/${repo}`, repoPayload);
@@ -6356,8 +6217,8 @@ function applyGithubFirebaseSetup(args, dependencies, summary, reporter) {
     delete_branch_on_merge: true,
     allow_auto_merge: true,
     allow_squash_merge: true,
-    allow_merge_commit: false,
-    allow_rebase_merge: false
+    allow_merge_commit: true,
+    allow_rebase_merge: true
   };
   const patchRepo = ghApi(deps, 'PATCH', `/repos/${repo}`, repoPayload);
   if (patchRepo.status !== 0) {
@@ -6538,12 +6399,6 @@ async function run(argv, dependencies = {}) {
     return;
   }
 
-  if (parsed.mode === 'open-pr') {
-    const adapter = resolveConfiguredAdapter(config.adapter || 'npm');
-    await runOpenPrCore(parsed.args, adapter, dependencies, config);
-    return;
-  }
-
   if (parsed.mode === 'release') {
     await runReleaseByTargets(parsed.args, config, dependencies, {
       resolveAdapterByName: (name) => resolveConfiguredAdapter(name),
@@ -6565,9 +6420,9 @@ module.exports = {
   resolveReleaseTargetPlan,
   runReleaseByTargets,
   resolveAdapter,
-  runOpenPrCore,
+  runCodePrCore,
   runReleaseCycleCore,
-  runOpenPrFlow,
+  runCodePrFlow,
   runReleaseCycle,
   renderPrBodyDeterministic,
   validateAdapterForCapability,
