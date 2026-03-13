@@ -33,6 +33,8 @@ const RELEASE_AUTH_DOC_LINKS = {
   secrets: 'https://docs.github.com/actions/security-guides/using-secrets-in-github-actions',
   internal: 'https://github.com/i-santos/navy/blob/main/docs/release-auth-github-app.md'
 };
+const BEHIND_WITHOUT_TRIGGER_GRACE_MS = 15 * 1000;
+const RECENT_BASE_MERGE_GRACE_MS = 90 * 1000;
 
 const MANAGED_FILE_SPECS = [
   ['.changeset/config.json', '.changeset/config.json'],
@@ -3139,6 +3141,75 @@ function getLatestWorkflowRunForBranch(repo, branch, deps) {
   return parsed[0];
 }
 
+function getLatestMergedPrIntoBase(repo, baseBranch, deps) {
+  if (!baseBranch) {
+    return null;
+  }
+
+  const result = deps.exec('gh', [
+    'pr',
+    'list',
+    '--repo',
+    repo,
+    '--state',
+    'merged',
+    '--base',
+    baseBranch,
+    '--json',
+    'number,url,mergedAt,headRefName',
+    '--limit',
+    '10'
+  ]);
+  if (result.status !== 0) {
+    return null;
+  }
+
+  const parsed = parseJsonSafely(result.stdout || '[]', []);
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return null;
+  }
+
+  const merged = parsed
+    .filter((item) => item && item.mergedAt)
+    .sort((left, right) => Date.parse(String(right.mergedAt || '')) - Date.parse(String(left.mergedAt || '')));
+
+  return merged[0] || null;
+}
+
+function shouldKeepWaitingForExternalWorkflowTrigger(repo, baseBranch, workflowBranch, deps) {
+  const latestMergedPr = getLatestMergedPrIntoBase(repo, baseBranch, deps);
+  if (!latestMergedPr || !latestMergedPr.mergedAt) {
+    return false;
+  }
+
+  const mergedAtMs = Date.parse(String(latestMergedPr.mergedAt));
+  if (!Number.isFinite(mergedAtMs)) {
+    return false;
+  }
+
+  const elapsedSinceMergeMs = nowMs(deps) - mergedAtMs;
+  if (elapsedSinceMergeMs < 0 || elapsedSinceMergeMs > RECENT_BASE_MERGE_GRACE_MS) {
+    return false;
+  }
+
+  const workflowRun = getLatestWorkflowRunForBranch(repo, workflowBranch, deps);
+  if (!workflowRun) {
+    return true;
+  }
+
+  const workflowCreatedAtMs = Date.parse(String(workflowRun.createdAt || ''));
+  if (Number.isFinite(workflowCreatedAtMs) && workflowCreatedAtMs >= mergedAtMs) {
+    return false;
+  }
+
+  const workflowUpdatedAtMs = Date.parse(String(workflowRun.updatedAt || ''));
+  if (Number.isFinite(workflowUpdatedAtMs) && workflowUpdatedAtMs >= mergedAtMs) {
+    return false;
+  }
+
+  return true;
+}
+
 function getLatestReleaseWorkflowRunForBranch(repo, branch, deps) {
   const run = getLatestWorkflowRunForBranch(repo, branch, deps);
   if (!run) {
@@ -3199,7 +3270,9 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
   let lastReadiness = null;
   let lastChecks = null;
   const allowBehindTransient = Boolean(options.allowBehindTransient);
-  let behindObservedAt = 0;
+  const expectWorkflowTrigger = Boolean(options.expectWorkflowTrigger);
+  const triggerBaseBranch = String(options.triggerBaseBranch || '');
+  let behindObservedAt = null;
   while (nowMs(deps) <= timeoutAt) {
     const mergeState = getPrMergeState(repo, prNumber, deps);
     if (mergeState.state === 'MERGED' || mergeState.mergedAt) {
@@ -3252,7 +3325,6 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
         const runConclusion = String((workflowRun && workflowRun.conclusion) || '').toLowerCase();
         const runCompleted = runStatus === 'completed';
         const runFailed = runCompleted && !['success', 'neutral', 'skipped'].includes(runConclusion);
-        const runInProgress = ['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(runStatus);
 
         if (runFailed) {
           throw new Error(
@@ -3266,23 +3338,26 @@ function waitForPrMergeReadinessOrThrow(repo, prNumber, label, timeoutMinutes, d
           );
         }
 
-        if (!behindObservedAt) {
-          behindObservedAt = nowMs(deps);
-        }
+        const waitingForExternalTrigger = !expectWorkflowTrigger
+          && shouldKeepWaitingForExternalWorkflowTrigger(repo, triggerBaseBranch, readiness.headRefName, deps);
 
-        // Avoid waiting the full global timeout when there is no active workflow progress.
-        const behindElapsedMs = nowMs(deps) - behindObservedAt;
-        const stagnationWindowMs = 10 * 1000;
-        if (!runInProgress && behindElapsedMs >= stagnationWindowMs) {
-          throw new Error(
-            [
-              `${label} remained BEHIND for more than 10s with no active workflow progress.`,
-              runCompleted ? `latest workflow conclusion: ${runConclusion || 'n/a'}` : 'latest workflow status: unavailable',
-              workflowRun && workflowRun.url ? `run: ${workflowRun.url}` : '',
-              readiness.url ? `PR: ${readiness.url}` : '',
-              'If changeset workflow is still updating, rerun release in a moment.'
-            ].filter(Boolean).join('\n')
-          );
+        if (!expectWorkflowTrigger && !waitingForExternalTrigger) {
+          if (behindObservedAt === null) {
+            behindObservedAt = nowMs(deps);
+          }
+
+          const behindElapsedMs = nowMs(deps) - behindObservedAt;
+          if (behindElapsedMs >= BEHIND_WITHOUT_TRIGGER_GRACE_MS) {
+            throw new Error(
+              [
+                `${label} remained BEHIND for more than ${Math.floor(BEHIND_WITHOUT_TRIGGER_GRACE_MS / 1000)}s without a merge in this release run to trigger a new workflow.`,
+                runCompleted ? `latest workflow conclusion: ${runConclusion || 'n/a'}` : 'latest workflow status: unavailable',
+                workflowRun && workflowRun.url ? `run: ${workflowRun.url}` : '',
+                readiness.url ? `PR: ${readiness.url}` : '',
+                'If you just merged code outside this command, rerun release after the workflow starts updating the release PR.'
+              ].filter(Boolean).join('\n')
+            );
+          }
         }
 
         waitForNextPoll(timeoutAt, 5000, deps);
@@ -4803,6 +4878,7 @@ async function runCodePrFlow(args, dependencies = {}, config = {}) {
 
 async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, config = {}) {
   const deps = {
+    ...dependencies,
     exec: dependencies.exec || execCommand
   };
   validateAdapterForCapability(adapter, 'release');
@@ -4816,6 +4892,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
   const reporter = new StepReporter();
   const originalBranch = deps.exec('git', ['rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim();
   const useAutoMerge = args.autoMerge;
+  let triggeredBaseWorkflowThisRun = false;
 
   reporter.start('release-preflight-gh', 'Validating GitHub CLI and authentication...');
   ensureGhAvailable(deps);
@@ -4917,6 +4994,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
           reporter.ok('release-promote-merge', `Promotion PR #${promotionPr.number} merged.`);
           summary.actionsPerformed.push(`promotion pr merged: #${promotionPr.number}`);
           summary.promotionPr = `merged (#${promotionPr.number})`;
+          triggeredBaseWorkflowThisRun = true;
         }
 
         reporter.start('release-sync-beta', `Syncing local ${DEFAULT_BETA_BRANCH} branch...`);
@@ -5015,6 +5093,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
         waitForPrMerged(gitContext.repo, codePr.number, args.releasePrTimeout, deps);
         reporter.ok('release-wait-code-merge', `Code PR #${codePr.number} merged.`);
         summary.actionsPerformed.push(`code pr merged: #${codePr.number}`);
+        triggeredBaseWorkflowThisRun = true;
         if (args.taskId) {
           const mergeCommit = getPrMergeCommitSha(gitContext.repo, codePr.number, deps);
           markTaskMerged(args.taskId, mergeCommit, config, process.cwd(), { dryRun: args.dryRun });
@@ -5109,7 +5188,11 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
               `Release PR #${releasePr.number}`,
               args.checkTimeout,
               deps,
-              { allowBehindTransient: true }
+              {
+                allowBehindTransient: true,
+                expectWorkflowTrigger: triggeredBaseWorkflowThisRun,
+                triggerBaseBranch: effectiveReleaseContext.targetBaseBranch
+              }
             );
             await confirmMergeIfNeeded(args, releaseReadiness, `Release PR #${releasePr.number}`);
             reporter.ok('release-merge-release-ready', `Release PR #${releasePr.number} is ready for merge.`);

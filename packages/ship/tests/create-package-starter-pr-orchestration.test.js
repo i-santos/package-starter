@@ -69,6 +69,18 @@ function baseHandlers() {
   ];
 }
 
+function runWithSimulatedTime(argv, stub, extraDeps = {}) {
+  let simulatedNow = Date.parse('2026-03-01T00:00:00Z');
+  return run(argv, {
+    exec: stub.exec,
+    now: () => simulatedNow,
+    sleep: (milliseconds) => {
+      simulatedNow += milliseconds;
+    },
+    ...extraDeps
+  });
+}
+
 test('release --phase code creates PR, enables auto-merge, and watches checks', async () => {
   const stub = createExecStub([
     ...baseHandlers(),
@@ -314,7 +326,7 @@ test('release with auto-merge does not explicitly merge code PR', async () => {
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const codePrExplicitMerge = calls.find((call) => call.command === 'gh'
     && call.args[0] === 'pr'
@@ -374,7 +386,7 @@ test('release marks task merged and released when --task-id is provided', async 
       (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
     ]);
 
-    await run(['release', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000002', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+    await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000002', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
     const graph = JSON.parse(fs.readFileSync(path.join(workDir, 'kanban', 'graph.json'), 'utf8'));
     const updated = graph.tasks.find((task) => task.id === 'tsk_20260303_000002');
@@ -458,7 +470,7 @@ test('release full uses release PR matching beta track base branch', async () =>
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'full', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'full', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const mergedReleasePr = calls.find((call) => call.command === 'gh'
     && call.args[0] === 'pr'
@@ -500,7 +512,7 @@ test('release auto mode detects publish on changeset-release branch and enables 
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const mergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--auto'));
   assert.ok(mergeCall, 'expected release PR auto-merge enable');
@@ -522,7 +534,7 @@ test('release auto mode fails on ambiguous release PR candidates', async () => {
   ]);
 
   await assert.rejects(
-    () => run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub),
     /Multiple candidate release PRs detected/
   );
 });
@@ -568,7 +580,7 @@ test('release --promote-stable rejects when not on release/beta', async () => {
   ]);
 
   await assert.rejects(
-    () => run(['release', '--repo', 'i-santos/firestack', '--promote-stable', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--promote-stable', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub),
     /only allowed when running from "release\/beta"/
   );
 });
@@ -627,14 +639,14 @@ test('release --promote-stable dispatches workflow and does not push release/bet
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run([
+  await runWithSimulatedTime([
     'release',
     '--repo', 'i-santos/firestack',
     '--promote-stable',
     '--yes',
     '--check-timeout', '0.05',
     '--release-pr-timeout', '0.05'
-  ], { exec: stub.exec });
+  ], stub);
 
   const dispatchCall = calls.find((call) => call.command === 'gh' && call.args[0] === 'api' && call.args[2] === 'POST' && String(call.args[3]).includes('/actions/workflows/promote-stable.yml/dispatches'));
   assert.ok(dispatchCall, 'expected promote-stable workflow dispatch');
@@ -666,7 +678,7 @@ test('release validates npm tag and version for beta track', async () => {
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: ' M local-file\n' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 });
 
 test('release accepts beta propagation when prerelease is visible before beta tag is set', async () => {
@@ -692,7 +704,7 @@ test('release accepts beta propagation when prerelease is visible before beta ta
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 });
 
 test('release fails fast when release workflow has failed before npm propagation', async () => {
@@ -736,7 +748,7 @@ test('release fails fast when release workflow has failed before npm propagation
   ]);
 
   await assert.rejects(
-    () => run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub),
     /Release workflow failed before npm propagation could complete\./
   );
 });
@@ -800,7 +812,7 @@ test('release resolves npm target package from release PR files in monorepo', as
     (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const npmCalls = stub.calls
     .filter((call) => call.command === 'npm' && call.args[0] === 'view')
@@ -836,7 +848,7 @@ test('release skips cleanup with --no-cleanup', async () => {
     (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.0-beta.1"}\n' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--no-cleanup', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--no-cleanup', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
   assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped');
@@ -866,7 +878,7 @@ test('release --phase code runs cleanup after merge by default', async () => {
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
   assert.ok(cleanupDeleteCall, 'expected cleanup delete branch to run after code phase merge');
@@ -907,7 +919,7 @@ test('release respects cleanup=false from .ship.local.json defaults', async () =
       (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.0.0-beta.1"}\n' } : null)
     ]);
 
-    await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+    await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
     const cleanupDeleteCall = calls.find((call) => call.command === 'git' && call.args[0] === 'branch' && call.args[1] === '-d');
     assert.equal(cleanupDeleteCall, undefined, 'expected cleanup delete branch to be skipped by local config');
@@ -931,12 +943,327 @@ test('release --phase code stops after code PR merge', async () => {
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const npmViewCall = stub.calls.find((call) => call.command === 'npm' && call.args[0] === 'view');
   assert.equal(npmViewCall, undefined, 'expected no npm validation in code-only mode');
   const editCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'edit');
   assert.ok(editCall, 'expected existing code PR to be refreshed by default in code-only mode');
+});
+
+test('release waits for transient BEHIND release PR state after code merge', async () => {
+  let simulatedNow = 0;
+  let releaseReadinessCalls = 0;
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/behind-release-pr\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'list') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([
+            {
+              number: 118,
+              url: 'https://github.com/i-santos/firestack/pull/118',
+              headRefName: 'feat/behind-release-pr',
+              baseRefName: 'release/beta'
+            },
+            {
+              number: 115,
+              url: 'https://github.com/i-santos/firestack/pull/115',
+              headRefName: 'changeset-release/release/beta',
+              baseRefName: 'release/beta'
+            }
+          ])
+        };
+      }
+      return null;
+    },
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '118' && args.includes('statusCheckRollup,url,number')) {
+        return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '118' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft,headRefName')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 118,
+            url: 'https://github.com/i-santos/firestack/pull/118',
+            reviewDecision: 'APPROVED',
+            mergeStateStatus: 'CLEAN',
+            isDraft: false,
+            headRefName: 'feat/behind-release-pr'
+          })
+        };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '118' && args.includes('--json') && args.includes('state,mergedAt')) {
+        return { status: 0, stdout: JSON.stringify({ state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('statusCheckRollup,url,number')) {
+        return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft,headRefName')) {
+        releaseReadinessCalls += 1;
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 115,
+            url: 'https://github.com/i-santos/firestack/pull/115',
+            reviewDecision: 'APPROVED',
+            mergeStateStatus: releaseReadinessCalls >= 4 ? 'CLEAN' : 'BEHIND',
+            isDraft: false,
+            headRefName: 'changeset-release/release/beta'
+          })
+        };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('--json') && args.includes('state,mergedAt')) {
+        return { status: 0, stdout: JSON.stringify({ state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) };
+      }
+      return null;
+    },
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'run' && args[1] === 'list') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            databaseId: 23064929241,
+            workflowName: 'Release',
+            status: 'completed',
+            conclusion: 'success',
+            url: 'https://github.com/i-santos/firestack/actions/runs/23064929241',
+            updatedAt: '2026-03-01T00:00:00Z',
+            createdAt: '2026-03-01T00:00:00Z',
+            event: 'push'
+          }])
+        };
+      }
+
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/ship', version: '2.3.0-beta.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.3.0-beta.0"}\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run(
+    ['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.3', '--release-pr-timeout', '0.3'],
+    {
+      exec: stub.exec,
+      now: () => simulatedNow,
+      sleep: (milliseconds) => {
+        simulatedNow += milliseconds;
+      }
+    }
+  );
+
+  const releaseMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args[2] === '115');
+  assert.ok(releaseMergeCall, 'expected release PR merge to proceed after transient BEHIND state');
+});
+
+test('release waits for transient BEHIND release PR state after recent external code merge', async () => {
+  let simulatedNow = Date.parse('2026-03-01T00:00:10Z');
+  let releaseReadinessCalls = 0;
+  let workflowListCalls = 0;
+  const stub = createExecStub([
+    (command, args) => (command === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor' ? { status: 0, stdout: '' } : null),
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/already-merged\n' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'list' && args.includes('--state') && args.includes('merged')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            number: 114,
+            url: 'https://github.com/i-santos/firestack/pull/114',
+            mergedAt: '2026-03-01T00:00:05Z',
+            headRefName: 'feat/recent-merge'
+          }])
+        };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'list') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            number: 115,
+            url: 'https://github.com/i-santos/firestack/pull/115',
+            headRefName: 'changeset-release/release/beta',
+            baseRefName: 'release/beta'
+          }])
+        };
+      }
+      return null;
+    },
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' ? { status: 0, stdout: 'merged' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('statusCheckRollup,url,number')) {
+        return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft,headRefName')) {
+        releaseReadinessCalls += 1;
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 115,
+            url: 'https://github.com/i-santos/firestack/pull/115',
+            reviewDecision: 'APPROVED',
+            mergeStateStatus: releaseReadinessCalls >= 4 ? 'CLEAN' : 'BEHIND',
+            isDraft: false,
+            headRefName: 'changeset-release/release/beta'
+          })
+        };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('--json') && args.includes('state,mergedAt')) {
+        return { status: 0, stdout: JSON.stringify({ state: 'MERGED', mergedAt: '2026-03-01T00:01:00Z' }) };
+      }
+      return null;
+    },
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'run' && args[1] === 'list') {
+        workflowListCalls += 1;
+        if (workflowListCalls < 3) {
+          return {
+            status: 0,
+            stdout: JSON.stringify([{
+              databaseId: 23064929241,
+              workflowName: 'Release',
+              status: 'completed',
+              conclusion: 'success',
+              url: 'https://github.com/i-santos/firestack/actions/runs/23064929241',
+              updatedAt: '2026-03-01T00:00:00Z',
+              createdAt: '2026-03-01T00:00:00Z',
+              event: 'push'
+            }])
+          };
+        }
+
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            databaseId: 23064929242,
+            workflowName: 'Release',
+            status: 'in_progress',
+            conclusion: '',
+            url: 'https://github.com/i-santos/firestack/actions/runs/23064929242',
+            updatedAt: '2026-03-01T00:00:16Z',
+            createdAt: '2026-03-01T00:00:16Z',
+            event: 'push'
+          }])
+        };
+      }
+
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/ship', version: '2.3.0-beta.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'version' ? { status: 0, stdout: '"1.4.0"\n' } : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[2] === 'dist-tags' ? { status: 0, stdout: '{"beta":"2.3.0-beta.0"}\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run(
+    ['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.3', '--release-pr-timeout', '0.3'],
+    {
+      exec: stub.exec,
+      now: () => simulatedNow,
+      sleep: (milliseconds) => {
+        simulatedNow += milliseconds;
+      }
+    }
+  );
+
+  const releaseMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args[2] === '115');
+  assert.ok(releaseMergeCall, 'expected release PR merge to proceed after recent external merge triggered workflow');
+});
+
+test('release fails fast on BEHIND release PR when this run did not trigger a workflow', async () => {
+  let simulatedNow = 0;
+  const stub = createExecStub([
+    (command, args) => (command === 'git' && args[0] === 'merge-base' && args[1] === '--is-ancestor' ? { status: 0, stdout: '' } : null),
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/already-merged\n' } : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'list'
+      ? {
+        status: 0,
+        stdout: JSON.stringify([{
+          number: 115,
+          url: 'https://github.com/i-santos/firestack/pull/115',
+          headRefName: 'changeset-release/release/beta',
+          baseRefName: 'release/beta'
+        }])
+      }
+      : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('statusCheckRollup,url,number')) {
+        return { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'OPEN' }) };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('number,url,reviewDecision,mergeStateStatus,isDraft,headRefName')) {
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            number: 115,
+            url: 'https://github.com/i-santos/firestack/pull/115',
+            reviewDecision: 'APPROVED',
+            mergeStateStatus: 'BEHIND',
+            isDraft: false,
+            headRefName: 'changeset-release/release/beta'
+          })
+        };
+      }
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'view' && args[2] === '115' && args.includes('--json') && args.includes('state,mergedAt')) {
+        return { status: 0, stdout: JSON.stringify({ state: 'OPEN', mergedAt: null }) };
+      }
+      return null;
+    },
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'run' && args[1] === 'list') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            databaseId: 23064929241,
+            workflowName: 'Release',
+            status: 'completed',
+            conclusion: 'success',
+            url: 'https://github.com/i-santos/firestack/actions/runs/23064929241',
+            updatedAt: '2026-03-01T00:00:00Z',
+            createdAt: '2026-03-01T00:00:00Z',
+            event: 'push'
+          }])
+        };
+      }
+      return null;
+    }
+  ]);
+
+  await assert.rejects(
+    () => run(
+      ['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.3', '--release-pr-timeout', '0.3'],
+      {
+        exec: stub.exec,
+        now: () => simulatedNow,
+        sleep: (milliseconds) => {
+          simulatedNow += milliseconds;
+        }
+      }
+    ),
+    /without a merge in this release run to trigger a new workflow/
+  );
 });
 
 test('release fails when release PR needs approval before merge', async () => {
@@ -968,7 +1295,7 @@ test('release fails when release PR needs approval before merge', async () => {
   ]);
 
   await assert.rejects(
-    () => run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec }),
+    () => runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub),
     /requires review approval/
   );
 });
@@ -991,7 +1318,7 @@ test('release auto syncs feature branch with release/beta when behind', async ()
     (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge' && args.includes('--auto') ? { status: 0, stdout: 'auto' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--phase', 'code', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const rebaseCall = stub.calls.find((call) => call.command === 'git' && call.args[0] === 'rebase');
   assert.ok(rebaseCall, 'expected rebase while syncing branch with base');
@@ -1029,7 +1356,7 @@ test('release resumes from release phase when code branch is already integrated'
     (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
   ]);
 
-  await run(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
+  await runWithSimulatedTime(['release', '--repo', 'i-santos/firestack', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], stub);
 
   const pushCall = calls.find((call) => call.command === 'git' && call.args[0] === 'push');
   assert.equal(pushCall, undefined, 'expected no feature branch push while resuming');
@@ -1060,7 +1387,7 @@ test('release updates existing PR description only with --update-pr-description'
       : null)
   ]);
 
-  await run([
+  await runWithSimulatedTime([
     'release',
     '--repo', 'i-santos/firestack',
     '--yes',
@@ -1069,7 +1396,7 @@ test('release updates existing PR description only with --update-pr-description'
     '--update-pr-description',
     '--check-timeout', '0.05',
     '--release-pr-timeout', '0.05'
-  ], { exec: stub.exec });
+  ], stub);
 
   const editCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'edit');
   assert.ok(editCall, 'expected existing PR to be edited when --update-pr-description is provided');
@@ -1153,14 +1480,14 @@ test('release handles direct publish path when no release PR is created', async 
   const originalLog = console.log;
   console.log = (value) => outputs.push(String(value));
   try {
-    await run([
+    await runWithSimulatedTime([
       'release',
       '--repo', 'i-santos/firestack',
       '--yes',
       '--phase', 'full',
       '--check-timeout', '0.05',
       '--release-pr-timeout', '0.05'
-    ], { exec: stub.exec });
+    ], stub);
   } finally {
     console.log = originalLog;
   }
@@ -1248,14 +1575,14 @@ test('release treats stable latest as satisfied when beta tag is absent and no c
   const originalLog = console.log;
   console.log = (value) => outputs.push(String(value));
   try {
-    await run([
+    await runWithSimulatedTime([
       'release',
       '--repo', 'i-santos/firestack',
       '--yes',
       '--phase', 'full',
       '--check-timeout', '0.05',
       '--release-pr-timeout', '0.05'
-    ], { exec: stub.exec });
+    ], stub);
   } finally {
     console.log = originalLog;
   }
@@ -1341,14 +1668,14 @@ test('release with firebase adapter succeeds via deploy workflow direct publish'
       (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
     ]);
 
-    await run([
+    await runWithSimulatedTime([
       'release',
       '--repo', 'i-santos/firestack',
       '--yes',
       '--phase', 'full',
       '--check-timeout', '0.05',
       '--release-pr-timeout', '0.05'
-    ], { exec: stub.exec });
+    ], stub);
 
     const npmCalls = stub.calls.filter((call) => call.command === 'npm');
     assert.equal(npmCalls.length, 0, 'expected no npm validation calls for firebase adapter');
@@ -1420,13 +1747,13 @@ test('release with firebase adapter fails when deploy workflow is not successful
     ]);
 
     await assert.rejects(
-      () => run([
+      () => runWithSimulatedTime([
         'release',
         '--repo', 'i-santos/firestack',
         '--yes',
         '--check-timeout', '0.05',
         '--release-pr-timeout', '0.05'
-      ], { exec: stub.exec }),
+      ], stub),
       /Deploy workflow \"deploy-staging\.yml\" is not successful yet/
     );
   } finally {
