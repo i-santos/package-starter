@@ -203,6 +203,42 @@ Main flags:
 - `--summary <text>`
 - `--dry-run`
 
+## `ship config defaults`
+
+Reads or updates default `ship release` behavior at one of three scopes:
+
+- `global` -> `~/.config/ship/config.json` (or `$XDG_CONFIG_HOME/ship/config.json`)
+- `project` -> `.ship.json`
+- `local` -> `.ship.local.json`
+
+Main flags:
+
+- `--scope <global|project|local>`
+- `--auto-merge <true|false>`
+- `--watch-checks <true|false>`
+- `--check-timeout <minutes>`
+- `--confirm-merges <true|false>`
+- `--sync-base <auto|rebase|merge|off>`
+- `--resume <true|false>`
+- `--merge-when-green <true|false>`
+- `--merge-method <squash|merge|rebase>`
+- `--wait-release-pr <true|false>`
+- `--release-pr-timeout <minutes>`
+- `--merge-release-pr <true|false>`
+- `--verify-npm <true|false>`
+- `--confirm-cleanup <true|false>`
+- `--cleanup <true|false>`
+- `--json`
+- `--dry-run`
+
+Examples:
+
+```bash
+ship config defaults --scope global --merge-method merge --cleanup true
+ship config defaults --scope project --cleanup true --watch-checks true
+ship config defaults --scope local --cleanup false --watch-checks false
+```
+
 ## `ship task`
 
 Task lifecycle compatibility entrypoint.
