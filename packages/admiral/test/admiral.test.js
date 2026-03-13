@@ -12,6 +12,7 @@ const packageJson = require("../package.json");
 
 const CLI_PATH = path.join(__dirname, "..", "bin", "admiral");
 const serialTest = (name, fn) => test(name, { concurrency: false }, fn);
+const HANGING_AGENT_COMMAND = "node -e \"setInterval(() => {}, 1000)\"";
 
 async function createTempRepo() {
   const repoDir = await mkdtemp(path.join(os.tmpdir(), "admiral-test-"));
@@ -565,7 +566,7 @@ serialTest("recovery retries a dead running task", async () => {
   const configPath = path.join(repoDir, ".admiral", "config.json");
   const config = JSON.parse(await readFile(configPath, "utf8"));
   config.heartbeat_timeout_ms = 800;
-  config.agent_command = "node -e \"setTimeout(()=>process.exit(0), 10000)\"";
+  config.agent_command = HANGING_AGENT_COMMAND;
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
