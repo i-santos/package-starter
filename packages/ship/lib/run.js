@@ -81,8 +81,10 @@ const COMMAND_COMPLETION_SPEC = {
     }
   },
   'open-pr': {
-    options: ['--repo', '--base', '--head', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--template', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--yes', '--dry-run', '--help', '-h'],
-    values: {}
+    options: ['--repo', '--base', '--head', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--template', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--merge-method', '--yes', '--dry-run', '--help', '-h'],
+    values: {
+      '--merge-method': ['squash', 'merge', 'rebase']
+    }
   },
   release: {
     options: ['--repo', '--target', '--targets', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
@@ -142,7 +144,7 @@ function usage() {
     '  ship open-pr [--repo <owner/repo>] [--base <branch>] [--head <branch>] [--title <text>]',
     '               [--pr-description <text>|--body <text>]',
     '               [--pr-description-file <path>|--body-file <path>]',
-    '               [--auto-merge] [--watch-checks] [--yes] [--dry-run]',
+    '               [--auto-merge] [--watch-checks] [--merge-method squash|merge|rebase] [--yes] [--dry-run]',
     '    Create/update code PR and optionally watch checks.',
     '',
     '  ship release [--repo <owner/repo>] [--target <adapter>] [--targets single|auto] [--mode auto|open-pr|publish] [--phase code|full]',
@@ -167,7 +169,7 @@ function usage() {
     '  ship --name hello-package',
     '  ship init --dir .',
     '  ship init --dir . --with-github --with-beta --with-npm --yes',
-    '  ship open-pr --auto-merge --watch-checks',
+    '  ship open-pr --auto-merge --merge-method merge --watch-checks',
     '  ship release --yes',
     '  ship release --targets auto --yes',
     '  ship task status --id tsk_20260303_001 --json',
@@ -661,6 +663,7 @@ function parseOpenPrArgs(argv) {
     autoMerge: false,
     watchChecks: false,
     checkTimeout: 30,
+    mergeMethod: 'merge',
     updateExistingPr: true,
     yes: false,
     dryRun: false
@@ -723,6 +726,12 @@ function parseOpenPrArgs(argv) {
       continue;
     }
 
+    if (token === '--merge-method') {
+      args.mergeMethod = parseValueFlag(argv, i, '--merge-method');
+      i += 1;
+      continue;
+    }
+
     if (token === '--update-pr-description') {
       args.updateExistingPr = true;
       continue;
@@ -765,6 +774,10 @@ function parseOpenPrArgs(argv) {
     throw new Error('Invalid --check-timeout value. Expected a positive number (minutes).');
   }
 
+  if (!['squash', 'merge', 'rebase'].includes(args.mergeMethod)) {
+    throw new Error('Invalid --merge-method value. Expected squash, merge, or rebase.');
+  }
+
   return args;
 }
 
@@ -796,7 +809,7 @@ function parseReleaseCycleArgs(argv) {
     syncBase: 'auto',
     resume: true,
     mergeWhenGreen: true,
-    mergeMethod: 'squash',
+    mergeMethod: 'merge',
     waitReleasePr: true,
     releasePrTimeout: 30,
     mergeReleasePr: true,
@@ -4581,7 +4594,7 @@ async function runOpenPrFlow(args, dependencies = {}, config = {}) {
 
   if (args.autoMerge) {
     reporter.start('open-pr-auto-merge', `Enabling auto-merge for PR #${prResult.number}...`);
-    enablePrAutoMerge(context.repo, prResult.number, args.mergeMethod || 'squash', deps);
+    enablePrAutoMerge(context.repo, prResult.number, args.mergeMethod || 'merge', deps);
     reporter.ok('open-pr-auto-merge', `Auto-merge enabled for PR #${prResult.number}.`);
     summary.autoMerge = 'enabled';
     summary.actionsPerformed.push(`auto-merge enabled for #${prResult.number}`);
@@ -6196,8 +6209,8 @@ function applyGithubMainSetup(args, dependencies, summary, reporter) {
     delete_branch_on_merge: true,
     allow_auto_merge: true,
     allow_squash_merge: true,
-    allow_merge_commit: false,
-    allow_rebase_merge: false
+    allow_merge_commit: true,
+    allow_rebase_merge: true
   };
 
   const patchRepo = ghApi(deps, 'PATCH', `/repos/${repo}`, repoPayload);
@@ -6356,8 +6369,8 @@ function applyGithubFirebaseSetup(args, dependencies, summary, reporter) {
     delete_branch_on_merge: true,
     allow_auto_merge: true,
     allow_squash_merge: true,
-    allow_merge_commit: false,
-    allow_rebase_merge: false
+    allow_merge_commit: true,
+    allow_rebase_merge: true
   };
   const patchRepo = ghApi(deps, 'PATCH', `/repos/${repo}`, repoPayload);
   if (patchRepo.status !== 0) {

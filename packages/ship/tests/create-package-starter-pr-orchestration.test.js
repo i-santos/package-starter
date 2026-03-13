@@ -124,6 +124,45 @@ test('open-pr creates PR, enables auto-merge, and watches checks', async () => {
 
   const autoMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--auto'));
   assert.ok(autoMergeCall, 'expected gh pr merge --auto');
+  assert.ok(autoMergeCall.args.includes('--merge'), 'expected merge method to default to merge');
+});
+
+test('open-pr accepts --merge-method and forwards rebase auto-merge', async () => {
+  let listCall = 0;
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/rebase-test\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'upstream-set' } : null)
+  ]);
+
+  const originalExec = stub.exec;
+  stub.exec = (command, args, options = {}) => {
+    if (command === 'gh' && args[0] === 'pr' && args[1] === 'list') {
+      listCall += 1;
+      if (listCall === 1) {
+        return { status: 0, stdout: '[]', stderr: '' };
+      }
+      return {
+        status: 0,
+        stdout: JSON.stringify([{
+          number: 21,
+          url: 'https://github.com/i-santos/firestack/pull/21',
+          headRefName: 'feat/rebase-test',
+          baseRefName: 'release/beta'
+        }]),
+        stderr: ''
+      };
+    }
+
+    return originalExec(command, args, options);
+  };
+
+  await run(['open-pr', '--repo', 'i-santos/firestack', '--auto-merge', '--merge-method', 'rebase', '--yes'], { exec: stub.exec });
+
+  const autoMergeCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge' && call.args.includes('--auto'));
+  assert.ok(autoMergeCall, 'expected gh pr merge --auto');
+  assert.ok(autoMergeCall.args.includes('--rebase'), 'expected rebase merge method');
 });
 
 test('open-pr updates existing PR when head/base already has one', async () => {

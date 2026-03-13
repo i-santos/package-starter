@@ -115,8 +115,8 @@ test('setup-github composes expected API calls and payloads', async () => {
   assert.equal(patchPayload.delete_branch_on_merge, true);
   assert.equal(patchPayload.allow_auto_merge, true);
   assert.equal(patchPayload.allow_squash_merge, true);
-  assert.equal(patchPayload.allow_merge_commit, false);
-  assert.equal(patchPayload.allow_rebase_merge, false);
+  assert.equal(patchPayload.allow_merge_commit, true);
+  assert.equal(patchPayload.allow_rebase_merge, true);
 
   const workflowPermissionsCall = stub.calls.find((call) => call.command === 'gh' && call.args[0] === 'api' && call.args[2] === 'PUT' && call.args[3] === '/repos/i-santos/firestack/actions/permissions/workflow');
   assert.ok(workflowPermissionsCall, 'expected workflow permissions PUT call');
