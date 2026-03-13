@@ -1,9 +1,6 @@
-# PR Orchestration (`open-pr` and `release`)
+# PR Orchestration (`release`)
 
-This guide explains how to automate pull request creation and release progression with:
-
-- `ship open-pr`
-- `ship release`
+This guide explains how to automate pull request creation and release progression with `ship release`.
 
 ## Goals
 
@@ -11,14 +8,14 @@ This guide explains how to automate pull request creation and release progressio
 - Keep a solo-founder flow fast.
 - Stay safe for team repositories with required checks/reviews.
 
-## `open-pr`
+## Code PR Flow
 
-Use `open-pr` to push and create/update a PR in one command.
+Use `release --phase code` to push, create/update a PR, watch checks, and configure auto-merge.
 
 Example:
 
 ```bash
-ship open-pr --auto-merge --merge-method merge --watch-checks
+ship release --phase code --auto-merge --merge-method merge --watch-checks
 ```
 
 Default branch mapping:
@@ -60,7 +57,7 @@ Mode detection (`--mode auto`):
 
 - branch starts with `changeset-release/` -> `publish`
 - current branch is `release/beta` and exactly one open `changeset-release/*` PR -> `publish`
-- otherwise -> `open-pr`
+- otherwise -> `code`
 
 Track behavior:
 

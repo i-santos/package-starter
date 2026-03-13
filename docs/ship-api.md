@@ -17,7 +17,6 @@ It is designed to reduce manual release operations and standardize release workf
 - project bootstrap (`init`)
 - GitHub repository + beta flow setup (`setup-github`)
 - npm publishing setup and optional first publish (`setup-npm`)
-- pull request orchestration (`open-pr`)
 - end-to-end release orchestration (`release`)
 - stable promotion workflow (`promote-stable`)
 - deterministic task state lifecycle bootstrap (`task`)
@@ -27,7 +26,7 @@ It is designed to reduce manual release operations and standardize release workf
 Think about `ship` in 4 phases:
 
 1. Prepare project infra (`init`)
-2. Create/update code PR (`open-pr`)
+2. Create/update code PR (`release --phase code`)
 3. Run release progression (`release`)
 4. Promote beta to stable when needed (`promote-stable`)
 
@@ -48,7 +47,7 @@ ship init --dir . --with-github --with-beta --with-npm --yes
 From your feature branch:
 
 ```bash
-ship open-pr --auto-merge --watch-checks --yes
+ship release --phase code --auto-merge --watch-checks --yes
 ```
 
 Then run:
@@ -74,7 +73,7 @@ admiral task tdd backend-auth
 admiral task implement backend-auth
 admiral task verify backend-auth
 admiral task publish-ready backend-auth
-ship open-pr --task-id backend-auth --yes
+ship release --phase code --task-id backend-auth --yes
 ship release --task-id backend-auth --yes
 ```
 
@@ -140,34 +139,6 @@ Main flags:
 - `--publish-first`
 - `--dry-run`
 
-## `ship open-pr`
-
-Creates or updates PR for current branch.
-
-Main flags:
-
-- `--repo <owner/repo>`
-- `--base <branch>`
-- `--head <branch>`
-- `--title <text>`
-- `--pr-description <text>` alias: `--body`
-- `--pr-description-file <path>` alias: `--body-file`
-- `--template <path>`
-- `--draft`
-- `--auto-merge`
-- `--watch-checks`
-- `--merge-method <squash|merge|rebase>`
-- `--check-timeout <minutes>`
-- `--yes`
-- `--dry-run`
-
-Body source priority:
-
-1. `--pr-description`
-2. `--pr-description-file`
-3. `--template`
-4. deterministic generated markdown
-
 ## `ship release`
 
 Main orchestration command for PR/release progression.
@@ -177,7 +148,7 @@ Main flags:
 - `--repo <owner/repo>`
 - `--target <adapter>` (`npm` or `firebase`)
 - `--targets <single|auto>`
-- `--mode <auto|open-pr|publish>`
+- `--mode <auto|code|publish>`
 - `--phase <code|full>`
 - `--track <auto|beta|stable>`
 - `--promote-stable`
@@ -351,17 +322,13 @@ ship release --targets auto --yes
 
 ## Adapter Contract (v1)
 
-Required for `open-pr` capability:
-
-- `name: string`
-- `capabilities.openPr: true`
-- optional `normalizeArgs(args, { command })`
-- optional `preparePrContext(context)` (return partial args override)
-
 Required for `release` capability:
 
+- `name: string`
 - `capabilities.release: true`
-- `detectReleaseMode(context) -> "open-pr" | "publish"`
+- optional `normalizeArgs(args, { command })`
+- optional `preparePrContext(context)` (return partial args override)
+- `detectReleaseMode(context) -> "code" | "publish"`
 - `resolveReleaseContext(context) -> object`
 - `findReleaseCandidates(context) -> ReleaseCandidate[]`
 - `selectReleaseCandidate(context, candidates) -> ReleaseCandidate | null`
@@ -381,9 +348,9 @@ const {
   run,
   loadShipConfig,
   resolveAdapter,
-  runOpenPrCore,
+  runCodePrCore,
   runReleaseCycleCore,
-  runOpenPrFlow,
+  runCodePrFlow,
   runReleaseCycle,
   renderPrBodyDeterministic
 } = require('@i-santos/ship/lib/run');
@@ -397,7 +364,7 @@ Useful helpers:
 
 - `loadShipConfig(cwd?)`
 - `resolveAdapter(name, options?)`
-- `runOpenPrCore(args, adapter, dependencies?, config?)`
+- `runCodePrCore(args, adapter, dependencies?, config?)`
 - `runReleaseCycleCore(args, adapter, dependencies?, config?)`
 - `renderPrBodyDeterministic(context, deps, options?)`
 - `validateAdapterForCapability(adapter, capability)`

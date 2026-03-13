@@ -22,7 +22,7 @@ Starter workspace to standardize npm package creation and migration with Changes
 ## Architecture
 
 - Root package `@i-santos/ship`: published CLI and reusable release orchestration engine.
-- Adapter model: `open-pr` and `release` run on adapter capabilities (`npm` built-in, external via `.ship.json` + `adapterModule`).
+- Adapter model: `release` runs on adapter capabilities (`npm` built-in, external via `.ship.json` + `adapterModule`).
 - `template/`: managed scaffold baseline used by the CLI.
 
 ## Role In Navy
@@ -42,7 +42,7 @@ admiral task tdd backend-auth
 admiral task implement backend-auth
 admiral task verify backend-auth
 admiral task publish-ready backend-auth
-ship open-pr --task-id backend-auth --yes
+ship release --phase code --task-id backend-auth --yes
 ship release --task-id backend-auth --yes
 ```
 

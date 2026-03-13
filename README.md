@@ -21,7 +21,7 @@ admiral task implement backend-auth
 admiral task verify backend-auth
 admiral task publish-ready backend-auth
 admiral run --once
-ship open-pr --task-id backend-auth --yes
+ship release --phase code --task-id backend-auth --yes
 ship release --task-id backend-auth --yes
 ```
 
