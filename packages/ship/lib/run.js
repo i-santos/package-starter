@@ -1,4 +1,5 @@
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const readline = require('readline/promises');
@@ -81,7 +82,7 @@ const COMMAND_COMPLETION_SPEC = {
     }
   },
   release: {
-    options: ['--repo', '--target', '--targets', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
+    options: ['--repo', '--target', '--targets', '--mode', '--phase', '--track', '--promote-stable', '--promote-type', '--promote-summary', '--head', '--base', '--title', '--task-id', '--pr-description', '--body', '--pr-description-file', '--body-file', '--npm-package', '--update-pr-description', '--draft', '--auto-merge', '--watch-checks', '--check-timeout', '--confirm-merges', '--merge-when-green', '--merge-method', '--wait-release-pr', '--release-pr-timeout', '--merge-release-pr', '--verify-npm', '--confirm-cleanup', '--cleanup', '--sync-base', '--no-resume', '--no-cleanup', '--yes', '--dry-run', '--help', '-h'],
     values: {
       '--target': ['npm', 'firebase'],
       '--targets': ['single', 'auto'],
@@ -136,7 +137,7 @@ function usage() {
     '    Check npm auth/package status and optionally run first publish.',
     '',
     '  ship release [--repo <owner/repo>] [--target <adapter>] [--targets single|auto] [--mode auto|code|publish] [--phase code|full]',
-    '               [--track auto|beta|stable] [--promote-stable] [--yes] [--dry-run]',
+    '               [--track auto|beta|stable] [--cleanup|--no-cleanup] [--promote-stable] [--yes] [--dry-run]',
     '    Orchestrate end-to-end release flow (PRs, checks, merge, npm validation).',
     '',
     '  ship task status --id <taskId> [--json]',
@@ -658,20 +659,20 @@ function parseReleaseCycleArgs(argv) {
     npmPackages: [],
     updatePrDescription: false,
     draft: false,
-    autoMerge: true,
-    watchChecks: true,
-    checkTimeout: 30,
-    confirmMerges: false,
-    syncBase: 'auto',
-    resume: true,
-    mergeWhenGreen: true,
-    mergeMethod: 'merge',
-    waitReleasePr: true,
-    releasePrTimeout: 30,
-    mergeReleasePr: true,
-    verifyNpm: true,
-    confirmCleanup: false,
-    noCleanup: false,
+    autoMerge: undefined,
+    watchChecks: undefined,
+    checkTimeout: undefined,
+    confirmMerges: undefined,
+    syncBase: undefined,
+    resume: undefined,
+    mergeWhenGreen: undefined,
+    mergeMethod: undefined,
+    waitReleasePr: undefined,
+    releasePrTimeout: undefined,
+    mergeReleasePr: undefined,
+    verifyNpm: undefined,
+    confirmCleanup: undefined,
+    cleanup: undefined,
     yes: false,
     dryRun: false
   };
@@ -854,8 +855,13 @@ function parseReleaseCycleArgs(argv) {
       continue;
     }
 
+    if (token === '--cleanup') {
+      args.cleanup = true;
+      continue;
+    }
+
     if (token === '--no-cleanup') {
-      args.noCleanup = true;
+      args.cleanup = false;
       continue;
     }
 
@@ -897,19 +903,19 @@ function parseReleaseCycleArgs(argv) {
     throw new Error('Invalid --promote-type value. Expected patch, minor, or major.');
   }
 
-  if (!['auto', 'rebase', 'merge', 'off'].includes(args.syncBase)) {
+  if (args.syncBase !== undefined && !['auto', 'rebase', 'merge', 'off'].includes(args.syncBase)) {
     throw new Error('Invalid --sync-base value. Expected auto, rebase, merge, or off.');
   }
 
-  if (!['squash', 'merge', 'rebase'].includes(args.mergeMethod)) {
+  if (args.mergeMethod !== undefined && !['squash', 'merge', 'rebase'].includes(args.mergeMethod)) {
     throw new Error('Invalid --merge-method value. Expected squash, merge, or rebase.');
   }
 
-  if (!Number.isFinite(args.checkTimeout) || args.checkTimeout <= 0) {
+  if (args.checkTimeout !== undefined && (!Number.isFinite(args.checkTimeout) || args.checkTimeout <= 0)) {
     throw new Error('Invalid --check-timeout value. Expected a positive number (minutes).');
   }
 
-  if (!Number.isFinite(args.releasePrTimeout) || args.releasePrTimeout <= 0) {
+  if (args.releasePrTimeout !== undefined && (!Number.isFinite(args.releasePrTimeout) || args.releasePrTimeout <= 0)) {
     throw new Error('Invalid --release-pr-timeout value. Expected a positive number (minutes).');
   }
 
@@ -1696,18 +1702,37 @@ function loadShipConfig(cwd = process.cwd()) {
     releaseTargets: [],
     releasePolicy: {
       stopOnError: true
+    },
+    defaults: {
+      autoMerge: true,
+      watchChecks: true,
+      checkTimeout: 30,
+      confirmMerges: false,
+      syncBase: 'auto',
+      resume: true,
+      mergeWhenGreen: true,
+      mergeMethod: 'merge',
+      waitReleasePr: true,
+      releasePrTimeout: 30,
+      mergeReleasePr: true,
+      verifyNpm: true,
+      confirmCleanup: false,
+      cleanup: true
     }
   };
-  const configPath = path.join(cwd, '.ship.json');
-  if (!fs.existsSync(configPath)) {
-    return defaultConfig;
-  }
+  const sources = [
+    resolveGlobalShipConfigPath(),
+    path.join(cwd, '.ship.json'),
+    path.join(cwd, '.ship.local.json')
+  ];
 
-  const parsed = readJsonFile(configPath);
-  return {
-    ...defaultConfig,
-    ...parsed
-  };
+  return sources.reduce((current, sourcePath) => {
+    if (!fs.existsSync(sourcePath)) {
+      return current;
+    }
+
+    return mergeConfigObjects(current, readJsonFile(sourcePath));
+  }, defaultConfig);
 }
 
 function validateShipConfig(config = {}) {
@@ -1734,9 +1759,17 @@ function validateShipConfig(config = {}) {
     }
   }
 
+  if (config.defaults !== undefined) {
+    if (!config.defaults || typeof config.defaults !== 'object' || Array.isArray(config.defaults)) {
+      errors.push('"defaults" must be an object when provided.');
+    } else {
+      validateShipDefaults(config.defaults, errors);
+    }
+  }
+
   if (adapter !== 'firebase' && !includesFirebaseTarget) {
     if (errors.length > 0) {
-      throw new Error(`Invalid .ship.json:\n- ${errors.join('\n- ')}`);
+      throw new Error(`Invalid ship config:\n- ${errors.join('\n- ')}`);
     }
     return;
   }
@@ -1774,8 +1807,90 @@ function validateShipConfig(config = {}) {
   }
 
   if (errors.length > 0) {
-    throw new Error(`Invalid .ship.json:\n- ${errors.join('\n- ')}`);
+    throw new Error(`Invalid ship config:\n- ${errors.join('\n- ')}`);
   }
+}
+
+function resolveGlobalShipConfigPath() {
+  const configHome = process.env.XDG_CONFIG_HOME
+    ? path.resolve(process.env.XDG_CONFIG_HOME)
+    : path.join(os.homedir(), '.config');
+  return path.join(configHome, 'ship', 'config.json');
+}
+
+function mergeConfigObjects(baseValue, overrideValue) {
+  if (Array.isArray(baseValue) || Array.isArray(overrideValue)) {
+    return Array.isArray(overrideValue) ? [...overrideValue] : overrideValue;
+  }
+
+  if (!baseValue || typeof baseValue !== 'object' || !overrideValue || typeof overrideValue !== 'object') {
+    return overrideValue === undefined ? baseValue : overrideValue;
+  }
+
+  const merged = { ...baseValue };
+  for (const [key, value] of Object.entries(overrideValue)) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && baseValue[key] && typeof baseValue[key] === 'object' && !Array.isArray(baseValue[key])) {
+      merged[key] = mergeConfigObjects(baseValue[key], value);
+    } else {
+      merged[key] = Array.isArray(value) ? [...value] : value;
+    }
+  }
+  return merged;
+}
+
+function validateShipDefaults(defaults = {}, errors = []) {
+  const booleanKeys = ['autoMerge', 'watchChecks', 'confirmMerges', 'resume', 'mergeWhenGreen', 'waitReleasePr', 'mergeReleasePr', 'verifyNpm', 'confirmCleanup', 'cleanup'];
+  for (const key of booleanKeys) {
+    if (defaults[key] !== undefined && typeof defaults[key] !== 'boolean') {
+      errors.push(`"defaults.${key}" must be boolean when provided.`);
+    }
+  }
+
+  const numberKeys = ['checkTimeout', 'releasePrTimeout'];
+  for (const key of numberKeys) {
+    if (defaults[key] !== undefined && (!Number.isFinite(defaults[key]) || defaults[key] <= 0)) {
+      errors.push(`"defaults.${key}" must be a positive number when provided.`);
+    }
+  }
+
+  if (defaults.syncBase !== undefined && !['auto', 'rebase', 'merge', 'off'].includes(defaults.syncBase)) {
+    errors.push('"defaults.syncBase" must be one of: auto, rebase, merge, off.');
+  }
+
+  if (defaults.mergeMethod !== undefined && !['squash', 'merge', 'rebase'].includes(defaults.mergeMethod)) {
+    errors.push('"defaults.mergeMethod" must be one of: squash, merge, rebase.');
+  }
+
+  return errors;
+}
+
+function applyReleaseArgDefaults(args = {}, config = {}) {
+  const configDefaults = config.defaults || {};
+  const builtinDefaults = {
+    autoMerge: true,
+    watchChecks: true,
+    checkTimeout: 30,
+    confirmMerges: false,
+    syncBase: 'auto',
+    resume: true,
+    mergeWhenGreen: true,
+    mergeMethod: 'merge',
+    waitReleasePr: true,
+    releasePrTimeout: 30,
+    mergeReleasePr: true,
+    verifyNpm: true,
+    confirmCleanup: false,
+    cleanup: true
+  };
+
+  const resolved = { ...args };
+  for (const [key, fallbackValue] of Object.entries(builtinDefaults)) {
+    if (resolved[key] === undefined) {
+      resolved[key] = configDefaults[key] !== undefined ? configDefaults[key] : fallbackValue;
+    }
+  }
+
+  return resolved;
 }
 
 function resolveReleaseAdapterName(args = {}, config = {}, warn = () => {}) {
@@ -1841,7 +1956,7 @@ async function runReleaseByTargets(args, config = {}, dependencies = {}, options
   for (const target of targets) {
     const adapter = resolveAdapterByName(target);
     const releaseArgs = {
-      ...args,
+      ...applyReleaseArgDefaults(args, config),
       target
     };
 
@@ -3665,7 +3780,7 @@ function runLocalCleanup({
   if (!shouldRun) {
     summary.actionsSkipped.push('cleanup');
     summary.cleanup = 'skipped';
-    summary.warnings.push('Local cleanup skipped by configuration (--no-cleanup).');
+    summary.warnings.push('Local cleanup skipped by configuration.');
     return;
   }
 
@@ -4628,6 +4743,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
       && isHeadIntegratedIntoBase('HEAD', effectiveReleaseContext.targetBaseBranch, deps);
 
     let codePr = null;
+    let codeMergeSatisfied = false;
     if (canResumeFromMergedCode) {
       summary.prAction = 'skipped (resume: code already merged)';
       summary.prUrl = 'n/a';
@@ -4637,6 +4753,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
       summary.merge = 'skipped (resume: already merged)';
       summary.actionsPerformed.push(`resume detected: ${gitContext.head} already integrated into ${DEFAULT_BETA_BRANCH}`);
       summary.actionsSkipped.push('open/update code pr (resume)');
+      codeMergeSatisfied = true;
     } else {
       if (!args.promoteStable && gitContext.head !== DEFAULT_BETA_BRANCH && !gitContext.head.startsWith('changeset-release/')) {
         syncBranchWithBase({
@@ -4704,6 +4821,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
           markTaskMerged(args.taskId, mergeCommit, config, process.cwd(), { dryRun: args.dryRun });
         }
         summary.merge = `code pr merged (#${codePr.number})`;
+        codeMergeSatisfied = true;
       } else {
         summary.merge = args.dryRun ? 'dry-run: would merge code PR' : 'skipped';
         summary.actionsSkipped.push('merge code pr');
@@ -4713,10 +4831,26 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
     if (effectivePhase === 'code') {
       summary.releasePr = 'skipped (phase=code)';
       summary.npmValidation = 'skipped (phase=code)';
-      summary.cleanup = 'skipped (phase=code; requires npm validation)';
       summary.actionsSkipped.push('wait release pr (phase=code)');
       summary.actionsSkipped.push('verify npm (phase=code)');
-      summary.actionsSkipped.push('cleanup (phase=code)');
+      if (!args.dryRun && codeMergeSatisfied) {
+        if (args.confirmCleanup && !args.yes) {
+          await confirmOrThrow('Code PR flow completed and the branch is already merged.\nProceed with local cleanup now?');
+        }
+        runLocalCleanup({
+          deps,
+          originalBranch,
+          targetBaseBranch: effectiveReleaseContext.targetBaseBranch,
+          shouldRun: args.cleanup,
+          summary,
+          reporter
+        });
+      } else if (args.dryRun) {
+        summary.cleanup = 'skipped (dry-run)';
+      } else {
+        summary.actionsSkipped.push('cleanup (code phase merge not completed)');
+        summary.cleanup = 'skipped (requires code PR merge)';
+      }
       printOrchestrationSummary(`release completed in ${detectedMode} mode`, summary);
       return;
     }
@@ -4864,7 +4998,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
         deps,
         originalBranch,
         targetBaseBranch: effectiveReleaseContext.targetBaseBranch,
-        shouldRun: !args.noCleanup,
+        shouldRun: args.cleanup,
         summary,
         reporter
       });
@@ -5025,7 +5159,7 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
         deps,
         originalBranch,
         targetBaseBranch: effectivePublishTrack === 'stable' ? DEFAULT_BASE_BRANCH : DEFAULT_BETA_BRANCH,
-        shouldRun: !args.noCleanup,
+        shouldRun: args.cleanup,
         summary,
         reporter
       });
@@ -6414,7 +6548,7 @@ async function run(argv, dependencies = {}) {
   }
 
   if (parsed.mode === 'release') {
-    await runReleaseByTargets(parsed.args, config, dependencies, {
+    await runReleaseByTargets(applyReleaseArgDefaults(parsed.args, config), config, dependencies, {
       resolveAdapterByName: (name) => resolveConfiguredAdapter(name),
       runReleaseForTarget: (releaseArgs, adapter) => runReleaseCycleCore(releaseArgs, adapter, dependencies, config)
     });

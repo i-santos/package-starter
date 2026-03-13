@@ -212,6 +212,7 @@ test('init appends missing template entries to existing .gitignore', async () =>
   assert.match(gitignore, /node_modules\//);
   assert.match(gitignore, /dist\//);
   assert.match(gitignore, /\.env/);
+  assert.match(gitignore, /\.ship\.local\.json/);
 });
 
 test('init --cleanup-legacy-release removes legacy release scripts only when requested', async () => {
