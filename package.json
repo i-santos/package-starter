@@ -1,18 +1,18 @@
 {
-  "name": "ship-monorepo",
+  "name": "navy",
   "private": true,
   "version": "0.0.0",
-  "description": "Monorepo for ship, agent, and adapters",
+  "description": "Monorepo for the navy product development ecosystem",
   "license": "MIT",
   "workspaces": [
     "packages/*"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
-    "test": "npm run test -w @i-santos/ship && npm run test -w @i-santos/agent",
-    "check": "npm run check -w @i-santos/ship && npm run check -w @i-santos/agent",
+    "test": "npm run test -w @i-santos/workflow && npm run test -w @i-santos/admiral && npm run test -w @i-santos/ship",
+    "check": "npm run check -w @i-santos/workflow && npm run check -w @i-santos/admiral && npm run check -w @i-santos/ship",
     "changeset": "changeset",
     "version-packages": "changeset version",
     "release": "npm run check && changeset publish",

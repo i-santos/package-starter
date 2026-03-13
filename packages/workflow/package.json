@@ -1,26 +1,25 @@
 {
-  "name": "@i-santos/agent",
+  "name": "@i-santos/workflow",
   "version": "0.1.0-beta.1",
-  "description": "Deterministic task lifecycle engine for ship",
+  "description": "Deterministic task lifecycle engine for navy products",
   "license": "MIT",
   "author": "Igor Santos",
-  "homepage": "https://github.com/i-santos/ship#readme",
+  "homepage": "https://github.com/i-santos/navy#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/i-santos/ship.git",
-    "directory": "packages/agent"
+    "url": "git+https://github.com/i-santos/navy.git",
+    "directory": "packages/workflow"
   },
   "bugs": {
-    "url": "https://github.com/i-santos/ship/issues"
+    "url": "https://github.com/i-santos/navy/issues"
   },
   "keywords": [
-    "agent",
-    "fsm",
     "workflow",
+    "fsm",
     "tasks"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "publishConfig": {
     "access": "public"

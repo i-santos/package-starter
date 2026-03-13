@@ -5,6 +5,35 @@ const os = require('node:os');
 const path = require('node:path');
 const { run, renderPrBodyDeterministic } = require('../lib/run');
 
+function writeAdmiralTaskGraph(workDir, task) {
+  fs.mkdirSync(path.join(workDir, '.admiral'), { recursive: true });
+  fs.mkdirSync(path.join(workDir, 'kanban'), { recursive: true });
+  fs.writeFileSync(
+    path.join(workDir, 'kanban', 'graph.json'),
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        {
+          id: task.taskId,
+          title: task.title || task.taskId,
+          scope: 'general',
+          status: 'todo',
+          priority: 1,
+          depends_on: [],
+          agent: null,
+          branch: task.branch || null,
+          workspace: task.workspace || null,
+          retries: 0,
+          hooks: {},
+          metadata: {
+            workflow: task
+          }
+        }
+      ]
+    }, null, 2)
+  );
+}
+
 function createExecStub(handlers) {
   const calls = [];
 
@@ -133,11 +162,7 @@ test('open-pr links PR to task when --task-id is provided', async () => {
   const previousCwd = process.cwd();
   process.chdir(workDir);
   try {
-    fs.mkdirSync(path.join(workDir, '.agents', 'state', 'tasks'), { recursive: true });
-    fs.writeFileSync(
-      path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000001.json'),
-      JSON.stringify({ taskId: 'tsk_20260303_000001', status: 'publish_ready' }, null, 2)
-    );
+    writeAdmiralTaskGraph(workDir, { taskId: 'tsk_20260303_000001', status: 'publish_ready' });
 
     const stub = createExecStub([
       ...baseHandlers(),
@@ -159,12 +184,9 @@ test('open-pr links PR to task when --task-id is provided', async () => {
 
     await run(['open-pr', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000001', '--yes'], { exec: stub.exec });
 
-    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000001.json');
-    const updated = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
-    assert.equal(updated.release.prNumber, 55);
-
-    const opsLog = fs.readFileSync(path.join(workDir, '.agents', 'state', 'ops.log'), 'utf8');
-    assert.match(opsLog, /"action":"task.link-pr"/);
+    const graph = JSON.parse(fs.readFileSync(path.join(workDir, 'kanban', 'graph.json'), 'utf8'));
+    const updated = graph.tasks.find((task) => task.id === 'tsk_20260303_000001');
+    assert.equal(updated.metadata.workflow.release.prNumber, 55);
   } finally {
     process.chdir(previousCwd);
   }
@@ -257,11 +279,7 @@ test('release marks task merged and released when --task-id is provided', async 
   const previousCwd = process.cwd();
   process.chdir(workDir);
   try {
-    fs.mkdirSync(path.join(workDir, '.agents', 'state', 'tasks'), { recursive: true });
-    fs.writeFileSync(
-      path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000002.json'),
-      JSON.stringify({ taskId: 'tsk_20260303_000002', status: 'publish_ready', release: { prNumber: 98 } }, null, 2)
-    );
+    writeAdmiralTaskGraph(workDir, { taskId: 'tsk_20260303_000002', status: 'publish_ready', release: { prNumber: 98 } });
 
     const stub = createExecStub([
       ...baseHandlers(),
@@ -301,14 +319,10 @@ test('release marks task merged and released when --task-id is provided', async 
 
     await run(['release', '--repo', 'i-santos/firestack', '--task-id', 'tsk_20260303_000002', '--yes', '--check-timeout', '0.05', '--release-pr-timeout', '0.05'], { exec: stub.exec });
 
-    const taskPath = path.join(workDir, '.agents', 'state', 'tasks', 'tsk_20260303_000002.json');
-    const updated = JSON.parse(fs.readFileSync(taskPath, 'utf8'));
-    assert.equal(updated.release.mergeCommit, 'abc123merge');
-    assert.equal(updated.release.published, true);
-
-    const opsLog = fs.readFileSync(path.join(workDir, '.agents', 'state', 'ops.log'), 'utf8');
-    assert.match(opsLog, /"action":"task.merged"/);
-    assert.match(opsLog, /"action":"task.released"/);
+    const graph = JSON.parse(fs.readFileSync(path.join(workDir, 'kanban', 'graph.json'), 'utf8'));
+    const updated = graph.tasks.find((task) => task.id === 'tsk_20260303_000002');
+    assert.equal(updated.metadata.workflow.release.mergeCommit, 'abc123merge');
+    assert.equal(updated.metadata.workflow.release.published, true);
   } finally {
     process.chdir(previousCwd);
   }

@@ -33,6 +33,8 @@ Think about `ship` in 4 phases:
 
 `release` is the core operational command. It coordinates PR flow, checks, merges, and npm validation.
 
+Inside `navy`, `ship` is expected to run after `admiral` has already created and advanced the task lifecycle.
+
 ## Recommended Workflow (Minimal Flags)
 
 ### 1. Bootstrap once
@@ -61,6 +63,19 @@ From `release/beta`:
 
 ```bash
 ship release --promote-stable --promote-type patch --yes
+```
+
+## Recommended Workflow In Navy
+
+```bash
+admiral task create backend-auth --scope backend
+admiral task plan backend-auth
+admiral task tdd backend-auth
+admiral task implement backend-auth
+admiral task verify backend-auth
+admiral task publish-ready backend-auth
+ship open-pr --task-id backend-auth --yes
+ship release --task-id backend-auth --yes
 ```
 
 ## CLI Reference
@@ -217,15 +232,10 @@ Main flags:
 
 ## `ship task`
 
-Task lifecycle entrypoint (v1 bootstrap).
+Task lifecycle compatibility entrypoint.
 
-Current implemented actions:
+Current compatibility actions:
 
-- `ship task new --type <feature|fix|chore|refactor|test> --title <text>`
-- `ship task plan --id <taskId>`
-- `ship task implement --id <taskId>`
-- `ship task verify --id <taskId>`
-- `ship task publish-ready --id <taskId>`
 - `ship task status --id <taskId>`
 - `ship task doctor`
 
@@ -238,8 +248,21 @@ Common flags:
 
 State files are managed under:
 
-- `.agents/state/tasks/*.json`
-- `.agents/state/ops.log`
+- `kanban/graph.json` task records with `metadata.workflow`
+- `.admiral/config.json` and related admiral runtime files
+
+`ship task` is deprecated. Mutating task lifecycle commands were removed from `ship`. The canonical task flow is owned by `admiral`:
+
+- `admiral task create`
+- `admiral task plan`
+- `admiral task tdd`
+- `admiral task implement`
+- `admiral task verify`
+- `admiral task publish-ready`
+- `admiral run`
+- `admiral status`
+
+`ship` still accepts `--task-id` on delivery and release commands and links release metadata to the admiral task record.
 
 ## Agent-Focused Non-Interactive Usage
 
