@@ -75,7 +75,7 @@ Merge strategy behavior:
 Phase behavior:
 
 - `--phase full` (default): code PR + release PR + npm validation + cleanup
-- `--phase code`: stops after code PR merge into `release/beta`
+- `--phase code`: stops after code PR merge into `release/beta` and can clean up locally when enabled
 - default branch sync before code PR: `--sync-base auto` (rebase onto `origin/release/beta` when behind)
 - resume behavior (default): if code branch is already integrated into `release/beta`, cycle skips code PR and continues release phase (`--no-resume` disables this)
 
@@ -93,13 +93,14 @@ Post-merge checks:
 - release validates npm publish using `npm view`:
   - expected version
   - expected dist-tag (`beta` for beta track, `latest` for stable track)
-- cleanup runs by default after success:
-- cleanup only runs when npm validation passed
+- cleanup can be controlled explicitly with `--cleanup` / `--no-cleanup`
+- cleanup defaults can be configured via `~/.config/ship/config.json`, `.ship.json`, or `.ship.local.json`
+- `--phase full`: cleanup runs after post-merge npm validation passes
+- `--phase code`: cleanup runs after the code branch is confirmed merged
   - checkout base branch
   - pull latest
   - delete local feature branch
   - optional confirmation with `--confirm-cleanup`
-  - disable with `--no-cleanup`
 
 ## Team-safe behavior
 

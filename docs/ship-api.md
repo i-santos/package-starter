@@ -173,6 +173,7 @@ Main flags:
 - `--merge-release-pr`
 - `--verify-npm`
 - `--confirm-cleanup`
+- `--cleanup`
 - `--sync-base <auto|rebase|merge|off>`
 - `--no-resume`
 - `--no-cleanup`
@@ -186,7 +187,7 @@ Operational behavior:
 - Waits for release PR (`changeset-release/*`) when needed
 - Watches checks and merge readiness
 - Validates npm publication and dist-tags
-- Performs local cleanup after successful flow
+- Performs local cleanup after successful phase when enabled
 - With `--targets auto`, executes all configured `releaseTargets` in order
 - `releasePolicy.stopOnError=true` stops on first target failure (default)
 - `releasePolicy.stopOnError=false` continues remaining targets and fails at end if any target failed
@@ -256,9 +257,21 @@ ship release --repo owner/repo --yes
 ship release --repo owner/repo --targets auto --yes
 ```
 
-## `.ship.json` Configuration
+## Ship Configuration
 
-Optional local config file at repository root:
+`ship` loads configuration in this order:
+
+1. global user config: `~/.config/ship/config.json` (or `$XDG_CONFIG_HOME/ship/config.json`)
+2. repository config: `.ship.json`
+3. repository-local user override: `.ship.local.json`
+4. CLI flags
+
+Recommended usage:
+
+- track `.ship.json` in git for project/team defaults
+- ignore `.ship.local.json` for per-developer overrides in a specific clone
+
+Example repository config:
 
 ```json
 {
@@ -267,6 +280,12 @@ Optional local config file at repository root:
   "releaseTargets": ["npm"],
   "releasePolicy": {
     "stopOnError": true
+  },
+  "defaults": {
+    "autoMerge": true,
+    "watchChecks": true,
+    "mergeMethod": "merge",
+    "cleanup": true
   },
   "baseBranch": "main",
   "betaBranch": "release/beta",
@@ -313,6 +332,23 @@ External adapters can be loaded from local path via `adapterModule` and selected
 `adapterModule` path is resolved relative to current working directory.
 
 For hybrid repositories (for example, npm package + app deploy), configure target priority with `releaseTargets` and select explicitly with `ship release --target <adapter>`.
+
+`defaults` can define operational preferences for `ship release`, including:
+
+- `autoMerge`
+- `watchChecks`
+- `checkTimeout`
+- `confirmMerges`
+- `syncBase`
+- `resume`
+- `mergeWhenGreen`
+- `mergeMethod`
+- `waitReleasePr`
+- `releasePrTimeout`
+- `mergeReleasePr`
+- `verifyNpm`
+- `confirmCleanup`
+- `cleanup`
 
 If you want to execute all targets in sequence, use:
 
