@@ -223,12 +223,15 @@ const npmAdapter = {
       };
     }
 
+    const workflowOutcome = classifyWorkflowOutcome(releaseCandidate, validation.observations);
+
     return {
       pass: true,
       expectedTag: releaseContext.expectedTag,
       targets,
       releaseCandidate,
-      observations: validation.observations
+      observations: validation.observations,
+      workflowOutcome
     };
   },
 
@@ -244,3 +247,52 @@ const npmAdapter = {
 module.exports = {
   npmAdapter
 };
+
+function classifyWorkflowOutcome(releaseCandidate, observations = {}) {
+  if (!releaseCandidate || releaseCandidate.type !== 'direct_publish') {
+    return null;
+  }
+
+  const entries = Object.values(observations || {});
+  if (!entries.length) {
+    return {
+      kind: 'workflow_only',
+      releasePrStatus: 'skipped (workflow path)',
+      message: 'No release PR created; successful release workflow detected.'
+    };
+  }
+
+  const tagMatches = entries.filter((entry) => entry.matchReason === 'tag_match').length;
+  const prereleaseFallbacks = entries.filter((entry) => entry.matchReason === 'prerelease_fallback').length;
+  const stableFallbacks = entries.filter((entry) => entry.matchReason === 'stable_latest_fallback').length;
+
+  if (stableFallbacks === entries.length) {
+    return {
+      kind: 'noop',
+      releasePrStatus: 'skipped (no-op workflow)',
+      message: 'No release PR created; release workflow finished without publishing new package versions.'
+    };
+  }
+
+  if (tagMatches === entries.length) {
+    return {
+      kind: 'direct_publish',
+      releasePrStatus: 'skipped (direct publish workflow)',
+      message: 'No release PR created; release workflow published package versions directly.'
+    };
+  }
+
+  if (tagMatches + prereleaseFallbacks === entries.length) {
+    return {
+      kind: 'direct_publish_without_tag',
+      releasePrStatus: 'skipped (direct publish workflow)',
+      message: 'No release PR created; release workflow published package versions directly, but the dist-tag was not observed during validation.'
+    };
+  }
+
+  return {
+    kind: 'mixed',
+    releasePrStatus: 'skipped (mixed workflow outcome)',
+    message: 'No release PR created; release workflow published some packages while others were already up to date.'
+  };
+}

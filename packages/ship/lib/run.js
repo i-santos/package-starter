@@ -3424,6 +3424,14 @@ function validateNpmPublishedPackages(packageTargets, expectedTag, timeoutMinute
         && !String(target.version).includes('-');
       const tagMatches = observedTagVersion === target.version || prereleaseFallbackMatches || stableLatestFallbackMatches;
       const passed = versionMatches && tagMatches;
+      let matchReason = '';
+      if (observedTagVersion === target.version) {
+        matchReason = 'tag_match';
+      } else if (prereleaseFallbackMatches) {
+        matchReason = 'prerelease_fallback';
+      } else if (stableLatestFallbackMatches) {
+        matchReason = 'stable_latest_fallback';
+      }
       if (!passed) {
         allPass = false;
       }
@@ -3433,6 +3441,7 @@ function validateNpmPublishedPackages(packageTargets, expectedTag, timeoutMinute
         expectedVersion: target.version,
         observedVersion,
         observedTagVersion,
+        matchReason,
         passed
       };
     }
@@ -4792,9 +4801,9 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
             summary.actionsSkipped.push('merge release pr');
           }
         } else {
-          reporter.ok('release-wait-release-pr', 'No release PR created; detected successful direct publish workflow.');
-          summary.releasePr = 'skipped (direct publish)';
-          summary.actionsPerformed.push('direct publish detected: no release PR required');
+          reporter.ok('release-wait-release-pr', 'No release PR created; successful release workflow detected.');
+          summary.releasePr = 'skipped (workflow path)';
+          summary.actionsPerformed.push('release workflow detected: no release PR required');
         }
       }
     } else {
@@ -4829,6 +4838,11 @@ async function runReleaseCycle(args, dependencies = {}, adapter = npmAdapter, co
       reporter.ok('release-verify-post-merge', `${targets.length} package(s) validated on tag ${effectiveReleaseContext.expectedTag}.`);
       summary.actionsPerformed.push(`npm validation: ${targets.map((pkg) => `${pkg.name}@${pkg.version}`).join(', ')} (${effectiveReleaseContext.expectedTag})`);
       summary.npmValidation = `pass (${effectiveReleaseContext.expectedTag} -> ${targets.map((pkg) => pkg.version).join(', ')})`;
+      if (verification.workflowOutcome && verification.workflowOutcome.message) {
+        reporter.ok('release-workflow-outcome', verification.workflowOutcome.message);
+        summary.releasePr = verification.workflowOutcome.releasePrStatus || summary.releasePr;
+        summary.actionsPerformed.push(verification.workflowOutcome.message);
+      }
       verificationPassed = true;
     } else if (!args.verifyNpm) {
       summary.actionsSkipped.push('verify post-merge');
