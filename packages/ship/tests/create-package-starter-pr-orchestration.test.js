@@ -1028,6 +1028,90 @@ test('release handles direct publish path when no release PR is created', async 
   ], { exec: stub.exec });
 });
 
+test('release treats stable latest as satisfied when beta tag is absent and no changeset was produced', async () => {
+  let listCall = 0;
+  const stub = createExecStub([
+    ...baseHandlers(),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args[1] === '--abbrev-ref' ? { status: 0, stdout: 'feat/no-changeset\n' } : null),
+    (command, args) => (command === 'git' && args[0] === 'rev-parse' && args.includes('@{u}') ? { status: 1, stderr: 'no upstream' } : null),
+    (command, args) => (command === 'git' && args[0] === 'push' ? { status: 0, stdout: 'ok' } : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'pr' && args[1] === 'list') {
+        listCall += 1;
+        if (listCall === 1) {
+          return { status: 0, stdout: '[]' };
+        }
+        if (listCall === 2) {
+          return {
+            status: 0,
+            stdout: JSON.stringify([{
+              number: 701,
+              url: 'https://github.com/i-santos/firestack/pull/701',
+              headRefName: 'feat/no-changeset',
+              baseRefName: 'release/beta'
+            }])
+          };
+        }
+
+        return { status: 0, stdout: '[]' };
+      }
+      return null;
+    },
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'create'
+      ? { status: 0, stdout: 'https://github.com/i-santos/firestack/pull/701\n' }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'view'
+      ? { status: 0, stdout: JSON.stringify({ statusCheckRollup: [], state: 'MERGED', mergedAt: '2026-03-01T00:00:00Z' }) }
+      : null),
+    (command, args) => (command === 'gh' && args[0] === 'pr' && args[1] === 'merge'
+      ? { status: 0, stdout: 'merged' }
+      : null),
+    (command, args) => {
+      if (command === 'gh' && args[0] === 'run' && args[1] === 'list') {
+        return {
+          status: 0,
+          stdout: JSON.stringify([{
+            databaseId: 124,
+            workflowName: 'Release',
+            status: 'completed',
+            conclusion: 'success',
+            url: 'https://github.com/i-santos/firestack/actions/runs/124',
+            updatedAt: '2999-01-01T00:00:00Z',
+            createdAt: '2999-01-01T00:00:00Z',
+            event: 'push'
+          }])
+        };
+      }
+
+      if (command === 'gh' && args[0] === 'api' && args[2] === 'GET' && String(args[3]).includes('/contents/package.json?ref=release%2Fbeta')) {
+        const encoded = Buffer.from(JSON.stringify({ name: '@i-santos/ship', version: '0.1.0' }), 'utf8').toString('base64');
+        return { status: 0, stdout: JSON.stringify({ content: encoded }) };
+      }
+
+      return null;
+    },
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/ship' && args[2] === 'version'
+      ? { status: 0, stdout: '"0.1.0"\n' }
+      : null),
+    (command, args) => (command === 'npm' && args[0] === 'view' && args[1] === '@i-santos/ship' && args[2] === 'dist-tags'
+      ? { status: 0, stdout: '{"latest":"0.1.0"}\n' }
+      : null),
+    (command, args) => (command === 'git' && args[0] === 'status' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'checkout' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'pull' ? { status: 0, stdout: '' } : null),
+    (command, args) => (command === 'git' && args[0] === 'branch' && args[1] === '-d' ? { status: 0, stdout: 'deleted' } : null)
+  ]);
+
+  await run([
+    'release',
+    '--repo', 'i-santos/firestack',
+    '--yes',
+    '--phase', 'full',
+    '--check-timeout', '0.05',
+    '--release-pr-timeout', '0.05'
+  ], { exec: stub.exec });
+});
+
 test('release with firebase adapter succeeds via deploy workflow direct publish', async () => {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-release-firebase-success-'));
   const previousCwd = process.cwd();
