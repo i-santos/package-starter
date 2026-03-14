@@ -4,15 +4,15 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const os = require("node:os");
 const path = require("node:path");
-const { mkdtemp, readFile, writeFile } = require("node:fs/promises");
-const { spawn } = require("node:child_process");
+const { mkdtemp, mkdir, readFile, writeFile } = require("node:fs/promises");
 const { execFile } = require("../lib/utils/process");
 const { main } = require("../lib/cli");
 const packageJson = require("../package.json");
+const { loadProject, withGraphMutation } = require("../lib/core/project");
+const { runRecovery } = require("../lib/core/recovery");
 
 const CLI_PATH = path.join(__dirname, "..", "bin", "admiral");
 const serialTest = (name, fn) => test(name, { concurrency: false }, fn);
-const HANGING_AGENT_COMMAND = "node -e \"setInterval(() => {}, 1000)\"";
 
 async function createTempRepo() {
   const repoDir = await mkdtemp(path.join(os.tmpdir(), "admiral-test-"));
@@ -100,54 +100,17 @@ async function waitForTask(repoDir, taskId, predicate, options = {}) {
   });
 }
 
-async function waitForJsonFile(filePath, options = {}) {
-  return waitForCondition(async () => {
-    try {
-      return JSON.parse(await readFile(filePath, "utf8"));
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return false;
-      }
-      throw error;
-    }
-  }, {
-    timeoutMs: options.timeoutMs,
-    intervalMs: options.intervalMs,
-    message: options.message || `Timed out waiting for ${filePath}.`,
-  });
-}
-
-async function waitForProcessExit(pid, options = {}) {
-  return waitForCondition(() => {
-    try {
-      process.kill(pid, 0);
-      return false;
-    } catch (error) {
-      if (error.code === "ESRCH") {
-        return true;
-      }
-      throw error;
-    }
-  }, {
-    timeoutMs: options.timeoutMs || 2000,
-    intervalMs: options.intervalMs || 25,
-    message: options.message || `Timed out waiting for process ${pid} to exit.`,
-  });
-}
-
 async function captureCliOutput(args, cwd) {
   const lines = [];
-  const originalLog = console.log;
   const originalCwd = process.cwd();
-  console.log = (...parts) => {
-    lines.push(parts.join(" "));
-  };
   process.chdir(cwd);
   try {
-    await main(args);
+    await main(args, {
+      stdout: (line) => lines.push(String(line)),
+      stderr: (line) => lines.push(String(line)),
+    });
   } finally {
     process.chdir(originalCwd);
-    console.log = originalLog;
   }
   return lines.join("\n");
 }
@@ -562,43 +525,54 @@ serialTest("verified stage can request rework and return workflow to implemented
 serialTest("recovery retries a dead running task", async () => {
   const repoDir = await createTempRepo();
   await runCli(["init"], repoDir);
-
-  const configPath = path.join(repoDir, ".admiral", "config.json");
-  const config = JSON.parse(await readFile(configPath, "utf8"));
-  config.heartbeat_timeout_ms = 800;
-  config.agent_command = HANGING_AGENT_COMMAND;
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-
   await runCli(["task", "create", "backend-auth"], repoDir);
+  const project = await loadProject(repoDir);
+  project.config.heartbeat_timeout_ms = 800;
 
-  const runProcess = spawn(process.execPath, [CLI_PATH, "run", "--once"], {
-    cwd: repoDir,
-    env: {
-      ...process.env,
-      SHELL: "/bin/sh",
-    },
-    detached: false,
-    stdio: "ignore",
+  const workspace = path.join(repoDir, "workspaces", "backend-auth");
+  await mkdir(workspace, { recursive: true });
+  await writeFile(path.join(workspace, "artifact.txt"), "stale worker\n", "utf8");
+
+  await withGraphMutation(project, (graph) => {
+    const task = graph.tasks.find((item) => item.id === "backend-auth");
+    task.status = "running";
+    task.agent = "agent-backend-auth";
+    task.branch = "backend-auth";
+    task.workspace = workspace;
+    task.metadata = {
+      ...(task.metadata || {}),
+      execution: {
+        ...((task.metadata && task.metadata.execution) || {}),
+        last_status: "running",
+      },
+    };
+    return graph;
   });
-  const pidRecord = await waitForJsonFile(path.join(repoDir, "runtime", "pids", "backend-auth.json"));
-  const heartbeatPath = path.join(repoDir, "runtime", "heartbeats", `${pidRecord.agent}.json`);
-  await waitForJsonFile(heartbeatPath);
-  process.kill(pidRecord.pid, "SIGKILL");
-  runProcess.kill("SIGKILL");
-  await waitForProcessExit(pidRecord.pid);
-  await writeFile(heartbeatPath, `${JSON.stringify({
-    agent: pidRecord.agent,
+
+  await writeFile(path.join(repoDir, "runtime", "pids", "backend-auth.json"), `${JSON.stringify({
+    task_id: "backend-auth",
+    agent: "agent-backend-auth",
+    pid: 43210,
+    started_at: "2026-03-01T00:00:00.000Z",
+  }, null, 2)}\n`, "utf8");
+  await writeFile(path.join(repoDir, "runtime", "heartbeats", "agent-backend-auth.json"), `${JSON.stringify({
+    agent: "agent-backend-auth",
     task_id: "backend-auth",
     status: "running",
     updated_at: "2000-01-01T00:00:00.000Z",
   }, null, 2)}\n`, "utf8");
-  await runCli(["run", "--once"], repoDir);
+
+  await runRecovery(project, {
+    now: () => Date.parse("2026-03-01T00:00:10.000Z"),
+    isProcessAlive: () => false,
+  });
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
-  assert.ok(["todo", "claimed", "running", "review"].includes(task.status));
+  assert.equal(task.status, "todo");
   assert.equal(task.retries, 1);
   assert.equal(task.metadata.execution.last_failure_kind, "stale_agent");
+  await assert.rejects(() => readFile(path.join(workspace, "artifact.txt"), "utf8"), /ENOENT/);
 });
 
 serialTest("failed execution persists contract failure state", async () => {

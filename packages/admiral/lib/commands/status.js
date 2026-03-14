@@ -114,37 +114,42 @@ async function buildStatusPayload(project) {
   };
 }
 
-async function runStatus(flags = {}) {
+function writeLine(io, line = "") {
+  const writer = io && typeof io.stdout === "function" ? io.stdout : console.log;
+  writer(line);
+}
+
+async function runStatus(flags = {}, io = {}) {
   const project = await loadProject(process.cwd());
   const payload = await buildStatusPayload(project);
 
   if (flags.json) {
-    console.log(JSON.stringify({
+    writeLine(io, JSON.stringify({
       ok: true,
       ...payload,
     }, null, 2));
     return;
   }
 
-  console.log("Summary");
+  writeLine(io, "Summary");
   for (const status of ["todo", "claimed", "running", "review", "done", "failed", "blocked", "retry_wait", "cancelled"]) {
     if (payload.summary.counts[status]) {
-      console.log(`- ${status}: ${payload.summary.counts[status]}`);
+      writeLine(io, `- ${status}: ${payload.summary.counts[status]}`);
     }
   }
-  console.log(`- waiting_human: ${payload.summary.waiting_human}`);
-  console.log(`- auto_reenqueued: ${payload.summary.auto_reenqueued}`);
-  console.log(`- manual_interventions: ${payload.summary.manual_interventions}`);
+  writeLine(io, `- waiting_human: ${payload.summary.waiting_human}`);
+  writeLine(io, `- auto_reenqueued: ${payload.summary.auto_reenqueued}`);
+  writeLine(io, `- manual_interventions: ${payload.summary.manual_interventions}`);
 
-  console.log("");
-  console.log("Tasks");
+  writeLine(io, "");
+  writeLine(io, "Tasks");
   if (payload.tasks.length === 0) {
-    console.log("No tasks.");
+    writeLine(io, "No tasks.");
     return;
   }
 
   for (const task of payload.tasks) {
-    console.log([
+    writeLine(io, [
       task.id.padEnd(20, " "),
       task.scheduler_status.padEnd(12, " "),
       task.workflow_status.padEnd(14, " "),
@@ -153,33 +158,33 @@ async function runStatus(flags = {}) {
       String(task.workspace || "-"),
     ].join(" "));
     if (task.summary) {
-      console.log(`  summary: ${task.summary}`);
+      writeLine(io, `  summary: ${task.summary}`);
     }
     if (task.workflow_action) {
-      console.log(`  workflow: ${task.workflow_action} -> ${task.workflow_status}`);
+      writeLine(io, `  workflow: ${task.workflow_action} -> ${task.workflow_status}`);
     }
     if (task.blockers.length > 0) {
-      console.log(`  blockers: ${task.blockers.join(" | ")}`);
+      writeLine(io, `  blockers: ${task.blockers.join(" | ")}`);
     }
     if (task.next_actions.length > 0) {
-      console.log(`  next_actions: ${task.next_actions.join(" | ")}`);
+      writeLine(io, `  next_actions: ${task.next_actions.join(" | ")}`);
     }
     if (task.workflow_reason) {
-      console.log(`  reason: ${task.workflow_reason}`);
+      writeLine(io, `  reason: ${task.workflow_reason}`);
     }
     if (task.recommended_action) {
-      console.log(`  next: ${task.recommended_action}`);
+      writeLine(io, `  next: ${task.recommended_action}`);
     }
     if (task.enqueue_source || task.enqueue_reason) {
-      console.log(`  queue: ${(task.enqueue_source || "-")} | ${task.enqueue_reason || "-"}`);
+      writeLine(io, `  queue: ${(task.enqueue_source || "-")} | ${task.enqueue_reason || "-"}`);
     }
     if (task.recent_activity) {
-      console.log(`  activity: ${task.recent_activity.summary} @ ${task.recent_activity.timestamp}`);
+      writeLine(io, `  activity: ${task.recent_activity.summary} @ ${task.recent_activity.timestamp}`);
     }
   }
 
-  console.log("");
-  console.log(`Active agents: ${payload.summary.active_agents}`);
+  writeLine(io, "");
+  writeLine(io, `Active agents: ${payload.summary.active_agents}`);
 }
 
 module.exports = {
