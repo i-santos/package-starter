@@ -10,6 +10,9 @@ const { main } = require("../lib/cli");
 const packageJson = require("../package.json");
 const { loadProject, withGraphMutation } = require("../lib/core/project");
 const { runRecovery } = require("../lib/core/recovery");
+const { runScheduler } = require("../lib/core/scheduler");
+const { runWorkerForTask } = require("../lib/core/worker");
+const { appendEvent } = require("../lib/core/event-bus");
 
 const CLI_PATH = path.join(__dirname, "..", "bin", "admiral");
 const serialTest = (name, fn) => test(name, { concurrency: false }, fn);
@@ -85,21 +88,6 @@ async function waitForCondition(check, options = {}) {
   throw new Error(options.message || `Timed out after ${timeoutMs}ms waiting for condition.`);
 }
 
-async function waitForTask(repoDir, taskId, predicate, options = {}) {
-  return waitForCondition(async () => {
-    const graph = await readGraph(repoDir);
-    const task = graph.tasks.find((item) => item.id === taskId);
-    if (!task) {
-      return false;
-    }
-    return predicate(task, graph) ? { task, graph } : false;
-  }, {
-    timeoutMs: options.timeoutMs,
-    intervalMs: options.intervalMs,
-    message: options.message || `Timed out waiting for task ${taskId}.`,
-  });
-}
-
 async function captureCliOutput(args, cwd) {
   const lines = [];
   const originalCwd = process.cwd();
@@ -113,6 +101,25 @@ async function captureCliOutput(args, cwd) {
     process.chdir(originalCwd);
   }
   return lines.join("\n");
+}
+
+async function runSchedulerInProcess(repoDir, options = {}) {
+  const project = await loadProject(repoDir);
+  let pidCounter = 9000;
+  await runScheduler(project, { once: true, ...options }, {
+    startTaskWorker: async (liveProject, task) => {
+      const pid = pidCounter;
+      pidCounter += 1;
+      await appendEvent(liveProject, "TASK_STARTED", task.id, task.agent, { pid });
+      await runWorkerForTask(liveProject, task.id, {
+        setRepeatingTimer: () => null,
+        clearRepeatingTimer: () => {},
+        onFailure: () => {},
+      });
+      return pid;
+    },
+    sleep: async () => {},
+  });
 }
 
 serialTest("admiral init creates runtime structure", async () => {
@@ -181,8 +188,7 @@ serialTest("status shows recent activity and operational aggregates", async () =
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
+  await runSchedulerInProcess(repoDir);
 
   const output = await captureCliOutput(["status"], repoDir);
   assert.match(output, /Summary/);
@@ -202,8 +208,7 @@ serialTest("status supports structured json output", async () => {
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
+  await runSchedulerInProcess(repoDir);
 
   const output = await captureCliOutput(["status", "--json"], repoDir);
   const payload = JSON.parse(output);
@@ -229,8 +234,7 @@ serialTest("run can target a specific ready task in assisted mode", async () => 
 
   await runCli(["task", "create", "backend-auth"], repoDir);
   await runCli(["task", "create", "frontend-login"], repoDir);
-  await runCli(["run", "--once", "--task-id", "frontend-login"], repoDir);
-  await waitForTask(repoDir, "frontend-login", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
+  await runSchedulerInProcess(repoDir, { taskId: "frontend-login" });
 
   const graph = JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
   const backend = graph.tasks.find((task) => task.id === "backend-auth");
@@ -314,9 +318,7 @@ serialTest("scheduler automatically re-enqueues the next workflow stage after su
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth", "--scope", "general"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-
-  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
+  await runSchedulerInProcess(repoDir);
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
@@ -384,8 +386,7 @@ serialTest("task profile selects the profile command and capabilities", async ()
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth", "--profile", "implementer"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "succeeded");
+  await runSchedulerInProcess(repoDir);
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
@@ -423,8 +424,7 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   await configureRepo(repoDir);
 
   await runCli(["task", "create", "backend-auth-plan", "--profile", "implementer"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth-plan", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "planned");
+  await runSchedulerInProcess(repoDir);
 
   let graph = await readGraph(repoDir);
   let task = graph.tasks.find((item) => item.id === "backend-auth-plan");
@@ -442,8 +442,7 @@ serialTest("workflow stage assignment overrides the task base profile", async ()
   await runCli(["task", "plan", "backend-auth-review"], reviewRepoDir);
   await runCli(["task", "tdd", "backend-auth-review"], reviewRepoDir);
   await runCli(["task", "implement", "backend-auth-review"], reviewRepoDir);
-  await runCli(["run", "--once"], reviewRepoDir);
-  await waitForTask(reviewRepoDir, "backend-auth-review", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "verified");
+  await runSchedulerInProcess(reviewRepoDir);
 
   graph = await readGraph(reviewRepoDir);
   task = graph.tasks.find((item) => item.id === "backend-auth-review");
@@ -479,8 +478,7 @@ serialTest("verified stage can automatically advance to publish_ready from relea
   await runCli(["task", "tdd", "release-task"], repoDir);
   await runCli(["task", "implement", "release-task"], repoDir);
   await runCli(["task", "verify", "release-task"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "release-task", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "publish_ready");
+  await runSchedulerInProcess(repoDir);
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "release-task");
@@ -509,8 +507,7 @@ serialTest("verified stage can request rework and return workflow to implemented
   await runCli(["task", "tdd", "rework-task"], repoDir);
   await runCli(["task", "implement", "rework-task"], repoDir);
   await runCli(["task", "verify", "rework-task"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "rework-task", (task) => task.metadata && task.metadata.workflow && task.metadata.workflow.status === "implemented");
+  await runSchedulerInProcess(repoDir);
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "rework-task");
@@ -585,8 +582,7 @@ serialTest("failed execution persists contract failure state", async () => {
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.metadata && task.metadata.execution && task.metadata.execution.last_status === "failed");
+  await runSchedulerInProcess(repoDir);
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
@@ -614,8 +610,7 @@ serialTest("invalid structured result fails without scheduling retry", async () 
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.status === "failed");
+  await runSchedulerInProcess(repoDir);
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
@@ -635,8 +630,7 @@ serialTest("structured blocked result moves task to blocked without treating com
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.status === "blocked");
+  await runSchedulerInProcess(repoDir);
 
   const graph = await readGraph(repoDir);
   const task = graph.tasks.find((item) => item.id === "backend-auth");
@@ -659,8 +653,7 @@ serialTest("blocked task can be unblocked back to todo", async () => {
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.status === "blocked");
+  await runSchedulerInProcess(repoDir);
   await runCli(["task", "unblock", "backend-auth"], repoDir);
 
   const graph = await readGraph(repoDir);
@@ -685,8 +678,7 @@ serialTest("review task can be manually marked done", async () => {
   await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 
   await runCli(["task", "create", "backend-auth"], repoDir);
-  await runCli(["run", "--once"], repoDir);
-  await waitForTask(repoDir, "backend-auth", (task) => task.status === "review");
+  await runSchedulerInProcess(repoDir);
   await runCli(["task", "done", "backend-auth"], repoDir);
 
   const graph = await readGraph(repoDir);
