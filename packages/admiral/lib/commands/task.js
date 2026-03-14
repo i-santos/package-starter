@@ -41,42 +41,47 @@ function formatTask(task) {
   };
 }
 
-function printTask(payload, flags = {}) {
+function writeLine(io, line = "") {
+  const writer = io && typeof io.stdout === "function" ? io.stdout : console.log;
+  writer(line);
+}
+
+function printTask(payload, flags = {}, io = {}) {
   if (flags.json) {
-    console.log(JSON.stringify(payload, null, 2));
+    writeLine(io, JSON.stringify(payload, null, 2));
     return;
   }
 
   if (payload.task) {
-    console.log(`Task ${payload.task.id}`);
-    console.log(`- scheduler_status: ${payload.task.scheduler_status}`);
-    console.log(`- workflow_status: ${payload.task.workflow.status}`);
-    console.log(`- scope: ${payload.task.scope}`);
-    console.log(`- profile: ${payload.task.profile}`);
-    console.log(`- stage_profile: ${payload.task.stage_profile || "-"}`);
-    console.log(`- active_profile: ${payload.task.active_profile || payload.task.profile}`);
-    console.log(`- branch: ${payload.task.branch || "-"}`);
-    console.log(`- workspace: ${payload.task.workspace || "-"}`);
+    writeLine(io, `Task ${payload.task.id}`);
+    writeLine(io, `- scheduler_status: ${payload.task.scheduler_status}`);
+    writeLine(io, `- workflow_status: ${payload.task.workflow.status}`);
+    writeLine(io, `- scope: ${payload.task.scope}`);
+    writeLine(io, `- profile: ${payload.task.profile}`);
+    writeLine(io, `- stage_profile: ${payload.task.stage_profile || "-"}`);
+    writeLine(io, `- active_profile: ${payload.task.active_profile || payload.task.profile}`);
+    writeLine(io, `- branch: ${payload.task.branch || "-"}`);
+    writeLine(io, `- workspace: ${payload.task.workspace || "-"}`);
     if (payload.task.execution.last_summary) {
-      console.log(`- summary: ${payload.task.execution.last_summary}`);
+      writeLine(io, `- summary: ${payload.task.execution.last_summary}`);
     }
     if (Array.isArray(payload.task.execution.last_blockers) && payload.task.execution.last_blockers.length > 0) {
-      console.log(`- blockers: ${payload.task.execution.last_blockers.join(" | ")}`);
+      writeLine(io, `- blockers: ${payload.task.execution.last_blockers.join(" | ")}`);
     }
     if (Array.isArray(payload.task.execution.last_next_actions) && payload.task.execution.last_next_actions.length > 0) {
-      console.log(`- next_actions: ${payload.task.execution.last_next_actions.join(" | ")}`);
+      writeLine(io, `- next_actions: ${payload.task.execution.last_next_actions.join(" | ")}`);
     }
     return;
   }
 
   if (Array.isArray(payload.tasks)) {
     if (payload.tasks.length === 0) {
-      console.log("No tasks.");
+      writeLine(io, "No tasks.");
       return;
     }
     for (const task of payload.tasks) {
       const deps = task.depends_on.length > 0 ? task.depends_on.join(",") : "-";
-      console.log(`${task.id}\t${task.scheduler_status}\t${task.workflow.status}\t${task.scope}\tprofile:${task.profile}\tactive:${task.active_profile}\tdeps:${deps}`);
+      writeLine(io, `${task.id}\t${task.scheduler_status}\t${task.workflow.status}\t${task.scope}\tprofile:${task.profile}\tactive:${task.active_profile}\tdeps:${deps}`);
     }
   }
 }
@@ -263,7 +268,7 @@ async function mutateWorkflowTask(project, taskId, nextStatus, options = {}) {
   return updatedTask;
 }
 
-async function runTaskCreate(taskId, flags = {}) {
+async function runTaskCreate(taskId, flags = {}, io = {}) {
   const project = await loadProject(process.cwd());
   const profile = flags.profile || project.config.default_agent_profile || "default";
   assertKnownAgentProfile(project, profile);
@@ -304,10 +309,10 @@ async function runTaskCreate(taskId, flags = {}) {
       ...createdTask,
       __assignment: resolveTaskAssignment(project, createdTask),
     }),
-  }, flags);
+  }, flags, io);
 }
 
-async function runTaskList(flags = {}) {
+async function runTaskList(flags = {}, io = {}) {
   const project = await loadProject(process.cwd());
   printTask({
     ok: true,
@@ -316,10 +321,10 @@ async function runTaskList(flags = {}) {
       ...task,
       __assignment: resolveTaskAssignment(project, task),
     })),
-  }, flags);
+  }, flags, io);
 }
 
-async function runTaskStatus(taskId, flags = {}) {
+async function runTaskStatus(taskId, flags = {}, io = {}) {
   const project = await loadProject(process.cwd());
   const task = getTaskById(project.graph, taskId);
   printTask({
@@ -329,10 +334,10 @@ async function runTaskStatus(taskId, flags = {}) {
       ...task,
       __assignment: resolveTaskAssignment(project, task),
     }),
-  }, flags);
+  }, flags, io);
 }
 
-async function runTaskHistory(taskId, flags = {}) {
+async function runTaskHistory(taskId, flags = {}, io = {}) {
   const project = await loadProject(process.cwd());
   const limit = flags.limit ? Number(flags.limit) : null;
   const events = await readEvents(project, {
@@ -341,7 +346,7 @@ async function runTaskHistory(taskId, flags = {}) {
   });
 
   if (flags.json) {
-    console.log(JSON.stringify({
+    writeLine(io, JSON.stringify({
       ok: true,
       action: "history",
       task_id: taskId,
@@ -351,14 +356,14 @@ async function runTaskHistory(taskId, flags = {}) {
     return;
   }
 
-  console.log(`History ${taskId}`);
+  writeLine(io, `History ${taskId}`);
   if (events.length === 0) {
-    console.log("No events.");
+    writeLine(io, "No events.");
     return;
   }
 
   for (const event of events) {
-    console.log(`- ${event.timestamp} ${formatEventSummary(event)}`);
+    writeLine(io, `- ${event.timestamp} ${formatEventSummary(event)}`);
   }
 }
 

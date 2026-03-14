@@ -95,14 +95,21 @@ async function runTaskCommand(project, task) {
   }
 }
 
-async function main() {
-  const [repoRoot, taskId] = process.argv.slice(2);
-  if (!repoRoot || !taskId) {
-    throw new Error("worker requires <repo-root> <task-id>");
-  }
+async function runWorkerForTask(project, taskId, deps = {}) {
+  const setRepeatingTimer = typeof deps.setRepeatingTimer === "function"
+    ? deps.setRepeatingTimer
+    : (callback, intervalMs) => setInterval(() => {
+      callback().catch(() => {});
+    }, intervalMs);
+  const clearRepeatingTimer = typeof deps.clearRepeatingTimer === "function"
+    ? deps.clearRepeatingTimer
+    : clearInterval;
+  const onFailure = typeof deps.onFailure === "function"
+    ? deps.onFailure
+    : () => {
+      process.exitCode = 1;
+    };
 
-  process.chdir(repoRoot);
-  const project = await loadProject(repoRoot);
   let task = getTaskById(project.graph, taskId);
 
   await withGraphMutation(project, (graph) => {
@@ -124,9 +131,7 @@ async function main() {
   };
 
   await heartbeatTick();
-  const interval = setInterval(() => {
-    heartbeatTick().catch(() => {});
-  }, Math.max(1000, Math.floor(project.config.heartbeat_timeout_ms / 3)));
+  const interval = setRepeatingTimer(heartbeatTick, Math.max(1000, Math.floor(project.config.heartbeat_timeout_ms / 3)));
 
   try {
     const contract = await runTaskCommand(project, task);
@@ -243,16 +248,34 @@ async function main() {
       retryable: failureDecision.retryable,
       scheduler_status: failureDecision.finalStatus,
     });
-    process.exitCode = 1;
+    onFailure(error);
   } finally {
-    clearInterval(interval);
+    clearRepeatingTimer(interval);
     await clearHeartbeat(project, task.agent);
     await removeFileIfExists(path.join(project.paths.runtimePidsDir, `${task.id}.json`));
     await saveBoard(project);
   }
 }
 
-main().catch((error) => {
-  console.error(error && error.stack ? error.stack : String(error));
-  process.exitCode = 1;
-});
+async function main() {
+  const [repoRoot, taskId] = process.argv.slice(2);
+  if (!repoRoot || !taskId) {
+    throw new Error("worker requires <repo-root> <task-id>");
+  }
+
+  process.chdir(repoRoot);
+  const project = await loadProject(repoRoot);
+  await runWorkerForTask(project, taskId);
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error && error.stack ? error.stack : String(error));
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  runWorkerForTask,
+  runTaskCommand,
+};

@@ -1,5 +1,6 @@
 "use strict";
 
+const packageJson = require("../package.json");
 const { runInit } = require("./commands/init");
 const {
   runTaskCreate,
@@ -19,6 +20,13 @@ const { runStatus } = require("./commands/status");
 const { runRun } = require("./commands/run");
 const { runCleanup } = require("./commands/cleanup");
 const { runMerge } = require("./commands/merge");
+
+function createIo(io = {}) {
+  return {
+    stdout: typeof io.stdout === "function" ? io.stdout : (line) => console.log(line),
+    stderr: typeof io.stderr === "function" ? io.stderr : (line) => console.error(line),
+  };
+}
 
 function parseFlags(args) {
   const positionals = [];
@@ -50,10 +58,11 @@ function parseFlags(args) {
   return { positionals, flags };
 }
 
-function printHelp() {
-  console.log(`admiral
+function printHelp(io) {
+  io.stdout(`admiral
 
 Usage:
+  admiral --version
   admiral init
   admiral run [--once] [--task-id <id>]
   admiral status [--json]
@@ -74,12 +83,18 @@ Usage:
 `);
 }
 
-async function main(argv) {
+async function main(argv, ioOverrides = {}) {
+  const io = createIo(ioOverrides);
   const { positionals, flags } = parseFlags(argv);
   const [command, subcommand, ...rest] = positionals;
 
+  if (argv[0] === "--version" || argv[0] === "-v") {
+    io.stdout(packageJson.version);
+    return;
+  }
+
   if (!command || command === "--help" || command === "-h" || command === "help") {
-    printHelp();
+    printHelp(io);
     return;
   }
 
@@ -94,7 +109,7 @@ async function main(argv) {
   }
 
   if (command === "status") {
-    await runStatus(flags);
+    await runStatus(flags, io);
     return;
   }
 
@@ -117,12 +132,12 @@ async function main(argv) {
       if (!taskId) {
         throw new Error("task create requires an id");
       }
-      await runTaskCreate(taskId, flags);
+      await runTaskCreate(taskId, flags, io);
       return;
     }
 
     if (subcommand === "list") {
-      await runTaskList(flags);
+      await runTaskList(flags, io);
       return;
     }
 
@@ -131,7 +146,7 @@ async function main(argv) {
       if (!taskId) {
         throw new Error("task status requires an id");
       }
-      await runTaskStatus(taskId, flags);
+      await runTaskStatus(taskId, flags, io);
       return;
     }
 
@@ -140,7 +155,7 @@ async function main(argv) {
       if (!taskId) {
         throw new Error("task history requires an id");
       }
-      await runTaskHistory(taskId, flags);
+      await runTaskHistory(taskId, flags, io);
       return;
     }
 

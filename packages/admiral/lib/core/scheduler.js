@@ -8,7 +8,15 @@ const { spawnTaskWorker } = require("./agent-runner");
 const { runRecovery } = require("./recovery");
 const { sleep } = require("../utils/time");
 
-async function claimReadyTasks(project, options = {}) {
+async function defaultStartTaskWorker(project, task) {
+  const pid = await spawnTaskWorker(project, task);
+  await appendEvent(project, "TASK_STARTED", task.id, task.agent, { pid });
+  return pid;
+}
+
+async function claimReadyTasks(project, options = {}, deps = {}) {
+  const ensureTaskWorkspace = typeof deps.ensureWorkspace === "function" ? deps.ensureWorkspace : ensureWorkspace;
+  const startTaskWorker = typeof deps.startTaskWorker === "function" ? deps.startTaskWorker : defaultStartTaskWorker;
   const availableSlots = Math.max(0, project.config.max_agents - project.graph.tasks.filter((task) => ["claimed", "running"].includes(task.status)).length);
   if (availableSlots <= 0) {
     return 0;
@@ -41,7 +49,7 @@ async function claimReadyTasks(project, options = {}) {
     freshReady = freshReady.slice(0, availableSlots);
     for (const task of freshReady) {
       const agentId = `agent-${task.id}`;
-      const workspaceInfo = await ensureWorkspace(project, task);
+      const workspaceInfo = await ensureTaskWorkspace(project, task);
       task.status = "claimed";
       task.agent = agentId;
       task.branch = workspaceInfo.branch;
@@ -60,15 +68,15 @@ async function claimReadyTasks(project, options = {}) {
 
   project.graph = await reloadGraph(project);
   for (const task of project.graph.tasks.filter((item) => claimedTaskIds.includes(item.id))) {
-    const pid = await spawnTaskWorker(project, task);
-    await appendEvent(project, "TASK_STARTED", task.id, task.agent, { pid });
+    await startTaskWorker(project, task);
   }
 
   return claimedCount;
 }
 
-async function runScheduler(project, options = {}) {
-  await runRecovery(project);
+async function runScheduler(project, options = {}, deps = {}) {
+  const sleepFor = typeof deps.sleep === "function" ? deps.sleep : sleep;
+  await runRecovery(project, deps);
   let keepRunning = true;
 
   const stop = () => {
@@ -80,17 +88,18 @@ async function runScheduler(project, options = {}) {
 
   do {
     await reloadGraph(project);
-    await claimReadyTasks(project, options);
+    await claimReadyTasks(project, options, deps);
     await saveBoard(project);
 
     if (options.once) {
       break;
     }
 
-    await sleep(project.config.scheduler_interval_ms);
+    await sleepFor(project.config.scheduler_interval_ms);
   } while (keepRunning);
 }
 
 module.exports = {
   runScheduler,
+  claimReadyTasks,
 };

@@ -8,7 +8,19 @@ const { removeFileIfExists } = require("../utils/fs");
 const { isProcessAlive } = require("../utils/process");
 const { removeWorkspaceForTask } = require("./workspace-manager");
 
-async function runRecovery(project) {
+function nowMs(deps) {
+  if (deps && typeof deps.now === "function") {
+    return Number(deps.now());
+  }
+  return Date.now();
+}
+
+async function runRecovery(project, deps = {}) {
+  const processAlive = typeof deps.isProcessAlive === "function" ? deps.isProcessAlive : isProcessAlive;
+  const removeWorkspace = typeof deps.removeWorkspaceForTask === "function"
+    ? deps.removeWorkspaceForTask
+    : removeWorkspaceForTask;
+
   await reloadGraph(project);
   const [heartbeats, pidRecords] = await Promise.all([
     readHeartbeats(project),
@@ -26,9 +38,9 @@ async function runRecovery(project) {
 
       const pidRecord = pidMap.get(task.id);
       const heartbeat = heartbeatMap.get(task.id);
-      const alive = pidRecord ? isProcessAlive(pidRecord.pid) : false;
+      const alive = pidRecord ? processAlive(pidRecord.pid) : false;
       const heartbeatAlive = heartbeat
-        ? Date.now() - Date.parse(heartbeat.updated_at) <= project.config.heartbeat_timeout_ms
+        ? nowMs(deps) - Date.parse(heartbeat.updated_at) <= project.config.heartbeat_timeout_ms
         : false;
 
       if (alive && heartbeatAlive) {
@@ -72,7 +84,7 @@ async function runRecovery(project) {
   });
 
   for (const staleTask of staleTasks) {
-    await removeWorkspaceForTask(project, staleTask);
+    await removeWorkspace(project, staleTask);
   }
 
   await saveBoard(project);
