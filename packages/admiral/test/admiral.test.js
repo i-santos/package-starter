@@ -62,32 +62,6 @@ async function readGraph(repoDir) {
   return JSON.parse(await readFile(path.join(repoDir, "kanban", "graph.json"), "utf8"));
 }
 
-async function waitForCondition(check, options = {}) {
-  const timeoutMs = options.timeoutMs || 3000;
-  const intervalMs = options.intervalMs || 25;
-  const timeoutAt = Date.now() + timeoutMs;
-  let lastError = null;
-
-  while (Date.now() <= timeoutAt) {
-    try {
-      const result = await check();
-      if (result) {
-        return result;
-      }
-    } catch (error) {
-      lastError = error;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-
-  throw new Error(options.message || `Timed out after ${timeoutMs}ms waiting for condition.`);
-}
-
 async function captureCliOutput(args, cwd) {
   const lines = [];
   const originalCwd = process.cwd();
